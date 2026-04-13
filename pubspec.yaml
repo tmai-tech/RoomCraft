@@ -1,0 +1,25 @@
+name: room_craft
+description: A room blueprint and furniture planner.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  firebase_core: ^2.27.0
+  firebase_auth: ^4.17.6
+  cloud_firestore: ^4.15.6
+  google_sign_in: ^6.2.1
+  uuid: ^4.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
