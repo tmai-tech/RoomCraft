@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum StrokeType { wall, door, window }
+enum StrokeType { wall, door, window, balcony }
 
 class StrokeModel {
   final String id;

@@ -98,6 +98,17 @@ class BlueprintPainter extends CustomPainter {
             ..strokeWidth = 2.0;
         canvas.drawPath(path, innerPaint);
         break;
+      case StrokeType.balcony:
+        paint = Paint()
+          ..color = Colors.green
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..strokeWidth = 3.0;
+        _drawDashedPath(canvas, path, paint);
+        // Draw outward railing dots
+        _drawRailing(canvas, path);
+        break;
     }
   }
 
@@ -114,6 +125,9 @@ class BlueprintPainter extends CustomPainter {
     } else if (type == StrokeType.window) {
       paint.color = Colors.blue;
       canvas.drawCircle(p, 3.0, paint);
+    } else if (type == StrokeType.balcony) {
+      paint.color = Colors.green;
+      canvas.drawCircle(p, 2.0, paint);
     }
   }
 
@@ -147,6 +161,26 @@ class BlueprintPainter extends CustomPainter {
       false,
       paint,
     );
+  }
+
+  void _drawRailing(Canvas canvas, Path path) {
+    final paint = Paint()
+      ..color = Colors.green.withValues(alpha: 0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    const double interval = 10.0;
+    for (PathMetric metric in path.computeMetrics()) {
+      for (double d = 0; d < metric.length; d += interval) {
+        final pos = metric.getTangentForOffset(d)?.position;
+        final v = metric.getTangentForOffset(d)?.vector;
+        if (pos != null && v != null) {
+          // Perpendicular vector for the railing "stick"
+          final perp = Offset(-v.dy, v.dx) * 5.0; 
+          canvas.drawLine(pos, pos + perp, paint);
+        }
+      }
+    }
   }
 
   void _drawMeasurements(Canvas canvas, StrokeModel stroke) {

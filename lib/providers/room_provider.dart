@@ -7,7 +7,7 @@ import '../models/room_model.dart';
 import '../models/stroke_model.dart';
 import '../models/furniture_item.dart';
 
-enum ToolMode { select, wall, door, window, erase }
+enum ToolMode { select, wall, door, window, erase, balcony }
 
 class RoomState {
   final RoomModel room;
@@ -68,6 +68,7 @@ class RoomNotifier extends Notifier<RoomState> {
     StrokeType type = StrokeType.wall;
     if (state.currentTool == ToolMode.door) type = StrokeType.door;
     if (state.currentTool == ToolMode.window) type = StrokeType.window;
+    if (state.currentTool == ToolMode.balcony) type = StrokeType.balcony;
 
     final snapped = _snapToGrid(position);
 
@@ -198,6 +199,34 @@ class RoomNotifier extends Notifier<RoomState> {
     final updatedRoom = RoomModel.fromMap(state.room.toMap());
     updatedRoom.furniture.removeWhere((i) => i.id == state.selectedFurnitureId);
     state = state.copyWith(room: updatedRoom, clearSelected: true);
+  }
+
+  void initFromScan(double width, double length, List<StrokeModel> strokes, List<FurnitureItem> furniture) {
+    state = state.copyWith(
+      room: RoomModel(
+        id: _uuid.v4(),
+        name: 'AI Scan ${DateTime.now().hour}:${DateTime.now().minute}',
+        widthInFeet: width,
+        lengthInFeet: length,
+        strokes: strokes,
+        furniture: furniture,
+      ),
+      clearSelected: true,
+    );
+  }
+
+  void loadRoom(RoomModel room) {
+    state = state.copyWith(
+      room: room,
+      clearSelected: true,
+      pixelsPerFoot: 20.0, // Reset to default zoom
+    );
+  }
+
+  void updateName(String name) {
+    final updatedRoom = RoomModel.fromMap(state.room.toMap());
+    updatedRoom.name = name;
+    state = state.copyWith(room: updatedRoom);
   }
 
   void updateRoomSize(double width, double length) {

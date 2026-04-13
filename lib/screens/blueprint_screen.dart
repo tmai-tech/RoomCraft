@@ -6,6 +6,7 @@ import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
+import '../services/storage_service.dart';
 
 class BlueprintScreen extends ConsumerWidget {
   const BlueprintScreen({super.key});
@@ -15,22 +16,51 @@ class BlueprintScreen extends ConsumerWidget {
     final roomState = ref.watch(roomProvider);
     final roomNotifier = ref.read(roomProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('RoomCraft'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.undo),
-            onPressed: () => roomNotifier.undo(),
-            tooltip: 'Undo',
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          StorageService().saveRoom(roomState.room);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: InkWell(
+            onTap: () => _showRenameDialog(context, roomNotifier, roomState.room.name),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(roomState.room.name),
+                const SizedBox(width: 4),
+                const Icon(Icons.edit, size: 14),
+              ],
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_forever),
-            onPressed: () => _confirmClear(context, roomNotifier),
-            tooltip: 'Clear All',
-          ),
-        ],
-      ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: () async {
+                await StorageService().saveRoom(roomState.room);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Blueprint Saved Locally')),
+                  );
+                }
+              },
+              tooltip: 'Save',
+            ),
+            IconButton(
+              icon: const Icon(Icons.undo),
+              onPressed: () => roomNotifier.undo(),
+              tooltip: 'Undo',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_forever),
+              onPressed: () => _confirmClear(context, roomNotifier),
+              tooltip: 'Clear All',
+            ),
+          ],
+        ),
       body: Column(
         children: [
           _buildToolbar(context, roomState, roomNotifier),
@@ -104,6 +134,7 @@ class BlueprintScreen extends ConsumerWidget {
             ],
           ) 
         : null,
+      ),
     );
   }
 
@@ -216,6 +247,13 @@ class BlueprintScreen extends ConsumerWidget {
               label: 'Window',
               isActive: state.currentTool == ToolMode.window,
               onTap: () => notifier.setTool(ToolMode.window),
+            ),
+            const SizedBox(width: 8),
+            _ToolButton(
+              icon: Icons.deck,
+              label: 'Balcony',
+              isActive: state.currentTool == ToolMode.balcony,
+              onTap: () => notifier.setTool(ToolMode.balcony),
             ),
             const SizedBox(width: 8),
             _ToolButton(
@@ -343,6 +381,31 @@ class BlueprintScreen extends ConsumerWidget {
           ),
         ],
       )
+    );
+  }
+
+  void _showRenameDialog(BuildContext context, RoomNotifier notifier, String currentName) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Blueprint'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Room Name'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              notifier.updateName(controller.text);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
     );
   }
 }
