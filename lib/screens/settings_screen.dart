@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -73,9 +74,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: const Text('Save Settings'),
               ),
             ),
+            const Divider(height: 48),
+            const Text(
+              'Privacy & Legal',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.privacy_tip, color: Colors.blue),
+              title: const Text('Read Privacy Policy'),
+              subtitle: const Text('Required for Camera & AI usage'),
+              trailing: const Icon(Icons.open_in_new, size: 16),
+              onTap: _launchPrivacyPolicy,
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _launchPrivacyPolicy() async {
+    const url = 'https://raw.githubusercontent.com/PRCJ/RoomCraft/Advance/PRIVACY_POLICY.md'; // Hosted on your GitHub repo branch 'Advance'
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the privacy policy link.')),
+        );
+      }
+    }
   }
 }
