@@ -102,23 +102,29 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # --- Firebase App Distribution (testers) ---
-      # Requires repo secrets:
-      #   FIREBASE_ANDROID_APP_ID, FIREBASE_SERVICE_ACCOUNT
-      # Optional: FIREBASE_TESTER_GROUPS (default: testers)
-      - name: Resolve distribution settings
-        id: dist
+      # Firebase App Distribution — needs FIREBASE_ANDROID_APP_ID + FIREBASE_SERVICE_ACCOUNT
+      - name: Upload to Firebase App Distribution
         if: github.event_name != 'pull_request'
         env:
+          FIREBASE_ANDROID_APP_ID: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_TESTER_GROUPS: ${{ secrets.FIREBASE_TESTER_GROUPS }}
           INPUT_GROUPS: ${{ github.event.inputs.tester_groups }}
-          SECRET_GROUPS: ${{ secrets.FIREBASE_TESTER_GROUPS }}
           INPUT_NOTES: ${{ github.event.inputs.release_notes }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
+          APK_PATH: ${{ steps.named.outputs.path }}
         run: |
           set -euo pipefail
+
+          if [ -z "${FIREBASE_ANDROID_APP_ID:-}" ] || [ -z "${FIREBASE_SERVICE_ACCOUNT:-}" ]; then
+            echo "::notice::Firebase App Distribution skipped — set secrets FIREBASE_ANDROID_APP_ID and FIREBASE_SERVICE_ACCOUNT."
+            echo "See docs/FIREBASE_APP_DISTRIBUTION.md"
+            exit 0
+          fi
+
           GROUPS="${INPUT_GROUPS:-}"
           if [ -z "${GROUPS}" ]; then
-            GROUPS="${SECRET_GROUPS:-}"
+            GROUPS="${FIREBASE_TESTER_GROUPS:-testers}"
           fi
           if [ -z "${GROUPS}" ]; then
             GROUPS="testers"
@@ -133,31 +139,16 @@ jobs:
               "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
           fi
 
-          {
-            echo "groups=${GROUPS}"
-            echo "notes<<NOTES_EOF"
-            printf '%s\n' "${NOTES}"
-            echo "NOTES_EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "Distribute groups: ${GROUPS}"
+          echo "${FIREBASE_SERVICE_ACCOUNT}" > "${RUNNER_TEMP}/firebase-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="${RUNNER_TEMP}/firebase-sa.json"
 
-      - name: Upload to Firebase App Distribution
-        if: >
-          github.event_name != 'pull_request' &&
-          secrets.FIREBASE_ANDROID_APP_ID != '' &&
-          secrets.FIREBASE_SERVICE_ACCOUNT != ''
-        uses: wzieba/Firebase-Distribution-Github-Action@v1.7.0
-        with:
-          appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
-          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          groups: ${{ steps.dist.outputs.groups }}
-          file: ${{ steps.named.outputs.path }}
-          releaseNotes: ${{ steps.dist.outputs.notes }}
+          npm install -g firebase-tools
 
-      - name: Firebase distribution skipped
-        if: >
-          github.event_name != 'pull_request' &&
-          (secrets.FIREBASE_ANDROID_APP_ID == '' || secrets.FIREBASE_SERVICE_ACCOUNT == '')
-        run: |
-          echo "::notice::Firebase App Distribution skipped — set secrets FIREBASE_ANDROID_APP_ID and FIREBASE_SERVICE_ACCOUNT."
-          echo "See docs/FIREBASE_APP_DISTRIBUTION.md"
+          echo "Uploading ${APK_PATH} to Firebase App Distribution (groups: ${GROUPS})"
+          firebase appdistribution:distribute "${APK_PATH}" \
+            --app "${FIREBASE_ANDROID_APP_ID}" \
+            --groups "${GROUPS}" \
+            --release-notes "${NOTES}"
+
+          rm -f "${RUNNER_TEMP}/firebase-sa.json"
+          echo "Firebase App Distribution upload complete."
