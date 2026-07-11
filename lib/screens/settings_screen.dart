@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
+import '../domain/units.dart';
 import '../services/ai_scanner_service.dart';
+import '../services/prefs_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,6 +15,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _apiKeyController = TextEditingController();
+  final _prefs = PrefsService();
+  UnitSystem _units = UnitSystem.feet;
 
   @override
   void initState() {
@@ -22,9 +26,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadApiKey() async {
     final key = await AIScannerService.loadApiKey();
+    final units = await _prefs.loadUnitSystem();
     if (!mounted) return;
     setState(() {
       _apiKeyController.text = key ?? '';
+      _units = units;
     });
   }
 
@@ -79,6 +85,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: _saveApiKey,
               child: const Text('Save Settings'),
             ),
+          ),
+          const Text(
+            'Units',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<UnitSystem>(
+            segments: const [
+              ButtonSegment(value: UnitSystem.feet, label: Text('Feet (ft)')),
+              ButtonSegment(value: UnitSystem.meters, label: Text('Meters (m)')),
+            ],
+            selected: {_units},
+            onSelectionChanged: (s) async {
+              final u = s.first;
+              setState(() => _units = u);
+              await _prefs.saveUnitSystem(u);
+            },
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Internal layout stays in feet; labels convert for display.',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
           const Divider(height: 48),
           const Text(

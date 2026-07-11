@@ -11,6 +11,7 @@ class AppConfig {
   static const String roomsLegacyKey = 'saved_rooms';
   static const String apiKeyPrefKey = 'gemini_api_key';
   static const String apiKeyLegacyPrefKey = 'openai_api_key';
+  static const String unitsPrefKey = 'unit_system';
 
   /// Gemini models tried in order (404 / not-found → next).
   static const List<String> geminiModelCandidates = [
@@ -23,4 +24,7 @@ class AppConfig {
   static const double defaultPixelsPerFoot = 20.0;
   static const double defaultRoomWidthFt = 20.0;
   static const double defaultRoomLengthFt = 20.0;
+
+  /// Furniture rotate snap (degrees).
+  static const double rotateSnapDegrees = 45.0;
 }

@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/furniture_item.dart';
-import '../models/room_model.dart';
+import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
 import '../providers/room_provider.dart';
+import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/furniture_catalog_sheet.dart';
 
 class BlueprintScreen extends ConsumerStatefulWidget {
   const BlueprintScreen({super.key});
@@ -17,6 +18,19 @@ class BlueprintScreen extends ConsumerStatefulWidget {
 
 class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
   final TransformationController _transformController = TransformationController();
+  final PrefsService _prefs = PrefsService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnits();
+  }
+
+  Future<void> _loadUnits() async {
+    final unit = await _prefs.loadUnitSystem();
+    if (!mounted) return;
+    ref.read(roomProvider.notifier).setUnitSystem(unit);
+  }
 
   @override
   void dispose() {
@@ -29,8 +43,6 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     final roomState = ref.watch(roomProvider);
     final roomNotifier = ref.read(roomProvider.notifier);
 
-    // Pan when pan tool, or select with no furniture selected.
-    // Always allow scale (pinch). Disable pan while drawing or dragging furniture.
     final panEnabled = roomState.currentTool == ToolMode.pan ||
         (roomState.currentTool == ToolMode.select &&
             !roomState.isDraggingFurniture &&
@@ -51,7 +63,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(roomState.room.name),
+                Flexible(child: Text(roomState.room.name, overflow: TextOverflow.ellipsis)),
                 const SizedBox(width: 4),
                 const Icon(Icons.edit, size: 14),
               ],
@@ -72,8 +84,13 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.undo),
-              onPressed: () => roomNotifier.undo(),
+              onPressed: roomState.canUndo ? () => roomNotifier.undo() : null,
               tooltip: 'Undo',
+            ),
+            IconButton(
+              icon: const Icon(Icons.redo),
+              onPressed: roomState.canRedo ? () => roomNotifier.redo() : null,
+              tooltip: 'Redo',
             ),
             IconButton(
               icon: const Icon(Icons.delete_forever),
@@ -130,11 +147,13 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                           room: roomState.room,
                           currentStroke: roomState.currentStroke,
                           pixelsPerFoot: roomState.pixelsPerFoot,
+                          unitSystem: roomState.unitSystem,
                         ),
                         foregroundPainter: FurniturePainter(
                           furniture: roomState.room.furniture,
                           selectedId: roomState.selectedFurnitureId,
                           pixelsPerFoot: roomState.pixelsPerFoot,
+                          unitSystem: roomState.unitSystem,
                         ),
                       ),
                     ),
@@ -148,15 +167,25 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             ? Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  FloatingActionButton(
-                    heroTag: 'rotateFAB',
+                  FloatingActionButton.small(
+                    heroTag: 'rotate45FAB',
+                    tooltip: 'Rotate 45°',
                     onPressed: () => roomNotifier.rotateSelectedFurniture(),
                     child: const Icon(Icons.rotate_right),
                   ),
                   const SizedBox(height: 8),
-                  FloatingActionButton(
+                  FloatingActionButton.small(
+                    heroTag: 'rotate90FAB',
+                    tooltip: 'Rotate 90°',
+                    onPressed: () =>
+                        roomNotifier.rotateSelectedFurniture(degrees: 90),
+                    child: const Icon(Icons.rotate_90_degrees_cw),
+                  ),
+                  const SizedBox(height: 8),
+                  FloatingActionButton.small(
                     heroTag: 'deleteFAB',
                     backgroundColor: Colors.red.shade100,
+                    tooltip: 'Delete',
                     onPressed: () => roomNotifier.deleteSelectedFurniture(),
                     child: const Icon(Icons.delete, color: Colors.red),
                   ),
@@ -171,25 +200,25 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     String text;
     switch (state.currentTool) {
       case ToolMode.pan:
-        text = 'Pan mode — drag to move canvas, pinch to zoom';
+        text = 'Pan — drag canvas · pinch zoom';
       case ToolMode.select:
-        text = 'Select — tap furniture to move · use Pan tool for canvas';
+        text = 'Select — drag furniture · ends snap to grid · rotate FAB = 45°';
       case ToolMode.wall:
+        text = 'Wall — drag; snaps horizontal/vertical';
       case ToolMode.door:
+        text = 'Door — drag along wall line';
       case ToolMode.window:
+        text = 'Window — drag along wall line';
       case ToolMode.balcony:
-        text = 'Draw mode — drag to place ${state.currentTool.name}';
+        text = 'Balcony — drag edge';
       case ToolMode.erase:
-        text = 'Erase mode';
+        text = 'Erase';
     }
     return Container(
       width: double.infinity,
       color: Colors.blueGrey.shade800,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Text(
-        text,
-        style: const TextStyle(color: Colors.white, fontSize: 12),
-      ),
+      child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12)),
     );
   }
 
@@ -204,10 +233,11 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
       (sum, f) => sum + (f.widthInFeet * f.lengthInFeet),
     );
     final freeArea = totalArea - filledArea;
-    final bool isOverfilled = filledArea > totalArea;
+    final isOverfilled = filledArea > totalArea;
+    final unit = state.unitSystem;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       width: double.infinity,
       color: Colors.blueGrey.shade50,
       child: Wrap(
@@ -220,30 +250,50 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Room: ${totalArea.toStringAsFixed(1)} sq ft (${state.room.widthInFeet}x${state.room.lengthInFeet})',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                'Room: ${LengthFormat.formatAreaSqFt(totalArea, unit)} '
+                '(${LengthFormat.formatFeet(state.room.widthInFeet, unit)}×'
+                '${LengthFormat.formatFeet(state.room.lengthInFeet, unit)})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
               ),
               IconButton(
                 icon: const Icon(Icons.edit, size: 16, color: Colors.blue),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                onPressed: () =>
-                    _showRoomSizeDialog(context, notifier, state.room),
+                onPressed: () => _showRoomSizeDialog(context, notifier, state),
               ),
             ],
           ),
           Text(
-            'Filled: ${filledArea.toStringAsFixed(1)} sq ft',
+            'Filled: ${LengthFormat.formatAreaSqFt(filledArea, unit)}',
             style: TextStyle(
               color: isOverfilled ? Colors.red : Colors.black,
               fontWeight: FontWeight.bold,
+              fontSize: 12,
             ),
           ),
           Text(
-            'Free: ${freeArea.toStringAsFixed(1)} sq ft',
+            'Free: ${LengthFormat.formatAreaSqFt(freeArea, unit)}',
             style: const TextStyle(
               color: Colors.green,
               fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          SegmentedButton<UnitSystem>(
+            segments: const [
+              ButtonSegment(value: UnitSystem.feet, label: Text('ft')),
+              ButtonSegment(value: UnitSystem.meters, label: Text('m')),
+            ],
+            selected: {unit},
+            onSelectionChanged: (s) async {
+              final u = s.first;
+              notifier.setUnitSystem(u);
+              await _prefs.saveUnitSystem(u);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12)),
             ),
           ),
         ],
@@ -254,29 +304,33 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
   void _showRoomSizeDialog(
     BuildContext context,
     RoomNotifier notifier,
-    RoomModel room,
+    RoomState state,
   ) {
-    final widthController =
-        TextEditingController(text: room.widthInFeet.toString());
-    final lengthController =
-        TextEditingController(text: room.lengthInFeet.toString());
+    final room = state.room;
+    final unit = state.unitSystem;
+    final widthController = TextEditingController(
+      text: LengthFormat.feetToDisplay(room.widthInFeet, unit).toStringAsFixed(1),
+    );
+    final lengthController = TextEditingController(
+      text: LengthFormat.feetToDisplay(room.lengthInFeet, unit).toStringAsFixed(1),
+    );
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Set Room Dimensions'),
+        title: Text('Room size (${unit.label})'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: widthController,
-              decoration: const InputDecoration(labelText: 'Width (feet)'),
-              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: 'Width (${unit.label})'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
             TextField(
               controller: lengthController,
-              decoration: const InputDecoration(labelText: 'Length (feet)'),
-              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: 'Length (${unit.label})'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
           ],
         ),
@@ -287,10 +341,14 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
           ),
           TextButton(
             onPressed: () {
-              final w =
-                  double.tryParse(widthController.text) ?? room.widthInFeet;
-              final l =
-                  double.tryParse(lengthController.text) ?? room.lengthInFeet;
+              final wDisp = double.tryParse(widthController.text);
+              final lDisp = double.tryParse(lengthController.text);
+              final w = wDisp != null
+                  ? LengthFormat.displayToFeet(wDisp, unit)
+                  : room.widthInFeet;
+              final l = lDisp != null
+                  ? LengthFormat.displayToFeet(lDisp, unit)
+                  : room.lengthInFeet;
               notifier.updateRoomSize(w, l);
               Navigator.of(ctx).pop();
             },
@@ -359,7 +417,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               icon: Icons.chair,
               label: 'Furniture',
               isActive: false,
-              onTap: () => _showFurnitureDialog(context, notifier),
+              onTap: () => _openCatalog(context, state, notifier),
             ),
           ],
         ),
@@ -367,117 +425,20 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     );
   }
 
-  void _showFurnitureDialog(BuildContext context, RoomNotifier notifier) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Furniture'),
-        content: SizedBox(
-          width: 300,
-          height: 300,
-          child: GridView.count(
-            crossAxisCount: 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            children: FurnitureType.values.map((type) {
-              return InkWell(
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _showFurnitureSizeDialog(context, notifier, type);
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.shade200),
-                  ),
-                  child: Center(
-                    child: Text(
-                      type.name.toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showFurnitureSizeDialog(
+  void _openCatalog(
     BuildContext context,
+    RoomState state,
     RoomNotifier notifier,
-    FurnitureType type,
   ) {
-    double width = 3.0;
-    double length = 3.0;
-    if (type == FurnitureType.bed) {
-      width = 5.0;
-      length = 6.5;
-    }
-    if (type == FurnitureType.sofa) {
-      width = 6.0;
-      length = 3.0;
-    }
-    if (type == FurnitureType.table) {
-      width = 4.0;
-      length = 4.0;
-    }
-    if (type == FurnitureType.wardrobe) {
-      width = 4.0;
-      length = 2.0;
-    }
-
-    final widthController = TextEditingController(text: width.toString());
-    final lengthController = TextEditingController(text: length.toString());
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Set ${type.name.toUpperCase()} Dimensions'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: widthController,
-              decoration: const InputDecoration(labelText: 'Width (feet)'),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: lengthController,
-              decoration: const InputDecoration(labelText: 'Length (feet)'),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final w = double.tryParse(widthController.text) ?? width;
-              final l = double.tryParse(lengthController.text) ?? length;
-              notifier.addFurniture(type, const Offset(200, 200), w, l);
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
+    FurnitureCatalogSheet.show(
+      context,
+      unitSystem: state.unitSystem,
+      onAdd: (type, w, l) {
+        // Place near center of room outline in canvas coords.
+        final cx = (state.room.widthInFeet * state.pixelsPerFoot) / 2;
+        final cy = (state.room.lengthInFeet * state.pixelsPerFoot) / 2;
+        notifier.addFurniture(type, Offset(cx, cy), w, l);
+      },
     );
   }
 
@@ -487,7 +448,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Clear Room?'),
         content: const Text(
-          'Are you sure you want to clear all walls, doors, windows, and furniture?',
+          'Clear all walls, doors, windows, and furniture?',
         ),
         actions: [
           TextButton(

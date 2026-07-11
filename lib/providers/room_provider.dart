@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../config/app_config.dart';
+import '../domain/units.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../models/stroke_model.dart';
@@ -18,8 +19,10 @@ class RoomState {
   final ToolMode currentTool;
   final double pixelsPerFoot;
   final String? selectedFurnitureId;
-  /// True while user is dragging selected furniture (disables pan).
   final bool isDraggingFurniture;
+  final UnitSystem unitSystem;
+  final bool canUndo;
+  final bool canRedo;
 
   RoomState({
     required this.room,
@@ -28,6 +31,9 @@ class RoomState {
     this.pixelsPerFoot = AppConfig.defaultPixelsPerFoot,
     this.selectedFurnitureId,
     this.isDraggingFurniture = false,
+    this.unitSystem = UnitSystem.feet,
+    this.canUndo = false,
+    this.canRedo = false,
   });
 
   bool get isDrawTool =>
@@ -36,10 +42,11 @@ class RoomState {
       currentTool == ToolMode.window ||
       currentTool == ToolMode.balcony;
 
-  /// Whether InteractiveViewer should pan with one finger.
   bool get canvasPanEnabled =>
       currentTool == ToolMode.pan ||
-      (currentTool == ToolMode.select && !isDraggingFurniture && selectedFurnitureId == null);
+      (currentTool == ToolMode.select &&
+          !isDraggingFurniture &&
+          selectedFurnitureId == null);
 
   RoomState copyWith({
     RoomModel? room,
@@ -48,6 +55,9 @@ class RoomState {
     double? pixelsPerFoot,
     String? selectedFurnitureId,
     bool? isDraggingFurniture,
+    UnitSystem? unitSystem,
+    bool? canUndo,
+    bool? canRedo,
     bool clearStroke = false,
     bool clearSelected = false,
   }) {
@@ -59,12 +69,29 @@ class RoomState {
       selectedFurnitureId:
           clearSelected ? null : (selectedFurnitureId ?? this.selectedFurnitureId),
       isDraggingFurniture: isDraggingFurniture ?? this.isDraggingFurniture,
+      unitSystem: unitSystem ?? this.unitSystem,
+      canUndo: canUndo ?? this.canUndo,
+      canRedo: canRedo ?? this.canRedo,
     );
   }
 }
 
+class _HistoryEntry {
+  final RoomModel room;
+  final String? selectedFurnitureId;
+
+  _HistoryEntry(this.room, this.selectedFurnitureId);
+}
+
 class RoomNotifier extends Notifier<RoomState> {
   final _uuid = const Uuid();
+  final List<_HistoryEntry> _undoStack = [];
+  final List<_HistoryEntry> _redoStack = [];
+  static const int _maxHistory = 50;
+
+  /// Skip pushing history while mid-drag; push once on drag end.
+  bool _draggingFurniture = false;
+  RoomModel? _roomBeforeDrag;
 
   @override
   RoomState build() {
@@ -78,12 +105,80 @@ class RoomNotifier extends Notifier<RoomState> {
     );
   }
 
+  void setUnitSystem(UnitSystem unit) {
+    state = state.copyWith(unitSystem: unit);
+  }
+
   void setTool(ToolMode tool) {
     state = state.copyWith(
       currentTool: tool,
       clearSelected: true,
       isDraggingFurniture: false,
       clearStroke: true,
+    );
+  }
+
+  void _pushHistory() {
+    _undoStack.add(_HistoryEntry(
+      state.room.copyWith(
+        strokes: List.of(state.room.strokes),
+        furniture: List.of(state.room.furniture),
+      ),
+      state.selectedFurnitureId,
+    ));
+    if (_undoStack.length > _maxHistory) {
+      _undoStack.removeAt(0);
+    }
+    _redoStack.clear();
+    state = state.copyWith(canUndo: true, canRedo: false);
+  }
+
+  void _syncHistoryFlags() {
+    state = state.copyWith(
+      canUndo: _undoStack.isNotEmpty,
+      canRedo: _redoStack.isNotEmpty,
+    );
+  }
+
+  void undo() {
+    if (_undoStack.isEmpty) return;
+    _redoStack.add(_HistoryEntry(
+      state.room.copyWith(
+        strokes: List.of(state.room.strokes),
+        furniture: List.of(state.room.furniture),
+      ),
+      state.selectedFurnitureId,
+    ));
+    final prev = _undoStack.removeLast();
+    state = state.copyWith(
+      room: prev.room,
+      selectedFurnitureId: prev.selectedFurnitureId,
+      clearSelected: prev.selectedFurnitureId == null,
+      clearStroke: true,
+      isDraggingFurniture: false,
+      canUndo: _undoStack.isNotEmpty,
+      canRedo: true,
+    );
+  }
+
+  void redo() {
+    if (_redoStack.isEmpty) return;
+    _undoStack.add(_HistoryEntry(
+      state.room.copyWith(
+        strokes: List.of(state.room.strokes),
+        furniture: List.of(state.room.furniture),
+      ),
+      state.selectedFurnitureId,
+    ));
+    final next = _redoStack.removeLast();
+    state = state.copyWith(
+      room: next.room,
+      selectedFurnitureId: next.selectedFurnitureId,
+      clearSelected: next.selectedFurnitureId == null,
+      clearStroke: true,
+      isDraggingFurniture: false,
+      canUndo: true,
+      canRedo: _redoStack.isNotEmpty,
     );
   }
 
@@ -108,7 +203,8 @@ class RoomNotifier extends Notifier<RoomState> {
 
   void updateStroke(Offset position) {
     if (state.currentStroke == null) return;
-    final snapped = _snapToGrid(position);
+    final start = state.currentStroke!.points.first;
+    final snapped = _orthogonalSnap(start, _snapToGrid(position));
 
     final updatedPoints = List<Offset>.from(state.currentStroke!.points);
     if (updatedPoints.length == 1) {
@@ -133,6 +229,14 @@ class RoomNotifier extends Notifier<RoomState> {
       return;
     }
 
+    final p0 = state.currentStroke!.points.first;
+    final p1 = state.currentStroke!.points.last;
+    if ((p0 - p1).distance < state.pixelsPerFoot * 0.25) {
+      state = state.copyWith(clearStroke: true);
+      return;
+    }
+
+    _pushHistory();
     final updatedRoom = state.room.copyWith(
       strokes: [...state.room.strokes, state.currentStroke!],
       updatedAt: DateTime.now(),
@@ -142,26 +246,11 @@ class RoomNotifier extends Notifier<RoomState> {
       room: updatedRoom,
       clearStroke: true,
     );
-  }
-
-  void undo() {
-    if (state.room.strokes.isEmpty && state.room.furniture.isEmpty) return;
-
-    if (state.room.strokes.isNotEmpty) {
-      final strokes = List<StrokeModel>.from(state.room.strokes)..removeLast();
-      state = state.copyWith(
-        room: state.room.copyWith(strokes: strokes, updatedAt: DateTime.now()),
-      );
-    } else if (state.room.furniture.isNotEmpty) {
-      final furniture = List<FurnitureItem>.from(state.room.furniture)..removeLast();
-      state = state.copyWith(
-        room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
-        clearSelected: true,
-      );
-    }
+    _syncHistoryFlags();
   }
 
   void clearRoom() {
+    _pushHistory();
     state = state.copyWith(
       room: state.room.copyWith(
         strokes: [],
@@ -171,13 +260,20 @@ class RoomNotifier extends Notifier<RoomState> {
       clearSelected: true,
       isDraggingFurniture: false,
     );
+    _syncHistoryFlags();
   }
 
-  void addFurniture(FurnitureType type, Offset position, double width, double length) {
+  void addFurniture(
+    FurnitureType type,
+    Offset position,
+    double width,
+    double length,
+  ) {
+    _pushHistory();
     final newItem = FurnitureItem(
       id: _uuid.v4(),
       type: type,
-      position: position,
+      position: _snapToGrid(position),
       widthInFeet: width,
       lengthInFeet: length,
     );
@@ -189,6 +285,7 @@ class RoomNotifier extends Notifier<RoomState> {
       selectedFurnitureId: newItem.id,
       currentTool: ToolMode.select,
     );
+    _syncHistoryFlags();
   }
 
   void selectFurnitureAt(Offset position) {
@@ -196,16 +293,12 @@ class RoomNotifier extends Notifier<RoomState> {
 
     for (var i = state.room.furniture.length - 1; i >= 0; i--) {
       final item = state.room.furniture[i];
-      final itemWidth = item.widthInFeet * state.pixelsPerFoot;
-      final itemLength = item.lengthInFeet * state.pixelsPerFoot;
-
-      final rect = Rect.fromCenter(
-        center: item.position,
-        width: itemWidth,
-        height: itemLength,
-      );
-
-      if (rect.contains(position)) {
+      if (_hitTestFurniture(item, position)) {
+        _draggingFurniture = true;
+        _roomBeforeDrag = state.room.copyWith(
+          strokes: List.of(state.room.strokes),
+          furniture: List.of(state.room.furniture),
+        );
         state = state.copyWith(
           selectedFurnitureId: item.id,
           isDraggingFurniture: true,
@@ -216,19 +309,24 @@ class RoomNotifier extends Notifier<RoomState> {
     state = state.copyWith(clearSelected: true, isDraggingFurniture: false);
   }
 
+  bool _hitTestFurniture(FurnitureItem item, Offset position) {
+    // Approximate axis-aligned hit test (rotation ignored for MVP simplicity).
+    final itemWidth = item.widthInFeet * state.pixelsPerFoot;
+    final itemLength = item.lengthInFeet * state.pixelsPerFoot;
+    final rect = Rect.fromCenter(
+      center: item.position,
+      width: itemWidth,
+      height: itemLength,
+    );
+    return rect.inflate(8).contains(position);
+  }
+
   void updateFurniturePosition(Offset delta) {
     if (state.selectedFurnitureId == null) return;
 
     final furniture = state.room.furniture.map((item) {
       if (item.id != state.selectedFurnitureId) return item;
-      return FurnitureItem(
-        id: item.id,
-        type: item.type,
-        position: item.position + delta,
-        rotationAngle: item.rotationAngle,
-        widthInFeet: item.widthInFeet,
-        lengthInFeet: item.lengthInFeet,
-      );
+      return item.copyWith(position: item.position + delta);
     }).toList();
 
     state = state.copyWith(
@@ -238,31 +336,57 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 
   void endFurnitureDrag() {
-    state = state.copyWith(isDraggingFurniture: false);
+    if (_draggingFurniture && _roomBeforeDrag != null) {
+      // Push pre-drag state so undo restores position before drag.
+      _undoStack.add(_HistoryEntry(_roomBeforeDrag!, state.selectedFurnitureId));
+      if (_undoStack.length > _maxHistory) {
+        _undoStack.removeAt(0);
+      }
+      _redoStack.clear();
+
+      // Snap final position to grid.
+      final furniture = state.room.furniture.map((item) {
+        if (item.id != state.selectedFurnitureId) return item;
+        return item.copyWith(position: _snapToGrid(item.position));
+      }).toList();
+
+      state = state.copyWith(
+        room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+        isDraggingFurniture: false,
+        canUndo: true,
+        canRedo: false,
+      );
+    } else {
+      state = state.copyWith(isDraggingFurniture: false);
+    }
+    _draggingFurniture = false;
+    _roomBeforeDrag = null;
   }
 
-  void rotateSelectedFurniture() {
+  /// Rotate selected furniture by [degrees] (default 45° snap).
+  void rotateSelectedFurniture({double degrees = AppConfig.rotateSnapDegrees}) {
     if (state.selectedFurnitureId == null) return;
+    _pushHistory();
 
+    final radians = degrees * pi / 180.0;
     final furniture = state.room.furniture.map((item) {
       if (item.id != state.selectedFurnitureId) return item;
-      return FurnitureItem(
-        id: item.id,
-        type: item.type,
-        position: item.position,
-        rotationAngle: item.rotationAngle + pi / 2,
-        widthInFeet: item.widthInFeet,
-        lengthInFeet: item.lengthInFeet,
-      );
+      var next = item.rotationAngle + radians;
+      // Normalize to 0..2π and snap to nearest step.
+      final step = radians;
+      next = (next / step).round() * step;
+      return item.copyWith(rotationAngle: next);
     }).toList();
 
     state = state.copyWith(
       room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
     );
+    _syncHistoryFlags();
   }
 
   void deleteSelectedFurniture() {
     if (state.selectedFurnitureId == null) return;
+    _pushHistory();
     final furniture = state.room.furniture
         .where((i) => i.id != state.selectedFurnitureId)
         .toList();
@@ -271,6 +395,7 @@ class RoomNotifier extends Notifier<RoomState> {
       clearSelected: true,
       isDraggingFurniture: false,
     );
+    _syncHistoryFlags();
   }
 
   void initFromScan(
@@ -279,10 +404,13 @@ class RoomNotifier extends Notifier<RoomState> {
     List<StrokeModel> strokes,
     List<FurnitureItem> furniture,
   ) {
+    _undoStack.clear();
+    _redoStack.clear();
     state = state.copyWith(
       room: RoomModel(
         id: _uuid.v4(),
-        name: 'AI Scan ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+        name:
+            'AI Scan ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
         widthInFeet: width,
         lengthInFeet: length,
         strokes: strokes,
@@ -290,25 +418,34 @@ class RoomNotifier extends Notifier<RoomState> {
       ),
       clearSelected: true,
       isDraggingFurniture: false,
+      canUndo: false,
+      canRedo: false,
     );
   }
 
   void loadRoom(RoomModel room) {
+    _undoStack.clear();
+    _redoStack.clear();
     state = state.copyWith(
       room: room,
       clearSelected: true,
       pixelsPerFoot: AppConfig.defaultPixelsPerFoot,
       isDraggingFurniture: false,
+      canUndo: false,
+      canRedo: false,
     );
   }
 
   void updateName(String name) {
+    _pushHistory();
     state = state.copyWith(
       room: state.room.copyWith(name: name, updatedAt: DateTime.now()),
     );
+    _syncHistoryFlags();
   }
 
   void updateRoomSize(double width, double length) {
+    _pushHistory();
     state = state.copyWith(
       room: state.room.copyWith(
         widthInFeet: width,
@@ -316,6 +453,7 @@ class RoomNotifier extends Notifier<RoomState> {
         updatedAt: DateTime.now(),
       ),
     );
+    _syncHistoryFlags();
   }
 
   Offset _snapToGrid(Offset pos) {
@@ -324,6 +462,16 @@ class RoomNotifier extends Notifier<RoomState> {
       (pos.dx / snap).roundToDouble() * snap,
       (pos.dy / snap).roundToDouble() * snap,
     );
+  }
+
+  /// Force horizontal or vertical walls (orthogonal drawing).
+  Offset _orthogonalSnap(Offset start, Offset end) {
+    final dx = (end.dx - start.dx).abs();
+    final dy = (end.dy - start.dy).abs();
+    if (dx >= dy) {
+      return Offset(end.dx, start.dy);
+    }
+    return Offset(start.dx, end.dy);
   }
 }
 

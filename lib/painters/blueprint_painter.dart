@@ -1,48 +1,89 @@
 import 'dart:math';
-import 'dart:ui';
+
 import 'package:flutter/material.dart';
-import '../models/stroke_model.dart';
+
+import '../domain/units.dart';
 import '../models/room_model.dart';
+import '../models/stroke_model.dart';
 
 class BlueprintPainter extends CustomPainter {
   final RoomModel room;
   final StrokeModel? currentStroke;
   final double pixelsPerFoot;
+  final UnitSystem unitSystem;
 
   BlueprintPainter({
     required this.room,
     this.currentStroke,
     required this.pixelsPerFoot,
+    this.unitSystem = UnitSystem.feet,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     _drawGrid(canvas, size);
+    _drawRoomOutline(canvas);
 
-    // Draw saved strokes
-    for (var stroke in room.strokes) {
+    for (final stroke in room.strokes) {
       _drawStroke(canvas, stroke);
       _drawMeasurements(canvas, stroke);
     }
 
-    // Draw current active stroke
     if (currentStroke != null) {
       _drawStroke(canvas, currentStroke!);
       _drawMeasurements(canvas, currentStroke!);
     }
   }
 
+  void _drawRoomOutline(Canvas canvas) {
+    final w = room.widthInFeet * pixelsPerFoot;
+    final h = room.lengthInFeet * pixelsPerFoot;
+    final paint = Paint()
+      ..color = Colors.blueGrey.withValues(alpha: 0.15)
+      ..style = PaintingStyle.fill;
+    final border = Paint()
+      ..color = Colors.blueGrey.withValues(alpha: 0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final rect = Rect.fromLTWH(0, 0, w, h);
+    canvas.drawRect(rect, paint);
+    canvas.drawRect(rect, border);
+
+    // Room size label
+    final label =
+        '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × ${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)}';
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: Colors.blueGrey.shade700,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(8, h + 6));
+  }
+
   void _drawGrid(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.grey.withValues(alpha: 0.3)
+      ..color = Colors.grey.withValues(alpha: 0.25)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
+    final major = Paint()
+      ..color = Colors.grey.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
     for (double i = 0; i <= size.width; i += pixelsPerFoot) {
-      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
+      final isMajor = (i / pixelsPerFoot).round() % 5 == 0;
+      canvas.drawLine(Offset(i, 0), Offset(i, size.height), isMajor ? major : paint);
     }
     for (double i = 0; i <= size.height; i += pixelsPerFoot) {
-      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
+      final isMajor = (i / pixelsPerFoot).round() % 5 == 0;
+      canvas.drawLine(Offset(0, i), Offset(size.width, i), isMajor ? major : paint);
     }
   }
 
@@ -58,10 +99,9 @@ class BlueprintPainter extends CustomPainter {
       path.lineTo(stroke.points[i].dx, stroke.points[i].dy);
     }
 
-    Paint paint;
     switch (stroke.type) {
       case StrokeType.wall:
-        paint = Paint()
+        final paint = Paint()
           ..color = Colors.black
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
@@ -70,52 +110,44 @@ class BlueprintPainter extends CustomPainter {
         canvas.drawPath(path, paint);
         break;
       case StrokeType.door:
-        // Draw dashed orange line for wall opening
-        paint = Paint()
+        final paint = Paint()
           ..color = Colors.orange
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..strokeWidth = 4.0;
-        
         _drawDashedPath(canvas, path, paint);
-        // Draw the door arc swinging
         _drawDoorArc(canvas, stroke.points.first, stroke.points.last);
         break;
       case StrokeType.window:
-        // Draw blue double line
-        paint = Paint()
+        final paint = Paint()
           ..color = Colors.blue
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..strokeWidth = 6.0;
         canvas.drawPath(path, paint);
-        // Inner white line
         final innerPaint = Paint()
-            ..color = Colors.white
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.0;
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0;
         canvas.drawPath(path, innerPaint);
         break;
       case StrokeType.balcony:
-        paint = Paint()
+        final paint = Paint()
           ..color = Colors.green
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..strokeWidth = 3.0;
         _drawDashedPath(canvas, path, paint);
-        // Draw outward railing dots
         _drawRailing(canvas, path);
         break;
     }
   }
 
   void _drawPoint(Canvas canvas, Offset p, StrokeType type) {
-    final paint = Paint()
-      ..style = PaintingStyle.fill;
-    
+    final paint = Paint()..style = PaintingStyle.fill;
     if (type == StrokeType.wall) {
       paint.color = Colors.black;
       canvas.drawCircle(p, 4.0, paint);
@@ -134,9 +166,9 @@ class BlueprintPainter extends CustomPainter {
   void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
     const double dashWidth = 10, dashSpace = 5;
     double distance = 0.0;
-    for (PathMetric pathMetric in path.computeMetrics()) {
+    for (final pathMetric in path.computeMetrics()) {
       while (distance < pathMetric.length) {
-        final Path extractPath = pathMetric.extractPath(distance, distance + dashWidth);
+        final extractPath = pathMetric.extractPath(distance, distance + dashWidth);
         canvas.drawPath(extractPath, paint);
         distance += dashWidth + dashSpace;
       }
@@ -148,7 +180,7 @@ class BlueprintPainter extends CustomPainter {
     if ((p1 - p2).distance < 5) return;
     final r = (p1 - p2).distance;
     final angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
-    
+
     final paint = Paint()
       ..color = Colors.orange.withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
@@ -157,7 +189,7 @@ class BlueprintPainter extends CustomPainter {
     canvas.drawArc(
       Rect.fromCircle(center: p1, radius: r),
       angle,
-      pi / 2, // 90 degree swing
+      pi / 2,
       false,
       paint,
     );
@@ -170,13 +202,12 @@ class BlueprintPainter extends CustomPainter {
       ..strokeWidth = 1.0;
 
     const double interval = 10.0;
-    for (PathMetric metric in path.computeMetrics()) {
+    for (final metric in path.computeMetrics()) {
       for (double d = 0; d < metric.length; d += interval) {
         final pos = metric.getTangentForOffset(d)?.position;
         final v = metric.getTangentForOffset(d)?.vector;
         if (pos != null && v != null) {
-          // Perpendicular vector for the railing "stick"
-          final perp = Offset(-v.dy, v.dx) * 5.0; 
+          final perp = Offset(-v.dy, v.dx) * 5.0;
           canvas.drawLine(pos, pos + perp, paint);
         }
       }
@@ -186,32 +217,48 @@ class BlueprintPainter extends CustomPainter {
   void _drawMeasurements(Canvas canvas, StrokeModel stroke) {
     if (stroke.points.length < 2) return;
     for (var i = 0; i < stroke.points.length - 1; i++) {
-       final p1 = stroke.points[i];
-       final p2 = stroke.points[i+1];
-       final dist = (p1 - p2).distance;
+      final p1 = stroke.points[i];
+      final p2 = stroke.points[i + 1];
+      final dist = (p1 - p2).distance;
 
-       // Only draw measurement for significant segments
-       if (dist > pixelsPerFoot * 0.5) {
-         final lengthInFeet = dist / pixelsPerFoot;
-         final textSpan = TextSpan(
-           text: '${lengthInFeet.toStringAsFixed(1)} ft',
-           style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, backgroundColor: Colors.black54),
-         );
-         final textPainter = TextPainter(
-           text: textSpan,
-           textDirection: TextDirection.ltr,
-         );
-         textPainter.layout();
-         
-         final midPoint = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-         textPainter.paint(canvas, Offset(midPoint.dx - textPainter.width/2, midPoint.dy - textPainter.height - 5));
-       }
+      if (dist > pixelsPerFoot * 0.4) {
+        final lengthInFeet = dist / pixelsPerFoot;
+        final label = LengthFormat.formatFeet(lengthInFeet, unitSystem);
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+
+        final midPoint = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+        final bg = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: midPoint.translate(0, -10),
+            width: textPainter.width + 8,
+            height: textPainter.height + 4,
+          ),
+          const Radius.circular(4),
+        );
+        canvas.drawRRect(bg, Paint()..color = Colors.black.withValues(alpha: 0.65));
+        textPainter.paint(
+          canvas,
+          Offset(
+            midPoint.dx - textPainter.width / 2,
+            midPoint.dy - textPainter.height - 8,
+          ),
+        );
+      }
     }
   }
 
   @override
   bool shouldRepaint(BlueprintPainter oldDelegate) {
-    // For simplicity, always repaint.
-    return true; 
+    return true;
   }
 }
