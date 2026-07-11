@@ -9,6 +9,11 @@ import '../domain/units.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../models/stroke_model.dart';
+import '../domain/layout/auto_arrange.dart';
+import '../domain/layout/clearances.dart';
+import '../domain/layout/collision.dart';
+import '../domain/layout/furniture_bounds.dart';
+import '../domain/layout/layout_score.dart';
 
 /// Editor tools. [pan] pans/zooms the canvas; [select] moves furniture; others draw.
 enum ToolMode { pan, select, wall, door, window, erase, balcony }
@@ -23,6 +28,10 @@ class RoomState {
   final UnitSystem unitSystem;
   final bool canUndo;
   final bool canRedo;
+  final Set<String> collisionIds;
+  final int layoutScore;
+  final List<LayoutTip> layoutTips;
+  final RoomLayoutType layoutType;
 
   RoomState({
     required this.room,
@@ -34,6 +43,10 @@ class RoomState {
     this.unitSystem = UnitSystem.feet,
     this.canUndo = false,
     this.canRedo = false,
+    this.collisionIds = const {},
+    this.layoutScore = 100,
+    this.layoutTips = const [],
+    this.layoutType = RoomLayoutType.bedroom,
   });
 
   bool get isDrawTool =>
@@ -58,6 +71,10 @@ class RoomState {
     UnitSystem? unitSystem,
     bool? canUndo,
     bool? canRedo,
+    Set<String>? collisionIds,
+    int? layoutScore,
+    List<LayoutTip>? layoutTips,
+    RoomLayoutType? layoutType,
     bool clearStroke = false,
     bool clearSelected = false,
   }) {
@@ -72,6 +89,10 @@ class RoomState {
       unitSystem: unitSystem ?? this.unitSystem,
       canUndo: canUndo ?? this.canUndo,
       canRedo: canRedo ?? this.canRedo,
+      collisionIds: collisionIds ?? this.collisionIds,
+      layoutScore: layoutScore ?? this.layoutScore,
+      layoutTips: layoutTips ?? this.layoutTips,
+      layoutType: layoutType ?? this.layoutType,
     );
   }
 }
@@ -159,6 +180,7 @@ class RoomNotifier extends Notifier<RoomState> {
       canUndo: _undoStack.isNotEmpty,
       canRedo: true,
     );
+    _refreshLayout();
   }
 
   void redo() {
@@ -180,6 +202,7 @@ class RoomNotifier extends Notifier<RoomState> {
       canUndo: true,
       canRedo: _redoStack.isNotEmpty,
     );
+    _refreshLayout();
   }
 
   void startStroke(Offset position) {
@@ -247,6 +270,7 @@ class RoomNotifier extends Notifier<RoomState> {
       clearStroke: true,
     );
     _syncHistoryFlags();
+    _refreshLayout();
   }
 
   void clearRoom() {
@@ -261,6 +285,7 @@ class RoomNotifier extends Notifier<RoomState> {
       isDraggingFurniture: false,
     );
     _syncHistoryFlags();
+    _refreshLayout();
   }
 
   void addFurniture(
@@ -270,12 +295,30 @@ class RoomNotifier extends Notifier<RoomState> {
     double length,
   ) {
     _pushHistory();
-    final newItem = FurnitureItem(
+    final roomR = FurnitureBounds.roomRect(
+      state.room.widthInFeet,
+      state.room.lengthInFeet,
+      state.pixelsPerFoot,
+    );
+    var newItem = FurnitureItem(
       id: _uuid.v4(),
       type: type,
       position: _snapToGrid(position),
       widthInFeet: width,
       lengthInFeet: length,
+    );
+    newItem = newItem.copyWith(
+      position: FurnitureBounds.clampCenterInRoom(
+        newItem,
+        state.pixelsPerFoot,
+        roomR,
+      ),
+    );
+    newItem = Collision.resolveOverlaps(
+      newItem,
+      state.room.furniture,
+      state.pixelsPerFoot,
+      roomR,
     );
     state = state.copyWith(
       room: state.room.copyWith(
@@ -286,6 +329,7 @@ class RoomNotifier extends Notifier<RoomState> {
       currentTool: ToolMode.select,
     );
     _syncHistoryFlags();
+    _refreshLayout();
   }
 
   void selectFurnitureAt(Offset position) {
@@ -337,17 +381,35 @@ class RoomNotifier extends Notifier<RoomState> {
 
   void endFurnitureDrag() {
     if (_draggingFurniture && _roomBeforeDrag != null) {
-      // Push pre-drag state so undo restores position before drag.
       _undoStack.add(_HistoryEntry(_roomBeforeDrag!, state.selectedFurnitureId));
       if (_undoStack.length > _maxHistory) {
         _undoStack.removeAt(0);
       }
       _redoStack.clear();
 
-      // Snap final position to grid.
+      final roomR = FurnitureBounds.roomRect(
+        state.room.widthInFeet,
+        state.room.lengthInFeet,
+        state.pixelsPerFoot,
+      );
+
       final furniture = state.room.furniture.map((item) {
         if (item.id != state.selectedFurnitureId) return item;
-        return item.copyWith(position: _snapToGrid(item.position));
+        var next = item.copyWith(position: _snapToGrid(item.position));
+        next = next.copyWith(
+          position: FurnitureBounds.clampCenterInRoom(
+            next,
+            state.pixelsPerFoot,
+            roomR,
+          ),
+        );
+        final others = state.room.furniture.where((f) => f.id != item.id).toList();
+        return Collision.resolveOverlaps(
+          next,
+          others,
+          state.pixelsPerFoot,
+          roomR,
+        );
       }).toList();
 
       state = state.copyWith(
@@ -356,6 +418,7 @@ class RoomNotifier extends Notifier<RoomState> {
         canUndo: true,
         canRedo: false,
       );
+      _refreshLayout();
     } else {
       state = state.copyWith(isDraggingFurniture: false);
     }
@@ -382,6 +445,7 @@ class RoomNotifier extends Notifier<RoomState> {
       room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
     );
     _syncHistoryFlags();
+    _refreshLayout();
   }
 
   void deleteSelectedFurniture() {
@@ -396,6 +460,7 @@ class RoomNotifier extends Notifier<RoomState> {
       isDraggingFurniture: false,
     );
     _syncHistoryFlags();
+    _refreshLayout();
   }
 
   void initFromScan(
@@ -421,6 +486,7 @@ class RoomNotifier extends Notifier<RoomState> {
       canUndo: false,
       canRedo: false,
     );
+    _refreshLayout();
   }
 
   void loadRoom(RoomModel room) {
@@ -434,6 +500,7 @@ class RoomNotifier extends Notifier<RoomState> {
       canUndo: false,
       canRedo: false,
     );
+    _refreshLayout();
   }
 
   void updateName(String name) {
@@ -454,6 +521,41 @@ class RoomNotifier extends Notifier<RoomState> {
       ),
     );
     _syncHistoryFlags();
+  }
+
+
+  void setLayoutType(RoomLayoutType type) {
+    state = state.copyWith(layoutType: type);
+  }
+
+  void _refreshLayout() {
+    final score = LayoutScore.evaluate(state.room, state.pixelsPerFoot);
+    state = state.copyWith(
+      collisionIds: score.collisionIds,
+      layoutScore: score.score,
+      layoutTips: score.tips,
+    );
+  }
+
+  /// Auto-arrange furniture for [type]. Replaces furniture list.
+  void autoArrange({RoomLayoutType? type, bool reflowExisting = false}) {
+    final layoutType = type ?? state.layoutType;
+    _pushHistory();
+    final items = AutoArrange.arrange(
+      room: state.room,
+      pixelsPerFoot: state.pixelsPerFoot,
+      type: layoutType,
+      seedFromExisting: reflowExisting,
+    );
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: items, updatedAt: DateTime.now()),
+      layoutType: layoutType,
+      clearSelected: true,
+      isDraggingFurniture: false,
+      currentTool: ToolMode.select,
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
   }
 
   Offset _snapToGrid(Offset pos) {

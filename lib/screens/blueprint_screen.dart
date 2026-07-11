@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
@@ -104,6 +105,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             _buildToolbar(context, roomState, roomNotifier),
             _buildModeHint(roomState),
             _buildStatsPanel(context, roomState, roomNotifier),
+            _buildLayoutBar(context, roomState, roomNotifier),
             Expanded(
               child: ColoredBox(
                 color: Colors.grey.shade100,
@@ -154,6 +156,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                           selectedId: roomState.selectedFurnitureId,
                           pixelsPerFoot: roomState.pixelsPerFoot,
                           unitSystem: roomState.unitSystem,
+                          collisionIds: roomState.collisionIds,
                         ),
                       ),
                     ),
@@ -192,6 +195,178 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                 ],
               )
             : null,
+      ),
+    );
+  }
+
+
+  Widget _buildLayoutBar(
+    BuildContext context,
+    RoomState state,
+    RoomNotifier notifier,
+  ) {
+    final score = state.layoutScore;
+    final Color scoreColor;
+    if (score >= 80) {
+      scoreColor = Colors.green.shade700;
+    } else if (score >= 50) {
+      scoreColor = Colors.orange.shade800;
+    } else {
+      scoreColor = Colors.red.shade700;
+    }
+
+    final tip = state.layoutTips.isEmpty
+        ? 'Add furniture or run Auto-arrange'
+        : state.layoutTips.first.message;
+
+    return Container(
+      width: double.infinity,
+      color: Colors.grey.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: scoreColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: scoreColor.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  'Score $score',
+                  style: TextStyle(
+                    color: scoreColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  tip,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _showAutoArrangeSheet(context, notifier, state),
+                icon: const Icon(Icons.auto_fix_high, size: 18),
+                label: const Text('Auto'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+              if (state.layoutTips.length > 1)
+                IconButton(
+                  tooltip: 'All tips',
+                  icon: const Icon(Icons.list_alt, size: 20),
+                  onPressed: () => _showAllTips(context, state),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAllTips(BuildContext context, RoomState state) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Layout tips', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          for (final t in state.layoutTips)
+            ListTile(
+              dense: true,
+              leading: Icon(
+                t.severity == 'error'
+                    ? Icons.error
+                    : t.severity == 'info'
+                        ? Icons.check_circle
+                        : Icons.warning_amber,
+                color: t.severity == 'error'
+                    ? Colors.red
+                    : t.severity == 'info'
+                        ? Colors.green
+                        : Colors.orange,
+              ),
+              title: Text(t.message),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showAutoArrangeSheet(
+    BuildContext context,
+    RoomNotifier notifier,
+    RoomState state,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Auto-arrange', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 4),
+              const Text(
+                'Places furniture with wall alignment and collision avoidance.',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              for (final type in [
+                RoomLayoutType.bedroom,
+                RoomLayoutType.living,
+                RoomLayoutType.office,
+              ])
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome_mosaic),
+                  title: Text(AutoArrange.label(type)),
+                  subtitle: Text(
+                    type == RoomLayoutType.bedroom
+                        ? 'Bed, wardrobe, nightstands'
+                        : type == RoomLayoutType.living
+                            ? 'Sofa, table, TV, chairs'
+                            : 'Desk, chair, bookshelf',
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    notifier.autoArrange(type: type);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Arranged as ${AutoArrange.label(type)}'),
+                      ),
+                    );
+                  },
+                ),
+              if (state.room.furniture.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.reorder),
+                  title: const Text('Re-flow current furniture'),
+                  subtitle: const Text('Keep items, find better positions'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    notifier.autoArrange(reflowExisting: true);
+                  },
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

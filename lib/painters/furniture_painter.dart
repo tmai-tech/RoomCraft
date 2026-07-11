@@ -9,22 +9,24 @@ class FurniturePainter extends CustomPainter {
   final String? selectedId;
   final double pixelsPerFoot;
   final UnitSystem unitSystem;
+  final Set<String> collisionIds;
 
   FurniturePainter({
     required this.furniture,
     this.selectedId,
     required this.pixelsPerFoot,
     this.unitSystem = UnitSystem.feet,
+    this.collisionIds = const {},
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final item in furniture) {
-      _drawFurnitureItem(canvas, item, item.id == selectedId);
+      _drawFurnitureItem(canvas, item, item.id == selectedId, collisionIds.contains(item.id));
     }
   }
 
-  void _drawFurnitureItem(Canvas canvas, FurnitureItem item, bool isSelected) {
+  void _drawFurnitureItem(Canvas canvas, FurnitureItem item, bool isSelected, bool inCollision) {
     canvas.save();
     canvas.translate(item.position.dx, item.position.dy);
     canvas.rotate(item.rotationAngle);
@@ -43,9 +45,9 @@ class FurniturePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final borderPaint = Paint()
-      ..color = Colors.black87
+      ..color = inCollision ? Colors.red : Colors.black87
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = inCollision ? 3.0 : 2.0;
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(3)),
@@ -58,9 +60,19 @@ class FurniturePainter extends CustomPainter {
 
     _drawDetailsForType(canvas, rect, item.type);
 
+    if (inCollision && !isSelected) {
+      final err = Paint()
+        ..color = Colors.red.withValues(alpha: 0.25)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.inflate(2), const Radius.circular(3)),
+        err,
+      );
+    }
+
     if (isSelected) {
       final highlightPaint = Paint()
-        ..color = Colors.amber
+        ..color = inCollision ? Colors.redAccent : Colors.amber
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0;
       canvas.drawRRect(
