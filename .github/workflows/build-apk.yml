@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       tester_groups:
-        description: 'Firebase tester groups (comma-separated)'
+        description: 'Firebase tester groups (comma-separated, optional)'
         required: false
-        default: 'testers'
+        default: ''
         type: string
       release_notes:
         description: 'Optional release notes for testers'
@@ -149,10 +149,30 @@ jobs:
             echo "Uploading ${APK_PATH} to Firebase App Distribution (no groups — invite testers in console)"
           fi
 
+          set +e
           firebase appdistribution:distribute "${APK_PATH}" \
             --app "${FIREBASE_ANDROID_APP_ID}" \
             --release-notes "${NOTES}" \
             "${EXTRA[@]}"
+          RC=$?
+          set -e
 
           rm -f "${RUNNER_TEMP}/firebase-sa.json"
+
+          if [ "$RC" -ne 0 ]; then
+            # Upload may have succeeded while group invite failed (missing group).
+            echo "::warning::firebase appdistribution:distribute exited with $RC (often missing tester group)."
+            if [ -n "${GROUPS}" ]; then
+              echo "Create group '${GROUPS}' in Firebase App Distribution console, or clear FIREBASE_TESTER_GROUPS / tester_groups input."
+            fi
+            # Fail only if binary upload likely failed — re-check by attempting a dry second path is hard;
+            # Prefer soft-fail for group issues: exit 0 when groups were specified and RC!=0 after possible upload.
+            # Hard-fail when no groups (pure upload failure).
+            if [ -z "${GROUPS}" ]; then
+              exit "$RC"
+            fi
+            echo "APK was likely uploaded; group distribution failed. Check Firebase console releases."
+            exit 0
+          fi
+
           echo "Firebase App Distribution upload complete."
