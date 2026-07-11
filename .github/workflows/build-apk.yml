@@ -12,11 +12,23 @@ on:
     paths-ignore:
       - '**.md'
       - 'LICENSE*'
+      - 'docs/**'
   pull_request:
     paths-ignore:
       - '**.md'
       - 'LICENSE*'
+      - 'docs/**'
   workflow_dispatch:
+    inputs:
+      tester_groups:
+        description: 'Firebase tester groups (comma-separated)'
+        required: false
+        default: 'testers'
+        type: string
+      release_notes:
+        description: 'Optional release notes for testers'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -89,3 +101,63 @@ jobs:
           path: ${{ steps.named.outputs.path }}
           if-no-files-found: error
           retention-days: 30
+
+      # --- Firebase App Distribution (testers) ---
+      # Requires repo secrets:
+      #   FIREBASE_ANDROID_APP_ID, FIREBASE_SERVICE_ACCOUNT
+      # Optional: FIREBASE_TESTER_GROUPS (default: testers)
+      - name: Resolve distribution settings
+        id: dist
+        if: github.event_name != 'pull_request'
+        env:
+          INPUT_GROUPS: ${{ github.event.inputs.tester_groups }}
+          SECRET_GROUPS: ${{ secrets.FIREBASE_TESTER_GROUPS }}
+          INPUT_NOTES: ${{ github.event.inputs.release_notes }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          GROUPS="${INPUT_GROUPS:-}"
+          if [ -z "${GROUPS}" ]; then
+            GROUPS="${SECRET_GROUPS:-}"
+          fi
+          if [ -z "${GROUPS}" ]; then
+            GROUPS="testers"
+          fi
+
+          if [ -n "${INPUT_NOTES:-}" ]; then
+            NOTES="${INPUT_NOTES}"
+          else
+            MSG="${COMMIT_MSG:-Manual / workflow_dispatch build}"
+            NOTES=$(printf 'RoomCraft %s @ %s\n\n%s\n\nRun: %s/%s/actions/runs/%s' \
+              "${GITHUB_REF_NAME}" "${GITHUB_SHA::7}" "${MSG}" \
+              "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+          fi
+
+          {
+            echo "groups=${GROUPS}"
+            echo "notes<<NOTES_EOF"
+            printf '%s\n' "${NOTES}"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Distribute groups: ${GROUPS}"
+
+      - name: Upload to Firebase App Distribution
+        if: >
+          github.event_name != 'pull_request' &&
+          secrets.FIREBASE_ANDROID_APP_ID != '' &&
+          secrets.FIREBASE_SERVICE_ACCOUNT != ''
+        uses: wzieba/Firebase-Distribution-Github-Action@v1.7.0
+        with:
+          appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          groups: ${{ steps.dist.outputs.groups }}
+          file: ${{ steps.named.outputs.path }}
+          releaseNotes: ${{ steps.dist.outputs.notes }}
+
+      - name: Firebase distribution skipped
+        if: >
+          github.event_name != 'pull_request' &&
+          (secrets.FIREBASE_ANDROID_APP_ID == '' || secrets.FIREBASE_SERVICE_ACCOUNT == '')
+        run: |
+          echo "::notice::Firebase App Distribution skipped — set secrets FIREBASE_ANDROID_APP_ID and FIREBASE_SERVICE_ACCOUNT."
+          echo "See docs/FIREBASE_APP_DISTRIBUTION.md"
