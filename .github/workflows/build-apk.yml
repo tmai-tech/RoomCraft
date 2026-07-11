@@ -122,9 +122,13 @@ jobs:
             exit 0
           fi
 
+          # Prefer workflow input, then secret, then hard default "testers"
           GROUPS="${INPUT_GROUPS:-}"
           if [ -z "${GROUPS}" ]; then
             GROUPS="${FIREBASE_TESTER_GROUPS:-}"
+          fi
+          if [ -z "${GROUPS}" ] || [ "${GROUPS}" = "1001" ]; then
+            GROUPS="testers"
           fi
 
           if [ -n "${INPUT_NOTES:-}" ]; then
