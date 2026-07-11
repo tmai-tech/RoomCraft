@@ -58,6 +58,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          if (AppConfig.isBeta) ...[
+            Card(
+              color: Colors.amber.shade50,
+              child: const ListTile(
+                leading: Icon(Icons.science_outlined),
+                title: Text('Closed beta'),
+                subtitle: Text(
+                  'Features may change. Plans stay on this device. Thanks for testing!',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           const Text(
             'Gemini API Key',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -86,6 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Save Settings'),
             ),
           ),
+          const Divider(height: 32),
           const Text(
             'Units',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -108,21 +122,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Internal layout stays in feet; labels convert for display.',
             style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
-          const Divider(height: 48),
+          const Divider(height: 32),
+          const Text(
+            'Support',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.feedback_outlined, color: Colors.blue),
+            title: const Text('Send feedback'),
+            subtitle: const Text('Email the beta team'),
+            trailing: const Icon(Icons.open_in_new, size: 16),
+            onTap: _sendFeedback,
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.new_releases_outlined),
+            title: const Text("What's new"),
+            subtitle: Text(AppConfig.versionLabel),
+            trailing: const Icon(Icons.open_in_new, size: 16),
+            onTap: () => _openUrl(AppConfig.changelogUrl),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('Known issues'),
+            trailing: const Icon(Icons.open_in_new, size: 16),
+            onTap: () => _openUrl(AppConfig.knownIssuesUrl),
+          ),
+          const Divider(height: 32),
           const Text(
             'Privacy & Legal',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.privacy_tip, color: Colors.blue),
             title: const Text('Read Privacy Policy'),
             subtitle: const Text('Camera & AI photo processing'),
             trailing: const Icon(Icons.open_in_new, size: 16),
-            onTap: _launchPrivacyPolicy,
+            onTap: () => _openUrl(AppConfig.privacyPolicyUrl),
           ),
-          const Divider(height: 48),
+          const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.restart_alt),
@@ -131,13 +172,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await _prefs.setOnboardingDone(false);
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Onboarding will show on next app launch')),
+                const SnackBar(
+                  content: Text('Onboarding will show on next app launch'),
+                ),
               );
             },
           ),
           const SizedBox(height: 16),
           Text(
-            '${AppConfig.appName} 1.0.0+1 · MVP',
+            '${AppConfig.appName} ${AppConfig.versionLabel}',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
           ),
           Text(
@@ -149,15 +192,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _launchPrivacyPolicy() async {
-    const url =
-        'https://raw.githubusercontent.com/tmai-tech/RoomCraft/dev/PRIVACY_POLICY.md';
+  Future<void> _sendFeedback() async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: AppConfig.feedbackEmail,
+      queryParameters: {
+        'subject': AppConfig.feedbackSubject,
+        'body':
+            'Version: ${AppConfig.versionLabel}\nDevice:\n\nWhat happened?\n\nSteps to reproduce:\n',
+      },
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Email ${AppConfig.feedbackEmail}')),
+      );
+    }
+  }
+
+  Future<void> _openUrl(String url) async {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the privacy policy link.')),
+        const SnackBar(content: Text('Could not open link')),
       );
     }
   }

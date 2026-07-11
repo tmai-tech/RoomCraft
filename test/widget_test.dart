@@ -12,6 +12,7 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({
       AppConfig.onboardingDoneKey: true,
+      AppConfig.betaBannerDismissedKey: true,
     });
   });
 

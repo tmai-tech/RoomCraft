@@ -26,6 +26,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isLoading = true;
   String? _loadError;
   UnitSystem _units = UnitSystem.feet;
+  bool _showBetaBanner = false;
 
   @override
   void initState() {
@@ -41,11 +42,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final rooms = await _storageService.loadRooms();
       final units = await _prefs.loadUnitSystem();
+      final bannerDismissed = await _prefs.isBetaBannerDismissed();
       if (!mounted) return;
       setState(() {
         _rooms = rooms;
         _units = units;
         _isLoading = false;
+        _showBetaBanner = AppConfig.isBeta && !bannerDismissed;
       });
     } catch (e) {
       if (!mounted) return;
@@ -107,21 +110,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _loadError != null
-              ? _buildErrorState()
-              : _rooms.isEmpty
-                  ? _buildEmptyState()
-                  : RefreshIndicator(
-                      onRefresh: _loadRooms,
-                      child: _buildRoomList(),
-                    ),
+      body: Column(
+        children: [
+          if (_showBetaBanner) _buildBetaBanner(),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _loadError != null
+                    ? _buildErrorState()
+                    : _rooms.isEmpty
+                        ? _buildEmptyState()
+                        : RefreshIndicator(
+                            onRefresh: _loadRooms,
+                            child: _buildRoomList(),
+                          ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showCreateOptions,
         label: const Text('New Blueprint'),
         icon: const Icon(Icons.add),
       ),
+    );
+  }
+
+
+  Widget _buildBetaBanner() {
+    return MaterialBanner(
+      content: const Text(
+        'Closed beta ${AppConfig.appVersion} — plans stay on this device. Send feedback from Settings.',
+      ),
+      leading: const Icon(Icons.science_outlined),
+      backgroundColor: Colors.amber.shade50,
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            );
+          },
+          child: const Text('Feedback'),
+        ),
+        TextButton(
+          onPressed: () async {
+            await _prefs.setBetaBannerDismissed(true);
+            if (mounted) setState(() => _showBetaBanner = false);
+          },
+          child: const Text('Dismiss'),
+        ),
+      ],
     );
   }
 

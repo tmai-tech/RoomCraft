@@ -34,4 +34,15 @@ class PrefsService {
     final prefs = await _prefs;
     await prefs.setBool(AppConfig.onboardingDoneKey, done);
   }
+
+
+  Future<bool> isBetaBannerDismissed() async {
+    final prefs = await _prefs;
+    return prefs.getBool(AppConfig.betaBannerDismissedKey) ?? false;
+  }
+
+  Future<void> setBetaBannerDismissed(bool dismissed) async {
+    final prefs = await _prefs;
+    await prefs.setBool(AppConfig.betaBannerDismissedKey, dismissed);
+  }
 }
