@@ -6,9 +6,12 @@ import 'package:mime/mime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
+import '../domain/layout/auto_arrange.dart';
+import '../domain/local_room_scanner.dart';
 import '../domain/scan_parser.dart';
 import '../models/scan_result.dart';
 
+/// Room scanning: free offline estimator by default; optional Gemini if key works.
 class AIScannerService {
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
     final prefs = prefsOverride ?? await SharedPreferences.getInstance();
@@ -27,53 +30,90 @@ class AIScannerService {
     await prefs.setString(AppConfig.apiKeyPrefKey, key.trim());
   }
 
+  /// Always succeeds offline — checks image is readable.
   Future<String?> validateImage(File image) async {
-    final apiKey = await loadApiKey();
-    if (apiKey == null || apiKey.isEmpty) return null;
-
-    final bytes = await image.readAsBytes();
-    final mimeType = lookupMimeType(image.path) ?? 'image/jpeg';
-
-    const prompt =
-        'Analyze this room photo. Is it clear enough for architectural blueprinting? '
-        'Can you see the floor-to-wall junction? Return strictly JSON: '
-        '{"valid": bool, "reason": "Short explanation"}';
-
-    for (final modelName in AppConfig.geminiModelCandidates) {
-      try {
-        final model = GenerativeModel(
-          model: modelName,
-          apiKey: apiKey,
-          generationConfig: GenerationConfig(responseMimeType: 'application/json'),
-        );
-        final response = await model.generateContent([
-          Content.multi([TextPart(prompt), DataPart(mimeType, bytes)]),
-        ]);
-        final text = response.text;
-        if (text == null || text.isEmpty) continue;
-        final result = jsonDecode(text) as Map<String, dynamic>;
-        return result['valid'] == true ? null : result['reason'] as String?;
-      } catch (_) {
-        continue;
-      }
+    try {
+      final bytes = await image.readAsBytes();
+      if (bytes.isEmpty) return 'Empty image file';
+      if (bytes.length < 1000) return 'Image seems too small — retake closer to the room';
+      return null; // OK
+    } catch (e) {
+      return 'Could not read image: $e';
     }
-    return null;
   }
 
-  /// Scan photos and return a validated [ScanResult].
+  /// Free offline scan (no API). Preferred path when Gemini is limited/unavailable.
+  Future<ScanResult> scanRoomFree(
+    List<File> images, {
+    Map<File, double>? wallMeasurements,
+    RoomLayoutType? layoutType,
+  }) {
+    return LocalRoomScanner.scan(
+      images: images,
+      wallMeasurementsFt: wallMeasurements,
+      preferredLayout: layoutType,
+    );
+  }
+
+  /// Scan photos. Uses free offline estimator first; optional Gemini if [preferGemini].
   Future<ScanResult> scanRoom(
     List<File> images, {
     Map<File, double>? wallMeasurements,
+    bool preferGemini = false,
+    RoomLayoutType? layoutType,
   }) async {
-    final apiKey = await loadApiKey();
-
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('Gemini API Key not found. Please set it in Settings.');
-    }
     if (images.isEmpty) {
       throw Exception('Add at least one room photo.');
     }
 
+    // Default: free offline (no quota limits)
+    if (!preferGemini) {
+      return scanRoomFree(
+        images,
+        wallMeasurements: wallMeasurements,
+        layoutType: layoutType,
+      );
+    }
+
+    final apiKey = await loadApiKey();
+    if (apiKey == null || apiKey.isEmpty) {
+      // Fall back to free
+      final free = await scanRoomFree(
+        images,
+        wallMeasurements: wallMeasurements,
+        layoutType: layoutType,
+      );
+      return free.copyWith(
+        warnings: [
+          ...free.warnings,
+          'No Gemini key — used free offline scan',
+        ],
+      );
+    }
+
+    try {
+      return await _scanWithGemini(images, apiKey, wallMeasurements);
+    } catch (e) {
+      // Quota / network / model errors → free fallback
+      final free = await scanRoomFree(
+        images,
+        wallMeasurements: wallMeasurements,
+        layoutType: layoutType,
+      );
+      return free.copyWith(
+        warnings: [
+          ...free.warnings,
+          'Gemini unavailable ($e) — used free offline scan instead',
+        ],
+      );
+    }
+  }
+
+  Future<ScanResult> _scanWithGemini(
+    List<File> images,
+    String apiKey,
+    Map<File, double>? wallMeasurements,
+  ) async {
     final imageParts = <DataPart>[];
     for (final image in images) {
       final bytes = await image.readAsBytes();
@@ -109,7 +149,6 @@ Return ONLY JSON (no markdown):
 }
 Rules:
 - Coordinates in feet, origin at a corner of the room.
-- Walls should form a reasonable closed outline when possible.
 - Furniture type MUST be one of: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
 - rot is rotation in degrees.
 ''';
@@ -131,40 +170,26 @@ Rules:
         }
 
         final decoded = jsonDecode(response.text!);
-        Map<String, dynamic> map;
-        if (decoded is Map<String, dynamic>) {
-          map = decoded;
-        } else if (decoded is Map) {
-          map = Map<String, dynamic>.from(decoded);
-        } else {
-          throw Exception('AI returned unexpected JSON type');
-        }
-
+        final map = decoded is Map<String, dynamic>
+            ? decoded
+            : Map<String, dynamic>.from(decoded as Map);
         return ScanParser.parse(map);
       } catch (e) {
         lastError = e.toString();
-
         if (lastError.contains('429') ||
             lastError.contains('quota') ||
-            lastError.contains('safety')) {
-          throw Exception(
-              'Gemini Limit Reached: Please wait a minute and try again.');
+            lastError.contains('limit') ||
+            lastError.contains('Resource exhausted')) {
+          throw Exception('Gemini quota exceeded');
         }
-
-        if (e is FormatException) {
-          throw Exception('Could not understand AI layout: ${e.message}');
-        }
-
         if (!lastError.contains('not found') && !lastError.contains('404')) {
-          // Non-model-not-found: still try next model for empty/parse issues
           if (lastError.contains('empty') || lastError.contains('JSON')) {
             continue;
           }
-          throw Exception('Gemini Error: $lastError');
+          rethrow;
         }
       }
     }
-    throw Exception(
-        'All Gemini models unavailable. Check API key/region. Last: $lastError');
+    throw Exception('Gemini models unavailable: $lastError');
   }
 }

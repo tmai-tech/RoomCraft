@@ -77,8 +77,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Required for AI Room Scanning. Get a free key at aistudio.google.com. '
-            'Your key is stored only on this device (MVP). Photos are sent to Google Gemini when you scan.',
+            'Optional. Room scan works offline for free without a key. '
+            'Gemini (if enabled in Scan) needs a key from aistudio.google.com — stored only on this device.',
             style: TextStyle(color: Colors.grey),
           ),
           const SizedBox(height: 16),

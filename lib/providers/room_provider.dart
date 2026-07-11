@@ -227,7 +227,11 @@ class RoomNotifier extends Notifier<RoomState> {
   void updateStroke(Offset position) {
     if (state.currentStroke == null) return;
     final start = state.currentStroke!.points.first;
-    final snapped = _orthogonalSnap(start, _snapToGrid(position));
+    final gridSnapped = _snapToGrid(position);
+    // Walls/doors/windows stay orthogonal; balcony can be free diagonal.
+    final snapped = state.currentTool == ToolMode.balcony
+        ? gridSnapped
+        : _orthogonalSnap(start, gridSnapped);
 
     final updatedPoints = List<Offset>.from(state.currentStroke!.points);
     if (updatedPoints.length == 1) {
@@ -441,6 +445,24 @@ class RoomNotifier extends Notifier<RoomState> {
       return item.copyWith(rotationAngle: next);
     }).toList();
 
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
+  }
+
+
+  void resizeSelectedFurniture(double widthFt, double lengthFt) {
+    if (state.selectedFurnitureId == null) return;
+    _pushHistory();
+    final furniture = state.room.furniture.map((item) {
+      if (item.id != state.selectedFurnitureId) return item;
+      return item.copyWith(
+        widthInFeet: widthFt,
+        lengthInFeet: lengthFt,
+      );
+    }).toList();
     state = state.copyWith(
       room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
     );

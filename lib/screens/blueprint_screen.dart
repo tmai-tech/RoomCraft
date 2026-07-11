@@ -206,6 +206,13 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   ),
                   const SizedBox(height: 8),
                   FloatingActionButton.small(
+                    heroTag: 'resizeFAB',
+                    tooltip: 'Resize',
+                    onPressed: () => _resizeSelected(context, roomNotifier, roomState),
+                    child: const Icon(Icons.photo_size_select_small),
+                  ),
+                  const SizedBox(height: 8),
+                  FloatingActionButton.small(
                     heroTag: 'deleteFAB',
                     backgroundColor: Colors.red.shade100,
                     tooltip: 'Delete',
@@ -391,6 +398,66 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     );
   }
 
+
+  Future<void> _resizeSelected(
+    BuildContext context,
+    RoomNotifier notifier,
+    RoomState state,
+  ) async {
+    final id = state.selectedFurnitureId;
+    if (id == null) return;
+    final matches = state.room.furniture.where((f) => f.id == id);
+    if (matches.isEmpty) return;
+    final item = matches.first;
+    final unit = state.unitSystem;
+    final wCtrl = TextEditingController(
+      text: LengthFormat.feetToDisplay(item.widthInFeet, unit).toStringAsFixed(1),
+    );
+    final lCtrl = TextEditingController(
+      text: LengthFormat.feetToDisplay(item.lengthInFeet, unit).toStringAsFixed(1),
+    );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Resize furniture'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: wCtrl,
+              decoration: InputDecoration(
+                labelText: 'Width (${unit.label})',
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: lCtrl,
+              decoration: InputDecoration(
+                labelText: 'Length / depth (${unit.label})',
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Apply')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final wDisp = double.tryParse(wCtrl.text);
+    final lDisp = double.tryParse(lCtrl.text);
+    if (wDisp == null || lDisp == null) return;
+    notifier.resizeSelectedFurniture(
+      LengthFormat.displayToFeet(wDisp, unit).clamp(0.5, 30),
+      LengthFormat.displayToFeet(lDisp, unit).clamp(0.5, 30),
+    );
+  }
+
   Widget _buildModeHint(RoomState state) {
     String text;
     switch (state.currentTool) {
@@ -405,7 +472,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
       case ToolMode.window:
         text = 'Window — drag along wall line';
       case ToolMode.balcony:
-        text = 'Balcony — drag edge';
+        text = 'Balcony — free diagonal allowed (grid snap only)';
       case ToolMode.erase:
         text = 'Erase';
     }

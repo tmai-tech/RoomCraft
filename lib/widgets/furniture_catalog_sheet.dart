@@ -4,7 +4,7 @@ import '../catalog/furniture_catalog.dart';
 import '../domain/units.dart';
 import '../models/furniture_item.dart';
 
-/// Bottom sheet furniture catalog with categories and one-tap add.
+/// Bottom sheet furniture catalog with categories and customizable size.
 class FurnitureCatalogSheet extends StatefulWidget {
   final UnitSystem unitSystem;
   final void Function(FurnitureType type, double widthFt, double lengthFt) onAdd;
@@ -38,6 +38,85 @@ class FurnitureCatalogSheet extends StatefulWidget {
 class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
   FurnitureCategory? _filter;
 
+  Future<void> _pickSizeAndAdd(FurnitureCatalogEntry e) async {
+    final unit = widget.unitSystem;
+    final widthCtrl = TextEditingController(
+      text: LengthFormat.feetToDisplay(e.defaultWidthFt, unit).toStringAsFixed(1),
+    );
+    final lengthCtrl = TextEditingController(
+      text: LengthFormat.feetToDisplay(e.defaultLengthFt, unit).toStringAsFixed(1),
+    );
+
+    final result = await showDialog<(double, double)>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${e.label} size'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              e.description,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: widthCtrl,
+              decoration: InputDecoration(
+                labelText: 'Width (${unit.label})',
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: lengthCtrl,
+              decoration: InputDecoration(
+                labelText: 'Length / depth (${unit.label})',
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              // Use defaults without editing
+              Navigator.pop(ctx, (e.defaultWidthFt, e.defaultLengthFt));
+            },
+            child: const Text('Use default'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final wDisp = double.tryParse(widthCtrl.text);
+              final lDisp = double.tryParse(lengthCtrl.text);
+              final w = wDisp != null
+                  ? LengthFormat.displayToFeet(wDisp, unit)
+                  : e.defaultWidthFt;
+              final l = lDisp != null
+                  ? LengthFormat.displayToFeet(lDisp, unit)
+                  : e.defaultLengthFt;
+              Navigator.pop(ctx, (
+                w.clamp(0.5, 30.0),
+                l.clamp(0.5, 30.0),
+              ));
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    Navigator.of(context).pop(); // close sheet
+    widget.onAdd(e.type, result.$1, result.$2);
+  }
+
   @override
   Widget build(BuildContext context) {
     final entries = _filter == null
@@ -57,6 +136,14 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Tap Add to set custom width × length before placing.',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -102,16 +189,9 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
                         child: Icon(e.icon, color: Colors.blueGrey.shade700),
                       ),
                       title: Text(e.label),
-                      subtitle: Text('${e.description} · $sizeLabel'),
+                      subtitle: Text('${e.description} · default $sizeLabel'),
                       trailing: FilledButton(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          widget.onAdd(
-                            e.type,
-                            e.defaultWidthFt,
-                            e.defaultLengthFt,
-                          );
-                        },
+                        onPressed: () => _pickSizeAndAdd(e),
                         child: const Text('Add'),
                       ),
                     ),

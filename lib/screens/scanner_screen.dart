@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../providers/room_provider.dart';
 import '../services/ai_scanner_service.dart';
@@ -31,6 +32,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   bool _isLoading = false;
   bool _askMeasurements = true;
+  bool _useGemini = false; // free offline by default
+  RoomLayoutType _layoutType = RoomLayoutType.living;
   int _guideStep = 0;
 
   static const _guideTips = [
@@ -40,25 +43,22 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     'Photo 4 (optional): Capture large furniture for detection.',
   ];
 
-  Future<void> _ensureApiKey() async {
+  Future<bool> _ensureApiKeyIfNeeded() async {
+    if (!_useGemini) return true;
     final key = await AIScannerService.loadApiKey();
-    if (key != null && key.isNotEmpty) return;
-    if (!mounted) return;
+    if (key != null && key.isNotEmpty) return true;
+    if (!mounted) return false;
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Gemini API key needed'),
         content: const Text(
-          'AI scan requires a Gemini API key. Add it in Settings, or draw the room manually.',
+          'Optional Gemini refine needs an API key. Use free offline scan instead, or add a key in Settings.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('Draw manually'),
+            child: const Text('Use free scan'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -67,17 +67,16 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         ],
       ),
     );
-    if (!mounted) return;
+    if (!mounted) return false;
     if (go == true) {
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const SettingsScreen()),
       );
-    } else if (go == null) {
-      ref.invalidate(roomProvider);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const BlueprintScreen()),
-      );
+      final again = await AIScannerService.loadApiKey();
+      return again != null && again.isNotEmpty;
     }
+    setState(() => _useGemini = false);
+    return true;
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -171,15 +170,16 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       return;
     }
 
-    await _ensureApiKey();
-    final key = await AIScannerService.loadApiKey();
-    if (key == null || key.isEmpty) return;
+    final ok = await _ensureApiKeyIfNeeded();
+    if (!ok) return;
 
     setState(() => _isLoading = true);
     try {
       final result = await _aiService.scanRoom(
         _images,
         wallMeasurements: _wallMeasurements.isEmpty ? null : _wallMeasurements,
+        preferGemini: _useGemini,
+        layoutType: _layoutType,
       );
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -248,16 +248,16 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 20),
-                  Text('Building top-down layout…'),
-                  SizedBox(height: 8),
-                  Text(
-                    'This may take 15–40 seconds',
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  Text(_useGemini ? 'Gemini analyzing…' : 'Building free offline plan…'),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'This usually takes a few seconds offline',
                     style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                 ],
@@ -291,11 +291,49 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 ),
                 SwitchListTile(
                   title: const Text('Ask for wall lengths'),
-                  subtitle: const Text('Improves scale accuracy'),
+                  subtitle: const Text('Improves scale accuracy (recommended)'),
                   value: _askMeasurements,
                   onChanged: (v) => setState(() => _askMeasurements = v),
                   dense: true,
                 ),
+                SwitchListTile(
+                  title: const Text('Use Gemini AI (optional)'),
+                  subtitle: const Text('Off = free offline scan (no API limits)'),
+                  value: _useGemini,
+                  onChanged: (v) => setState(() => _useGemini = v),
+                  dense: true,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Room type (furniture preset)',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<RoomLayoutType>(
+                        isExpanded: true,
+                        value: _layoutType,
+                        items: [
+                          for (final t in [
+                            RoomLayoutType.bedroom,
+                            RoomLayoutType.living,
+                            RoomLayoutType.office,
+                          ])
+                            DropdownMenuItem(
+                              value: t,
+                              child: Text(AutoArrange.label(t)),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _layoutType = v);
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Expanded(
                   child: _images.isEmpty
                       ? Center(
@@ -308,7 +346,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                               const Text('No photos yet'),
                               const SizedBox(height: 8),
                               Text(
-                                'Take or pick 1–$_maxPhotos photos of your room',
+                                'Take or pick 1–$_maxPhotos photos · free offline plan by default',
                                 style: TextStyle(color: Colors.grey.shade600),
                               ),
                             ],
@@ -456,7 +494,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                           child: Text(
                             _images.isEmpty
                                 ? 'Add photos to continue'
-                                : 'Generate top-down plan',
+                                : (_useGemini
+                                    ? 'Generate with Gemini'
+                                    : 'Generate free plan'),
                           ),
                         ),
                         TextButton(
