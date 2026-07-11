@@ -12,6 +12,7 @@ class AppConfig {
   static const String apiKeyPrefKey = 'gemini_api_key';
   static const String apiKeyLegacyPrefKey = 'openai_api_key';
   static const String unitsPrefKey = 'unit_system';
+  static const String onboardingDoneKey = 'onboarding_done_v1';
 
   /// Gemini models tried in order (404 / not-found → next).
   static const List<String> geminiModelCandidates = [

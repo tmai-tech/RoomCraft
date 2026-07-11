@@ -24,4 +24,14 @@ class PrefsService {
       unit == UnitSystem.meters ? 'meters' : 'feet',
     );
   }
+
+  Future<bool> isOnboardingDone() async {
+    final prefs = await _prefs;
+    return prefs.getBool(AppConfig.onboardingDoneKey) ?? false;
+  }
+
+  Future<void> setOnboardingDone(bool done) async {
+    final prefs = await _prefs;
+    await prefs.setBool(AppConfig.onboardingDoneKey, done);
+  }
 }

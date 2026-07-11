@@ -123,8 +123,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: _launchPrivacyPolicy,
           ),
           const Divider(height: 48),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.restart_alt),
+            title: const Text('Show onboarding again'),
+            onTap: () async {
+              await _prefs.setOnboardingDone(false);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Onboarding will show on next app launch')),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
           Text(
-            '${AppConfig.appName} 1.0.0+1 · MVP Phase 0',
+            '${AppConfig.appName} 1.0.0+1 · MVP',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
           ),
           Text(

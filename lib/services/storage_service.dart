@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
+import 'package:uuid/uuid.dart';
+
 import '../models/room_model.dart';
 
 /// Versioned local project storage with legacy migration and corrupt-entry skip.
@@ -66,6 +68,31 @@ class StorageService {
 
   Future<void> saveAll(List<RoomModel> rooms) async {
     await _persist(rooms);
+  }
+
+  /// Copy a room with a new id and "Copy of …" name.
+  Future<RoomModel> duplicateRoom(RoomModel source, {String? newId}) async {
+    final copy = source.copyWith(
+      id: newId ?? const Uuid().v4(),
+      name: source.name.startsWith('Copy of ')
+          ? source.name
+          : 'Copy of ${source.name}',
+      updatedAt: DateTime.now(),
+    );
+    // Deep copy lists
+    final room = RoomModel(
+      id: copy.id,
+      name: copy.name,
+      lengthInFeet: copy.lengthInFeet,
+      widthInFeet: copy.widthInFeet,
+      strokes: List.of(source.strokes),
+      furniture: List.of(source.furniture),
+      userId: source.userId,
+      schemaVersion: AppConfig.storageSchemaVersion,
+      updatedAt: DateTime.now(),
+    );
+    await saveRoom(room);
+    return room;
   }
 
   Future<void> _persist(List<RoomModel> rooms) async {

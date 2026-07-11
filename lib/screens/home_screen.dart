@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../config/app_config.dart';
+import '../domain/units.dart';
+import '../models/room_model.dart';
+import '../providers/room_provider.dart';
+import '../services/prefs_service.dart';
+import '../services/storage_service.dart';
+import '../widgets/room_thumbnail.dart';
 import 'blueprint_screen.dart';
 import 'scanner_screen.dart';
 import 'settings_screen.dart';
-import '../services/storage_service.dart';
-import '../models/room_model.dart';
-import '../providers/room_provider.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -16,8 +21,11 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final StorageService _storageService = StorageService();
+  final PrefsService _prefs = PrefsService();
   List<RoomModel> _rooms = [];
   bool _isLoading = true;
+  String? _loadError;
+  UnitSystem _units = UnitSystem.feet;
 
   @override
   void initState() {
@@ -26,61 +34,89 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _loadRooms() async {
-    final rooms = await _storageService.loadRooms();
-    if (mounted) {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final rooms = await _storageService.loadRooms();
+      final units = await _prefs.loadUnitSystem();
+      if (!mounted) return;
       setState(() {
         _rooms = rooms;
+        _units = units;
         _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Could not load saved plans. $e';
       });
     }
   }
 
   Future<void> _deleteRoom(String id) async {
     await _storageService.deleteRoom(id);
-    _loadRooms();
+    await _loadRooms();
+  }
+
+  Future<void> _duplicateRoom(RoomModel room) async {
+    await _storageService.duplicateRoom(room);
+    await _loadRooms();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Duplicated “${room.name}”')),
+    );
   }
 
   void _createNewManual() {
-    ref.invalidate(roomProvider); // Reset to new room
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const BlueprintScreen()),
-    ).then((_) => _loadRooms());
+    ref.invalidate(roomProvider);
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const BlueprintScreen()))
+        .then((_) => _loadRooms());
   }
 
   void _createNewAI() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ScannerScreen()),
-    ).then((_) => _loadRooms());
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ScannerScreen()))
+        .then((_) => _loadRooms());
   }
 
   void _editRoom(RoomModel room) {
     ref.read(roomProvider.notifier).loadRoom(room);
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const BlueprintScreen()),
-    ).then((_) => _loadRooms());
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const BlueprintScreen()))
+        .then((_) => _loadRooms());
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RoomCraft Pro'),
+        title: const Text(AppConfig.appName),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const SettingsScreen()))
+                  .then((_) => _loadRooms());
             },
           ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _rooms.isEmpty
-              ? _buildEmptyState()
-              : _buildRoomList(),
+          : _loadError != null
+              ? _buildErrorState()
+              : _rooms.isEmpty
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      onRefresh: _loadRooms,
+                      child: _buildRoomList(),
+                    ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showCreateOptions,
         label: const Text('New Blueprint'),
@@ -89,49 +125,135 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+            const SizedBox(height: 16),
+            Text(
+              _loadError ?? 'Something went wrong',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _loadRooms, child: const Text('Retry')),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.architecture, size: 80, color: Colors.grey.shade400),
-          const SizedBox(height: 16),
-          const Text(
-            'No blueprints yet.',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _showCreateOptions,
-            child: const Text('Start Designing'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.architecture, size: 88, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              'No blueprints yet',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Scan a room with your camera or draw a plan from scratch.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 28),
+            FilledButton.icon(
+              onPressed: _createNewAI,
+              icon: const Icon(Icons.camera_alt),
+              label: const Text('Scan room'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _createNewManual,
+              icon: const Icon(Icons.edit),
+              label: const Text('Draw manually'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildRoomList() {
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
       itemCount: _rooms.length,
       itemBuilder: (ctx, index) {
         final room = _rooms[index];
+        final dim =
+            '${LengthFormat.formatFeet(room.widthInFeet, _units)} × '
+            '${LengthFormat.formatFeet(room.lengthInFeet, _units)}';
+        final updated = room.updatedAt;
+        final when = updated == null
+            ? ''
+            : '${updated.year}-${updated.month.toString().padLeft(2, '0')}-${updated.day.toString().padLeft(2, '0')}';
+
         return Card(
-          elevation: 2,
+          elevation: 1,
           margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: CircleAvatar(
-              backgroundColor: Colors.blue.shade100,
-              child: const Icon(Icons.room, color: Colors.blue),
-            ),
-            title: Text(room.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("${room.widthInFeet}' x ${room.lengthInFeet}' | ${room.strokes.length} walls"),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              onPressed: () => _confirmDelete(room),
-            ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
             onTap: () => _editRoom(room),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  RoomThumbnail(room: room, size: 72),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          room.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$dim · ${room.furniture.length} items · ${room.strokes.length} lines',
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        if (when.isNotEmpty)
+                          Text(
+                            'Updated $when',
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (v) async {
+                      if (v == 'open') _editRoom(room);
+                      if (v == 'duplicate') await _duplicateRoom(room);
+                      if (v == 'delete') _confirmDelete(room);
+                    },
+                    itemBuilder: (ctx) => const [
+                      PopupMenuItem(value: 'open', child: Text('Open')),
+                      PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                      PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -139,43 +261,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _showCreateOptions() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.auto_awesome, color: Colors.blue),
-            title: const Text('Auto-Generate with AI'),
-            subtitle: const Text('Create from room photos'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _createNewAI();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.edit, color: Colors.green),
-            title: const Text('Manually Enter (Draw)'),
-            subtitle: const Text('Draft from scratch'),
-            onTap: () {
-              Navigator.pop(ctx);
-              _createNewManual();
-            },
-          ),
-          const SizedBox(height: 16),
-        ],
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.auto_awesome, color: Colors.blue),
+              title: const Text('Scan with AI'),
+              subtitle: const Text('Photos → top-down plan'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _createNewAI();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit, color: Colors.green),
+              title: const Text('Draw manually'),
+              subtitle: const Text('Walls and furniture by hand'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _createNewManual();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
 
   void _confirmDelete(RoomModel room) {
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Blueprint?'),
-        content: Text('Are you sure you want to delete "${room.name}"?'),
+        title: const Text('Delete blueprint?'),
+        content: Text('Delete “${room.name}”? This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () {
               _deleteRoom(room.id);

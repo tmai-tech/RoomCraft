@@ -6,6 +6,7 @@ import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
 import '../providers/room_provider.dart';
+import '../services/export_service.dart';
 import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/furniture_catalog_sheet.dart';
@@ -82,6 +83,25 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                 }
               },
               tooltip: 'Save',
+            ),
+            IconButton(
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Export PNG',
+              onPressed: () async {
+                try {
+                  await ExportService.sharePng(
+                    roomState.room,
+                    pixelsPerFoot: roomState.pixelsPerFoot,
+                    unitSystem: roomState.unitSystem,
+                  );
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Export failed: $e')),
+                    );
+                  }
+                }
+              },
             ),
             IconButton(
               icon: const Icon(Icons.undo),
