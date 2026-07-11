@@ -9,81 +9,52 @@ import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'layout/auto_arrange.dart';
 
-/// Free, offline room plan estimator (no Gemini / no paid API).
+/// Free offline room plan builder (no cloud vision).
 ///
-/// Uses photo aspect ratio, optional wall measurements, and open-source
-/// AutoArrange packing — similar spirit to Sweet Home 3D 2D planning,
-/// without cloud vision models.
+/// **Proportions:** uses exact [roomWidthFt] × [roomLengthFt] when provided.
+/// Never warps true measurements by photo aspect ratio.
+/// **Furniture:** empty by default — only places preset pieces when the user
+/// explicitly chooses a non-empty [preferredLayout].
 class LocalRoomScanner {
   /// Build a [ScanResult] from photos without network AI.
   static Future<ScanResult> scan({
     required List<File> images,
     Map<File, double>? wallMeasurementsFt,
     RoomLayoutType? preferredLayout,
+    double? roomWidthFt,
+    double? roomLengthFt,
   }) async {
     if (images.isEmpty) {
       throw Exception('Add at least one room photo.');
     }
 
     final warnings = <String>[
-      'Free offline scan (no API key). Estimate only — edit walls & furniture next.',
+      'Free offline plan — proportions from your room size. '
+          'No furniture invented unless you pick a preset.',
     ];
 
-    double aspect = 1.25;
-    double avgLuma = 0.5;
+    // Photo metadata only for diagnostics (not for warping dimensions).
     try {
       final bytes = await images.first.readAsBytes();
       final decoded = img.decodeImage(bytes);
       if (decoded != null) {
-        aspect = decoded.width / math.max(decoded.height, 1);
-        var sum = 0.0;
-        var n = 0;
-        final stepX = math.max(1, decoded.width ~/ 32);
-        final stepY = math.max(1, decoded.height ~/ 32);
-        for (var y = 0; y < decoded.height; y += stepY) {
-          for (var x = 0; x < decoded.width; x += stepX) {
-            final p = decoded.getPixel(x, y);
-            sum += (p.r * 0.299 + p.g * 0.587 + p.b * 0.114) / 255.0;
-            n++;
-          }
-        }
-        if (n > 0) avgLuma = sum / n;
+        final aspect = decoded.width / math.max(decoded.height, 1);
         warnings.add(
-          'Photo ${decoded.width}×${decoded.height} · aspect ${aspect.toStringAsFixed(2)}',
+          'Photo ${decoded.width}×${decoded.height} · aspect ${aspect.toStringAsFixed(2)} (not used for size)',
         );
       }
     } catch (_) {
-      warnings.add('Could not fully decode photo — used default proportions');
+      warnings.add('Could not fully decode photo — plan still uses your room size');
     }
 
-    double? measured;
-    if (wallMeasurementsFt != null && wallMeasurementsFt.isNotEmpty) {
-      measured = wallMeasurementsFt.values.reduce((a, b) => a + b) /
-          wallMeasurementsFt.length;
-      warnings.add(
-        'Scale from ${wallMeasurementsFt.length} measurement(s): '
-        'avg ${measured.toStringAsFixed(1)} ft',
-      );
-    }
-
-    late double widthFt;
-    late double lengthFt;
-    if (measured != null && measured > 0) {
-      if (aspect >= 1) {
-        widthFt = measured;
-        lengthFt = measured / aspect;
-      } else {
-        lengthFt = measured;
-        widthFt = measured * aspect;
-      }
-    } else {
-      widthFt = 12.0 * math.sqrt(aspect.clamp(0.5, 2.0));
-      lengthFt = 12.0 / math.sqrt(aspect.clamp(0.5, 2.0));
-      warnings.add('No wall length entered — used typical ~12 ft base size');
-    }
-
-    widthFt = widthFt.clamp(6.0, 40.0);
-    lengthFt = lengthFt.clamp(6.0, 40.0);
+    final dims = resolveDimensions(
+      roomWidthFt: roomWidthFt,
+      roomLengthFt: roomLengthFt,
+      wallMeasurementsFt: wallMeasurementsFt,
+    );
+    final widthFt = dims.widthFt;
+    final lengthFt = dims.lengthFt;
+    warnings.addAll(dims.notes);
 
     final walls = <ScanWallSegment>[
       ScanWallSegment(
@@ -106,10 +77,11 @@ class LocalRoomScanner {
         startFt: Offset(0, lengthFt),
         endFt: Offset.zero,
       ),
+      // Generic door/window placeholders on the outline (not furniture).
       ScanWallSegment(
         type: StrokeType.door,
         startFt: Offset(widthFt * 0.35, 0),
-        endFt: Offset(widthFt * 0.35 + 3.0, 0),
+        endFt: Offset(widthFt * 0.35 + math.min(3.0, widthFt * 0.25), 0),
       ),
       ScanWallSegment(
         type: StrokeType.window,
@@ -118,33 +90,28 @@ class LocalRoomScanner {
       ),
     ];
 
-    var type = preferredLayout ?? RoomLayoutType.living;
-    if (preferredLayout == null) {
-      if (avgLuma > 0.55 && widthFt * lengthFt > 140) {
-        type = RoomLayoutType.living;
-      } else if (avgLuma < 0.4 || widthFt * lengthFt < 120) {
-        type = RoomLayoutType.bedroom;
-      } else {
-        type = RoomLayoutType.office;
-      }
-    }
-    warnings.add('Preset furniture: ${AutoArrange.label(type)}');
+    final type = preferredLayout ?? RoomLayoutType.empty;
+    final furniture = <ScanFurnitureHint>[];
 
-    const pxf = 20.0;
-    final room = RoomModel(
-      id: 'local-scan',
-      name: 'Local scan',
-      widthInFeet: widthFt,
-      lengthInFeet: lengthFt,
-    );
-    final placed = AutoArrange.arrange(
-      room: room,
-      pixelsPerFoot: pxf,
-      type: type,
-    );
-
-    final furniture = placed
-        .map(
+    if (type != RoomLayoutType.empty) {
+      warnings.add(
+        'Preset furniture: ${AutoArrange.label(type)} '
+        '(not from photo — switch to Empty or free AI for real items)',
+      );
+      const pxf = 20.0;
+      final room = RoomModel(
+        id: 'local-scan',
+        name: 'Local scan',
+        widthInFeet: widthFt,
+        lengthInFeet: lengthFt,
+      );
+      final placed = AutoArrange.arrange(
+        room: room,
+        pixelsPerFoot: pxf,
+        type: type,
+      );
+      furniture.addAll(
+        placed.map(
           (f) => ScanFurnitureHint(
             type: f.type,
             posFt: Offset(f.position.dx / pxf, f.position.dy / pxf),
@@ -153,8 +120,13 @@ class LocalRoomScanner {
             rotationRad: f.rotationAngle,
             included: true,
           ),
-        )
-        .toList();
+        ),
+      );
+    } else {
+      warnings.add(
+        'Empty plan — add furniture from the catalog or enable free AI detection',
+      );
+    }
 
     return ScanResult(
       roomWidthFt: widthFt,
@@ -163,5 +135,64 @@ class LocalRoomScanner {
       furniture: furniture,
       warnings: warnings,
     );
+  }
+
+  /// Resolve exact width × length in feet.
+  ///
+  /// Priority:
+  /// 1. Explicit [roomWidthFt] / [roomLengthFt]
+  /// 2. Two+ wall measurements → first = width, second = length
+  /// 3. One measurement → square room of that size
+  /// 4. Default 10×10 (common square room, not photo aspect)
+  static ({double widthFt, double lengthFt, List<String> notes}) resolveDimensions({
+    double? roomWidthFt,
+    double? roomLengthFt,
+    Map<File, double>? wallMeasurementsFt,
+  }) {
+    final notes = <String>[];
+
+    double? w = roomWidthFt;
+    double? l = roomLengthFt;
+
+    if ((w == null || w <= 0) || (l == null || l <= 0)) {
+      final values = wallMeasurementsFt?.values
+              .where((v) => v > 0)
+              .toList() ??
+          const <double>[];
+      if (values.length >= 2) {
+        w ??= values[0];
+        l ??= values[1];
+        notes.add(
+          'Size from wall lengths: ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft',
+        );
+      } else if (values.length == 1) {
+        w ??= values.first;
+        l ??= values.first;
+        notes.add(
+          'One wall length (${values.first.toStringAsFixed(1)} ft) → square room',
+        );
+      }
+    } else {
+      notes.add(
+        'Exact room size: ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft',
+      );
+    }
+
+    w ??= 10.0;
+    l ??= 10.0;
+    if (roomWidthFt == null && roomLengthFt == null &&
+        (wallMeasurementsFt == null || wallMeasurementsFt.isEmpty)) {
+      notes.add('No size entered — default 10 × 10 ft square (edit in review)');
+    }
+
+    // Soft sanity only — do not distort proportions.
+    if (w < 3 || l < 3) {
+      notes.add('Room sides under 3 ft look too small — check units');
+    }
+    if (w > 80 || l > 80) {
+      notes.add('Room sides over 80 ft look very large — check units');
+    }
+
+    return (widthFt: w, lengthFt: l, notes: notes);
   }
 }

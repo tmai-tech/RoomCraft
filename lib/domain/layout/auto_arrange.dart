@@ -157,7 +157,7 @@ class AutoArrange {
       case RoomLayoutType.office:
         return 'Office';
       case RoomLayoutType.empty:
-        return 'Clear furniture';
+        return 'Empty (no furniture)';
     }
   }
 }

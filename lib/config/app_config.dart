@@ -5,7 +5,7 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 2;
+  static const int buildNumber = 3;
   static const bool isBeta = true;
 
   /// Feedback — opens mail client on device.
@@ -28,6 +28,7 @@ class AppConfig {
   static const String roomsLegacyKey = 'saved_rooms';
   static const String apiKeyPrefKey = 'gemini_api_key';
   static const String apiKeyLegacyPrefKey = 'openai_api_key';
+  static const String groqApiKeyPrefKey = 'groq_api_key';
   static const String unitsPrefKey = 'unit_system';
   static const String onboardingDoneKey = 'onboarding_done_v1';
   static const String betaBannerDismissedKey = 'beta_banner_dismissed_v1';
@@ -40,9 +41,15 @@ class AppConfig {
     'gemini-2.5-flash',
   ];
 
+  /// Free-tier multimodal vision (Groq Llama 4 Scout).
+  static const String groqChatCompletionsUrl =
+      'https://api.groq.com/openai/v1/chat/completions';
+  static const String groqVisionModel =
+      'meta-llama/llama-4-scout-17b-16e-instruct';
+
   static const double defaultPixelsPerFoot = 20.0;
-  static const double defaultRoomWidthFt = 20.0;
-  static const double defaultRoomLengthFt = 20.0;
+  static const double defaultRoomWidthFt = 10.0;
+  static const double defaultRoomLengthFt = 10.0;
 
   /// Furniture rotate snap (degrees).
   static const double rotateSnapDegrees = 45.0;

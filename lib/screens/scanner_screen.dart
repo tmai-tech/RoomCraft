@@ -8,11 +8,12 @@ import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../providers/room_provider.dart';
 import '../services/ai_scanner_service.dart';
+import '../services/free_vision_scanner.dart';
 import 'blueprint_screen.dart';
 import 'scan_review_screen.dart';
 import 'settings_screen.dart';
 
-/// Guided multi-photo capture → AI scan → review.
+/// Guided multi-photo capture → proportionate plan → optional free AI furniture.
 class ScannerScreen extends ConsumerStatefulWidget {
   const ScannerScreen({super.key});
 
@@ -25,26 +26,75 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   final List<File> _images = [];
   final Map<File, String?> _validationResults = {};
-  final Map<File, double> _wallMeasurements = {};
 
   final ImagePicker _picker = ImagePicker();
   final AIScannerService _aiService = AIScannerService();
 
+  final _widthController = TextEditingController(text: '10');
+  final _lengthController = TextEditingController(text: '10');
+
   bool _isLoading = false;
-  bool _askMeasurements = true;
-  bool _useGemini = false; // free offline by default
-  RoomLayoutType _layoutType = RoomLayoutType.living;
+  /// free offline | free_vision (Groq) | gemini
+  String _scanMode = 'offline';
+  RoomLayoutType _layoutType = RoomLayoutType.empty;
   int _guideStep = 0;
 
   static const _guideTips = [
     'Photo 1: Stand in a corner — show two walls meeting the floor.',
     'Photo 2: Opposite side of the room for full width/length.',
     'Photo 3 (optional): Include door or window openings.',
-    'Photo 4 (optional): Capture large furniture for detection.',
+    'Photo 4 (optional): Capture large furniture for free AI detection.',
   ];
 
-  Future<bool> _ensureApiKeyIfNeeded() async {
-    if (!_useGemini) return true;
+  @override
+  void dispose() {
+    _widthController.dispose();
+    _lengthController.dispose();
+    super.dispose();
+  }
+
+  Future<bool> _ensureKeyIfNeeded() async {
+    if (_scanMode == 'offline') return true;
+
+    if (_scanMode == 'free_vision') {
+      final key = await FreeVisionScanner.loadApiKey();
+      if (key != null && key.isNotEmpty) return true;
+      if (!mounted) return false;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Free AI key needed'),
+          content: const Text(
+            'Furniture detection uses Groq Llama 4 Scout (free tier).\n\n'
+            '1. Create a free key at console.groq.com\n'
+            '2. Paste it in Settings\n\n'
+            'Or continue offline — your room size stays exact, empty furniture.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Offline plan'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Settings'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return false;
+      if (go == true) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        );
+        final again = await FreeVisionScanner.loadApiKey();
+        if (again != null && again.isNotEmpty) return true;
+      }
+      setState(() => _scanMode = 'offline');
+      return true;
+    }
+
+    // Gemini
     final key = await AIScannerService.loadApiKey();
     if (key != null && key.isNotEmpty) return true;
     if (!mounted) return false;
@@ -53,7 +103,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Gemini API key needed'),
         content: const Text(
-          'Optional Gemini refine needs an API key. Use free offline scan instead, or add a key in Settings.',
+          'Optional Gemini needs an API key. Use free offline (exact size) or free AI (Groq) instead.',
         ),
         actions: [
           TextButton(
@@ -75,7 +125,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       final again = await AIScannerService.loadApiKey();
       return again != null && again.isNotEmpty;
     }
-    setState(() => _useGemini = false);
+    setState(() => _scanMode = 'offline');
     return true;
   }
 
@@ -103,10 +153,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       _aiService.validateImage(file).then((reason) {
         if (mounted) setState(() => _validationResults[file] = reason);
       });
-
-      if (_askMeasurements) {
-        await _promptForMeasurement(file);
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -116,49 +162,16 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     }
   }
 
-  Future<void> _promptForMeasurement(File file) async {
+  (double, double)? _parseRoomSize() {
     final unit = ref.read(roomProvider).unitSystem;
-    final controller = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Optional wall length'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'If you know the length of the main wall in this photo, enter it (${unit.label}). Improves scale.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Length (${unit.label})',
-                border: const OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Skip'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final val = double.tryParse(controller.text);
-              if (val != null && val > 0) {
-                final feet = LengthFormat.displayToFeet(val, unit);
-                setState(() => _wallMeasurements[file] = feet);
-              }
-              Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    final wDisp = double.tryParse(_widthController.text.trim());
+    final lDisp = double.tryParse(_lengthController.text.trim());
+    if (wDisp == null || lDisp == null || wDisp <= 0 || lDisp <= 0) {
+      return null;
+    }
+    return (
+      LengthFormat.displayToFeet(wDisp, unit),
+      LengthFormat.displayToFeet(lDisp, unit),
     );
   }
 
@@ -170,16 +183,28 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       return;
     }
 
-    final ok = await _ensureApiKeyIfNeeded();
+    final size = _parseRoomSize();
+    if (size == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter room width and length (e.g. 10 × 10)'),
+        ),
+      );
+      return;
+    }
+
+    final ok = await _ensureKeyIfNeeded();
     if (!ok) return;
 
     setState(() => _isLoading = true);
     try {
       final result = await _aiService.scanRoom(
         _images,
-        wallMeasurements: _wallMeasurements.isEmpty ? null : _wallMeasurements,
-        preferGemini: _useGemini,
+        preferGemini: _scanMode == 'gemini',
+        preferFreeVision: _scanMode == 'free_vision',
         layoutType: _layoutType,
+        roomWidthFt: size.$1,
+        roomLengthFt: size.$2,
       );
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -222,16 +247,39 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     setState(() {
       _images.removeAt(index);
       _validationResults.remove(file);
-      _wallMeasurements.remove(file);
       _guideStep = _images.isEmpty
           ? 0
           : (_images.length - 1).clamp(0, _guideTips.length - 1);
     });
   }
 
+  String get _loadingLabel {
+    switch (_scanMode) {
+      case 'free_vision':
+        return 'Free AI detecting furniture…';
+      case 'gemini':
+        return 'Gemini analyzing…';
+      default:
+        return 'Building proportionate plan…';
+    }
+  }
+
+  String get _generateLabel {
+    if (_images.isEmpty) return 'Add photos to continue';
+    switch (_scanMode) {
+      case 'free_vision':
+        return 'Generate with free AI';
+      case 'gemini':
+        return 'Generate with Gemini';
+      default:
+        return 'Generate proportionate plan';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tip = _guideTips[_guideStep.clamp(0, _guideTips.length - 1)];
+    final unit = ref.watch(roomProvider).unitSystem;
 
     return Scaffold(
       appBar: AppBar(
@@ -254,10 +302,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 20),
-                  Text(_useGemini ? 'Gemini analyzing…' : 'Building free offline plan…'),
+                  Text(_loadingLabel),
                   const SizedBox(height: 8),
                   const Text(
-                    'This usually takes a few seconds offline',
+                    'Room size stays exact — no random reshaping',
                     style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                 ],
@@ -289,50 +337,122 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     ],
                   ),
                 ),
-                SwitchListTile(
-                  title: const Text('Ask for wall lengths'),
-                  subtitle: const Text('Improves scale accuracy (recommended)'),
-                  value: _askMeasurements,
-                  onChanged: (v) => setState(() => _askMeasurements = v),
-                  dense: true,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _widthController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Width (${unit.label})',
+                            helperText: 'Exact room width',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('×', style: TextStyle(fontSize: 20)),
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _lengthController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Length (${unit.label})',
+                            helperText: 'Exact room length',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                SwitchListTile(
-                  title: const Text('Use Gemini AI (optional)'),
-                  subtitle: const Text('Off = free offline scan (no API limits)'),
-                  value: _useGemini,
-                  onChanged: (v) => setState(() => _useGemini = v),
-                  dense: true,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    '10 × 10 stays 10 × 10 — photo aspect is not used for size',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
                 ),
+                const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: InputDecorator(
                     decoration: const InputDecoration(
-                      labelText: 'Room type (furniture preset)',
+                      labelText: 'Scan mode',
                       isDense: true,
                       border: OutlineInputBorder(),
                     ),
                     child: DropdownButtonHideUnderline(
-                      child: DropdownButton<RoomLayoutType>(
+                      child: DropdownButton<String>(
                         isExpanded: true,
-                        value: _layoutType,
-                        items: [
-                          for (final t in [
-                            RoomLayoutType.bedroom,
-                            RoomLayoutType.living,
-                            RoomLayoutType.office,
-                          ])
-                            DropdownMenuItem(
-                              value: t,
-                              child: Text(AutoArrange.label(t)),
-                            ),
+                        value: _scanMode,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'offline',
+                            child: Text('Free offline (exact size, empty)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'free_vision',
+                            child: Text('Free AI furniture (Groq)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'gemini',
+                            child: Text('Gemini AI (optional key)'),
+                          ),
                         ],
                         onChanged: (v) {
-                          if (v != null) setState(() => _layoutType = v);
+                          if (v != null) setState(() => _scanMode = v);
                         },
                       ),
                     ),
                   ),
                 ),
+                if (_scanMode == 'offline') ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Furniture (offline only)',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        helperText:
+                            'Empty = no fake bed/sofa. Presets are optional.',
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<RoomLayoutType>(
+                          isExpanded: true,
+                          value: _layoutType,
+                          items: [
+                            for (final t in [
+                              RoomLayoutType.empty,
+                              RoomLayoutType.bedroom,
+                              RoomLayoutType.living,
+                              RoomLayoutType.office,
+                            ])
+                              DropdownMenuItem(
+                                value: t,
+                                child: Text(AutoArrange.label(t)),
+                              ),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setState(() => _layoutType = v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Expanded(
                   child: _images.isEmpty
@@ -346,7 +466,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                               const Text('No photos yet'),
                               const SizedBox(height: 8),
                               Text(
-                                'Take or pick 1–$_maxPhotos photos · free offline plan by default',
+                                'Set width × length, then add 1–$_maxPhotos photos',
                                 style: TextStyle(color: Colors.grey.shade600),
                               ),
                             ],
@@ -364,9 +484,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                           itemBuilder: (ctx, index) {
                             final file = _images[index];
                             final validationError = _validationResults[file];
-                            final hasMeasurement =
-                                _wallMeasurements.containsKey(file);
-                            final unit = ref.watch(roomProvider).unitSystem;
 
                             return ClipRRect(
                               borderRadius: BorderRadius.circular(8),
@@ -394,37 +511,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                                       ),
                                     ),
                                   ),
-                                  if (hasMeasurement)
-                                    Positioned(
-                                      left: 8,
-                                      bottom: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blue.withValues(alpha: 0.85),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          LengthFormat.formatFeet(
-                                            _wallMeasurements[file]!,
-                                            unit,
-                                          ),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
                                   if (validationError != null)
                                     Positioned(
                                       left: 8,
                                       right: 8,
-                                      bottom: hasMeasurement ? 32 : 8,
+                                      bottom: 8,
                                       child: Container(
                                         padding: const EdgeInsets.all(4),
                                         color: Colors.black54,
@@ -491,13 +582,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
                           onPressed: _images.isEmpty ? null : _processImages,
-                          child: Text(
-                            _images.isEmpty
-                                ? 'Add photos to continue'
-                                : (_useGemini
-                                    ? 'Generate with Gemini'
-                                    : 'Generate free plan'),
-                          ),
+                          child: Text(_generateLabel),
                         ),
                         TextButton(
                           onPressed: () {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:mime/mime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,8 +11,10 @@ import '../domain/layout/auto_arrange.dart';
 import '../domain/local_room_scanner.dart';
 import '../domain/scan_parser.dart';
 import '../models/scan_result.dart';
+import '../models/stroke_model.dart';
+import 'free_vision_scanner.dart';
 
-/// Room scanning: free offline estimator by default; optional Gemini if key works.
+/// Room scanning: free offline (exact size) → free Groq vision → optional Gemini.
 class AIScannerService {
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
     final prefs = prefsOverride ?? await SharedPreferences.getInstance();
@@ -42,77 +45,222 @@ class AIScannerService {
     }
   }
 
-  /// Free offline scan (no API). Preferred path when Gemini is limited/unavailable.
+  /// Free offline scan with exact room proportions. No invented furniture unless preset.
   Future<ScanResult> scanRoomFree(
     List<File> images, {
     Map<File, double>? wallMeasurements,
     RoomLayoutType? layoutType,
+    double? roomWidthFt,
+    double? roomLengthFt,
   }) {
     return LocalRoomScanner.scan(
       images: images,
       wallMeasurementsFt: wallMeasurements,
       preferredLayout: layoutType,
+      roomWidthFt: roomWidthFt,
+      roomLengthFt: roomLengthFt,
     );
   }
 
-  /// Scan photos. Uses free offline estimator first; optional Gemini if [preferGemini].
+  /// Resolve dimensions once for all scan backends.
+  ({double widthFt, double lengthFt, List<String> notes}) resolveSize({
+    double? roomWidthFt,
+    double? roomLengthFt,
+    Map<File, double>? wallMeasurements,
+  }) {
+    return LocalRoomScanner.resolveDimensions(
+      roomWidthFt: roomWidthFt,
+      roomLengthFt: roomLengthFt,
+      wallMeasurementsFt: wallMeasurements,
+    );
+  }
+
+  /// Scan photos.
+  ///
+  /// [preferFreeVision] uses Groq (free tier) for real furniture from photos.
+  /// [preferGemini] uses Gemini when a Google key is set.
+  /// Default offline path never invents beds / sofas and keeps exact W×L.
   Future<ScanResult> scanRoom(
     List<File> images, {
     Map<File, double>? wallMeasurements,
     bool preferGemini = false,
+    bool preferFreeVision = false,
     RoomLayoutType? layoutType,
+    double? roomWidthFt,
+    double? roomLengthFt,
   }) async {
     if (images.isEmpty) {
       throw Exception('Add at least one room photo.');
     }
 
-    // Default: free offline (no quota limits)
-    if (!preferGemini) {
-      return scanRoomFree(
-        images,
-        wallMeasurements: wallMeasurements,
-        layoutType: layoutType,
-      );
-    }
+    final size = resolveSize(
+      roomWidthFt: roomWidthFt,
+      roomLengthFt: roomLengthFt,
+      wallMeasurements: wallMeasurements,
+    );
+    final w = size.widthFt;
+    final l = size.lengthFt;
 
-    final apiKey = await loadApiKey();
-    if (apiKey == null || apiKey.isEmpty) {
-      // Fall back to free
+    // 1) Free Groq vision — real furniture, locked proportions
+    if (preferFreeVision) {
+      final groqKey = await FreeVisionScanner.loadApiKey();
+      if (groqKey != null && groqKey.isNotEmpty) {
+        try {
+          final vision = await FreeVisionScanner().scan(
+            images: images,
+            roomWidthFt: w,
+            roomLengthFt: l,
+            apiKey: groqKey,
+          );
+          return vision.copyWith(
+            roomWidthFt: w,
+            roomLengthFt: l,
+            walls: _rectangleWalls(w, l, vision.walls),
+          );
+        } catch (e) {
+          final free = await scanRoomFree(
+            images,
+            wallMeasurements: wallMeasurements,
+            layoutType: layoutType ?? RoomLayoutType.empty,
+            roomWidthFt: w,
+            roomLengthFt: l,
+          );
+          return free.copyWith(
+            warnings: [
+              ...free.warnings,
+              'Free AI unavailable ($e) — empty proportionate plan used',
+            ],
+          );
+        }
+      }
       final free = await scanRoomFree(
         images,
         wallMeasurements: wallMeasurements,
-        layoutType: layoutType,
+        layoutType: layoutType ?? RoomLayoutType.empty,
+        roomWidthFt: w,
+        roomLengthFt: l,
       );
       return free.copyWith(
         warnings: [
           ...free.warnings,
-          'No Gemini key — used free offline scan',
+          'No free AI (Groq) key — used offline proportionate plan',
         ],
       );
     }
 
-    try {
-      return await _scanWithGemini(images, apiKey, wallMeasurements);
-    } catch (e) {
-      // Quota / network / model errors → free fallback
-      final free = await scanRoomFree(
-        images,
-        wallMeasurements: wallMeasurements,
-        layoutType: layoutType,
-      );
-      return free.copyWith(
-        warnings: [
-          ...free.warnings,
-          'Gemini unavailable ($e) — used free offline scan instead',
-        ],
-      );
+    // 2) Optional Gemini
+    if (preferGemini) {
+      final apiKey = await loadApiKey();
+      if (apiKey == null || apiKey.isEmpty) {
+        final free = await scanRoomFree(
+          images,
+          wallMeasurements: wallMeasurements,
+          layoutType: layoutType ?? RoomLayoutType.empty,
+          roomWidthFt: w,
+          roomLengthFt: l,
+        );
+        return free.copyWith(
+          warnings: [
+            ...free.warnings,
+            'No Gemini key — used free offline scan',
+          ],
+        );
+      }
+      try {
+        final gemini = await _scanWithGemini(images, apiKey, w, l);
+        return gemini.copyWith(
+          roomWidthFt: w,
+          roomLengthFt: l,
+          walls: _rectangleWalls(w, l, gemini.walls),
+          warnings: [
+            'Room locked to ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft (your size)',
+            ...gemini.warnings,
+          ],
+        );
+      } catch (e) {
+        final free = await scanRoomFree(
+          images,
+          wallMeasurements: wallMeasurements,
+          layoutType: layoutType ?? RoomLayoutType.empty,
+          roomWidthFt: w,
+          roomLengthFt: l,
+        );
+        return free.copyWith(
+          warnings: [
+            ...free.warnings,
+            'Gemini unavailable ($e) — used free offline scan instead',
+          ],
+        );
+      }
     }
+
+    // 3) Default offline — exact size, no invented furniture unless preset
+    return scanRoomFree(
+      images,
+      wallMeasurements: wallMeasurements,
+      layoutType: layoutType,
+      roomWidthFt: w,
+      roomLengthFt: l,
+    );
+  }
+
+  /// Prefer a clean rectangle at exact size; keep door/window segments if present.
+  List<ScanWallSegment> _rectangleWalls(
+    double w,
+    double l,
+    List<ScanWallSegment> fromAi,
+  ) {
+    final outline = <ScanWallSegment>[
+      ScanWallSegment(
+        type: StrokeType.wall,
+        startFt: Offset.zero,
+        endFt: Offset(w, 0),
+      ),
+      ScanWallSegment(
+        type: StrokeType.wall,
+        startFt: Offset(w, 0),
+        endFt: Offset(w, l),
+      ),
+      ScanWallSegment(
+        type: StrokeType.wall,
+        startFt: Offset(w, l),
+        endFt: Offset(0, l),
+      ),
+      ScanWallSegment(
+        type: StrokeType.wall,
+        startFt: Offset(0, l),
+        endFt: Offset.zero,
+      ),
+    ];
+    final openings = fromAi
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
+    if (openings.isEmpty) {
+      final doorLen = (3.0).clamp(1.0, w * 0.3);
+      openings.addAll([
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(w * 0.35, 0),
+          endFt: Offset(w * 0.35 + doorLen, 0),
+        ),
+        ScanWallSegment(
+          type: StrokeType.window,
+          startFt: Offset(w * 0.25, l),
+          endFt: Offset(w * 0.55, l),
+        ),
+      ]);
+    }
+    return [...outline, ...openings];
   }
 
   Future<ScanResult> _scanWithGemini(
     List<File> images,
     String apiKey,
-    Map<File, double>? wallMeasurements,
+    double roomWidthFt,
+    double roomLengthFt,
   ) async {
     final imageParts = <DataPart>[];
     for (final image in images) {
@@ -121,26 +269,20 @@ class AIScannerService {
       imageParts.add(DataPart(mimeType, bytes));
     }
 
-    var contextInfo = '';
-    if (wallMeasurements != null && wallMeasurements.isNotEmpty) {
-      final measurements = wallMeasurements.entries
-          .map((e) =>
-              'Photo ${e.key.path.split(Platform.pathSeparator).last}: ${e.value}ft')
-          .join(', ');
-      contextInfo =
-          'The user provided wall measurements for scale: $measurements. Use them.';
-    }
+    final prompt = '''You are an expert architectural assistant.
+ROOM SIZE IS FIXED (do not change):
+- roomWidth = $roomWidthFt feet
+- roomLength = $roomLengthFt feet
 
-    final prompt = '''You are an expert architectural assistant. $contextInfo
 Analyze these room photos and estimate a TOP-DOWN floor plan layout.
-Include walls, doors, windows, balconies AND furniture.
+Include walls, doors, windows, balconies AND only furniture visible in photos.
 
 Return ONLY JSON (no markdown):
 {
-  "roomWidth": 15.0,
-  "roomLength": 12.0,
+  "roomWidth": $roomWidthFt,
+  "roomLength": $roomLengthFt,
   "walls": [
-    {"type": "wall", "start": {"x": 0, "y": 0}, "end": {"x": 15, "y": 0}},
+    {"type": "wall", "start": {"x": 0, "y": 0}, "end": {"x": $roomWidthFt, "y": 0}},
     {"type": "door", "start": {"x": 5, "y": 0}, "end": {"x": 8, "y": 0}}
   ],
   "furniture": [
@@ -149,7 +291,10 @@ Return ONLY JSON (no markdown):
 }
 Rules:
 - Coordinates in feet, origin at a corner of the room.
+- ALWAYS keep roomWidth=$roomWidthFt and roomLength=$roomLengthFt.
 - Furniture type MUST be one of: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
+- Only include furniture you can see. If unsure, use empty furniture array.
+- NEVER invent a bed or sofa that is not in the photo.
 - rot is rotation in degrees.
 ''';
 
@@ -173,6 +318,8 @@ Rules:
         final map = decoded is Map<String, dynamic>
             ? decoded
             : Map<String, dynamic>.from(decoded as Map);
+        map['roomWidth'] = roomWidthFt;
+        map['roomLength'] = roomLengthFt;
         return ScanParser.parse(map);
       } catch (e) {
         lastError = e.toString();

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_config.dart';
 import '../domain/units.dart';
 import '../services/ai_scanner_service.dart';
+import '../services/free_vision_scanner.dart';
 import '../services/prefs_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -14,38 +15,43 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _apiKeyController = TextEditingController();
+  final _geminiKeyController = TextEditingController();
+  final _groqKeyController = TextEditingController();
   final _prefs = PrefsService();
   UnitSystem _units = UnitSystem.feet;
 
   @override
   void initState() {
     super.initState();
-    _loadApiKey();
+    _loadKeys();
   }
 
-  Future<void> _loadApiKey() async {
-    final key = await AIScannerService.loadApiKey();
+  Future<void> _loadKeys() async {
+    final gemini = await AIScannerService.loadApiKey();
+    final groq = await FreeVisionScanner.loadApiKey();
     final units = await _prefs.loadUnitSystem();
     if (!mounted) return;
     setState(() {
-      _apiKeyController.text = key ?? '';
+      _geminiKeyController.text = gemini ?? '';
+      _groqKeyController.text = groq ?? '';
       _units = units;
     });
   }
 
-  Future<void> _saveApiKey() async {
-    await AIScannerService.saveApiKey(_apiKeyController.text);
+  Future<void> _saveKeys() async {
+    await AIScannerService.saveApiKey(_geminiKeyController.text);
+    await FreeVisionScanner.saveApiKey(_groqKeyController.text);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('API Key saved successfully!')),
+        const SnackBar(content: Text('Settings saved')),
       );
     }
   }
 
   @override
   void dispose() {
-    _apiKeyController.dispose();
+    _geminiKeyController.dispose();
+    _groqKeyController.dispose();
     super.dispose();
   }
 
@@ -72,22 +78,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
           ],
           const Text(
-            'Gemini API Key',
+            'Free AI (Groq) — recommended',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Optional. Room scan works offline for free without a key. '
-            'Gemini (if enabled in Scan) needs a key from aistudio.google.com — stored only on this device.',
+            'Optional free vision for real furniture from photos (Llama 4 Scout). '
+            'Get a free key at console.groq.com. Room width × length always stay exact. '
+            'Stored only on this device.',
             style: TextStyle(color: Colors.grey),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           TextField(
-            controller: _apiKeyController,
+            controller: _groqKeyController,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              labelText: 'Enter Gemini API Key',
-              helperText: 'Paste your API key from Google AI Studio',
+              labelText: 'Groq API key (free)',
+              helperText: 'console.groq.com → API Keys',
+            ),
+            obscureText: true,
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Gemini API key (optional)',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Optional. Offline scan works without any key. '
+            'Gemini needs a key from aistudio.google.com.',
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _geminiKeyController,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Gemini API key',
+              helperText: 'Paste from Google AI Studio',
             ),
             obscureText: true,
           ),
@@ -95,7 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _saveApiKey,
+              onPressed: _saveKeys,
               child: const Text('Save Settings'),
             ),
           ),
@@ -150,42 +178,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.open_in_new, size: 16),
             onTap: () => _openUrl(AppConfig.knownIssuesUrl),
           ),
-          const Divider(height: 32),
-          const Text(
-            'Privacy & Legal',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.privacy_tip, color: Colors.blue),
-            title: const Text('Read Privacy Policy'),
-            subtitle: const Text('Camera & AI photo processing'),
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
             trailing: const Icon(Icons.open_in_new, size: 16),
             onTap: () => _openUrl(AppConfig.privacyPolicyUrl),
           ),
-          const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.restart_alt),
-            title: const Text('Show onboarding again'),
+            title: const Text('Replay onboarding'),
             onTap: () async {
               await _prefs.setOnboardingDone(false);
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Onboarding will show on next app launch'),
+                  content: Text('Onboarding will show on next launch'),
                 ),
               );
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Text(
-            '${AppConfig.appName} ${AppConfig.versionLabel}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
-          ),
-          Text(
-            AppConfig.packageId,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+            AppConfig.versionLabel,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
           ),
         ],
       ),
@@ -198,27 +216,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
       path: AppConfig.feedbackEmail,
       queryParameters: {
         'subject': AppConfig.feedbackSubject,
-        'body':
-            'Version: ${AppConfig.versionLabel}\nDevice:\n\nWhat happened?\n\nSteps to reproduce:\n',
+        'body': 'App version: ${AppConfig.versionLabel}\n\n',
       },
     );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Email ${AppConfig.feedbackEmail}')),
-      );
-    }
+    await _openUri(uri);
   }
 
   Future<void> _openUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open link')),
-      );
+    await _openUri(Uri.parse(url));
+  }
+
+  Future<void> _openUri(Uri uri) async {
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open $uri')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open link: $e')),
+        );
+      }
     }
   }
 }

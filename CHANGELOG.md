@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+3 (2026-07-11)
+
+### Fixed — scan proportions & fake furniture
+- **Exact room size**: enter Width × Length (e.g. 10 × 10 stays 10 × 10). Photo aspect no longer warps the plan.
+- **No invented beds/sofas**: offline default is empty furniture. Presets only if you pick Bedroom/Living/Office.
+- **Free AI (Groq Llama 4 Scout)**: optional key detects only furniture visible in photos; room size stays locked to your measurements.
+
+### Added
+- Settings: free Groq API key field (console.groq.com)
+- Scan mode picker: Free offline · Free AI (Groq) · Gemini
+
 ## 1.0.0-beta.1 (2026-07-11)
 
 Closed beta — Android via Firebase App Distribution.
