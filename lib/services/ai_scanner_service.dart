@@ -1,23 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:mime/mime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
-import '../models/stroke_model.dart';
+import '../domain/scan_parser.dart';
+import '../models/scan_result.dart';
 
 class AIScannerService {
-  /// Resolve Gemini API key (new key, then legacy key).
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
     final prefs = prefsOverride ?? await SharedPreferences.getInstance();
     final modern = prefs.getString(AppConfig.apiKeyPrefKey)?.trim();
     if (modern != null && modern.isNotEmpty) return modern;
     final legacy = prefs.getString(AppConfig.apiKeyLegacyPrefKey)?.trim();
     if (legacy != null && legacy.isNotEmpty) {
-      // Migrate to modern key
       await prefs.setString(AppConfig.apiKeyPrefKey, legacy);
       return legacy;
     }
@@ -59,10 +57,11 @@ class AIScannerService {
         continue;
       }
     }
-    return null; // Silent skip validation on error
+    return null;
   }
 
-  Future<Map<String, dynamic>?> scanRoom(
+  /// Scan photos and return a validated [ScanResult].
+  Future<ScanResult> scanRoom(
     List<File> images, {
     Map<File, double>? wallMeasurements,
   }) async {
@@ -71,8 +70,11 @@ class AIScannerService {
     if (apiKey == null || apiKey.isEmpty) {
       throw Exception('Gemini API Key not found. Please set it in Settings.');
     }
+    if (images.isEmpty) {
+      throw Exception('Add at least one room photo.');
+    }
 
-    final List<DataPart> imageParts = [];
+    final imageParts = <DataPart>[];
     for (final image in images) {
       final bytes = await image.readAsBytes();
       final mimeType = lookupMimeType(image.path) ?? 'image/jpeg';
@@ -86,27 +88,30 @@ class AIScannerService {
               'Photo ${e.key.path.split(Platform.pathSeparator).last}: ${e.value}ft')
           .join(', ');
       contextInfo =
-          'The user has provided the following wall measurements for scale: $measurements.';
+          'The user provided wall measurements for scale: $measurements. Use them.';
     }
 
     final prompt = '''You are an expert architectural assistant. $contextInfo
-Analyze these room photos and estimate its layout.
-Include walls, doors, windows, balconies AND furniture (bed, sofa, wardrobe, table, chair, etc.).
+Analyze these room photos and estimate a TOP-DOWN floor plan layout.
+Include walls, doors, windows, balconies AND furniture.
 
-Return JSON:
+Return ONLY JSON (no markdown):
 {
   "roomWidth": 15.0,
   "roomLength": 12.0,
   "walls": [
     {"type": "wall", "start": {"x": 0, "y": 0}, "end": {"x": 15, "y": 0}},
-    {"type": "door", "start": {"x": 5, "y": 0}, "end": {"x": 8, "y": 0}},
-    {"type": "balcony", "start": {"x": 10, "y": 12}, "end": {"x": 15, "y": 12}}
+    {"type": "door", "start": {"x": 5, "y": 0}, "end": {"x": 8, "y": 0}}
   ],
   "furniture": [
     {"type": "BED", "pos": {"x": 2, "y": 2}, "dim": {"w": 5, "l": 6.5}, "rot": 0}
   ]
 }
-Coordinates are in feet. Furniture type MUST be exactly: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
+Rules:
+- Coordinates in feet, origin at a corner of the room.
+- Walls should form a reasonable closed outline when possible.
+- Furniture type MUST be one of: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
+- rot is rotation in degrees.
 ''';
 
     String? lastError;
@@ -126,9 +131,16 @@ Coordinates are in feet. Furniture type MUST be exactly: BED, WARDROBE, SOFA, TA
         }
 
         final decoded = jsonDecode(response.text!);
-        if (decoded is Map<String, dynamic>) return decoded;
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-        throw Exception('AI returned unexpected JSON type');
+        Map<String, dynamic> map;
+        if (decoded is Map<String, dynamic>) {
+          map = decoded;
+        } else if (decoded is Map) {
+          map = Map<String, dynamic>.from(decoded);
+        } else {
+          throw Exception('AI returned unexpected JSON type');
+        }
+
+        return ScanParser.parse(map);
       } catch (e) {
         lastError = e.toString();
 
@@ -136,55 +148,23 @@ Coordinates are in feet. Furniture type MUST be exactly: BED, WARDROBE, SOFA, TA
             lastError.contains('quota') ||
             lastError.contains('safety')) {
           throw Exception(
-              'Gemini Limit Reached: Please wait a minute and try again. ($lastError)');
+              'Gemini Limit Reached: Please wait a minute and try again.');
         }
 
-        // Only continue to next model if it's a "Not Found" error
+        if (e is FormatException) {
+          throw Exception('Could not understand AI layout: ${e.message}');
+        }
+
         if (!lastError.contains('not found') && !lastError.contains('404')) {
+          // Non-model-not-found: still try next model for empty/parse issues
+          if (lastError.contains('empty') || lastError.contains('JSON')) {
+            continue;
+          }
           throw Exception('Gemini Error: $lastError');
         }
       }
     }
     throw Exception(
-        'All Gemini models are unavailable or not found. Please check your API key and region. Last error: $lastError');
-  }
-
-  List<StrokeModel> convertToStrokes(Map<String, dynamic> data, double pxf) {
-    final List<StrokeModel> strokes = [];
-    final walls = data['walls'] as List?;
-    if (walls == null) return strokes;
-
-    for (final w in walls) {
-      if (w is! Map) continue;
-      final map = Map<String, dynamic>.from(w);
-      StrokeType type = StrokeType.wall;
-      if (map['type'] == 'door') type = StrokeType.door;
-      if (map['type'] == 'window') type = StrokeType.window;
-      if (map['type'] == 'balcony') type = StrokeType.balcony;
-
-      final start = map['start'];
-      final end = map['end'];
-      if (start is! Map || end is! Map) continue;
-
-      strokes.add(StrokeModel(
-        id: UniqueKey().toString(),
-        type: type,
-        points: [
-          Offset(
-            (start['x'] as num).toDouble() * pxf,
-            (start['y'] as num).toDouble() * pxf,
-          ),
-          Offset(
-            (end['x'] as num).toDouble() * pxf,
-            (end['y'] as num).toDouble() * pxf,
-          ),
-        ],
-      ));
-    }
-    return strokes;
-  }
-
-  List<dynamic> parseFurniture(Map<String, dynamic> data) {
-    return data['furniture'] as List? ?? [];
+        'All Gemini models unavailable. Check API key/region. Last: $lastError');
   }
 }
