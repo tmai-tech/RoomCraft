@@ -124,10 +124,7 @@ jobs:
 
           GROUPS="${INPUT_GROUPS:-}"
           if [ -z "${GROUPS}" ]; then
-            GROUPS="${FIREBASE_TESTER_GROUPS:-testers}"
-          fi
-          if [ -z "${GROUPS}" ]; then
-            GROUPS="testers"
+            GROUPS="${FIREBASE_TESTER_GROUPS:-}"
           fi
 
           if [ -n "${INPUT_NOTES:-}" ]; then
@@ -144,11 +141,18 @@ jobs:
 
           npm install -g firebase-tools
 
-          echo "Uploading ${APK_PATH} to Firebase App Distribution (groups: ${GROUPS})"
+          EXTRA=()
+          if [ -n "${GROUPS}" ]; then
+            EXTRA+=(--groups "${GROUPS}")
+            echo "Uploading ${APK_PATH} to Firebase App Distribution (groups: ${GROUPS})"
+          else
+            echo "Uploading ${APK_PATH} to Firebase App Distribution (no groups — invite testers in console)"
+          fi
+
           firebase appdistribution:distribute "${APK_PATH}" \
             --app "${FIREBASE_ANDROID_APP_ID}" \
-            --groups "${GROUPS}" \
-            --release-notes "${NOTES}"
+            --release-notes "${NOTES}" \
+            "${EXTRA[@]}"
 
           rm -f "${RUNNER_TEMP}/firebase-sa.json"
           echo "Firebase App Distribution upload complete."

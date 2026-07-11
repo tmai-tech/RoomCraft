@@ -53,3 +53,8 @@ ios/Runner/GoogleService-Info.plist
 **/service-account*.json
 **/firebase-service-account.json
 .firebase/
+
+# Firebase service account keys (never commit)
+*-firebase-adminsdk-*.json
+*firebase-adminsdk*.json
+.secrets/
