@@ -5,12 +5,12 @@ enum FurnitureType { bed, wardrobe, sofa, table, chair, tvUnit, bookshelf, night
 class FurnitureItem {
   final String id;
   final FurnitureType type;
-  Offset position;
-  double rotationAngle; // in radians
+  final Offset position;
+  final double rotationAngle; // radians
   final double widthInFeet;
   final double lengthInFeet;
 
-  FurnitureItem({
+  const FurnitureItem({
     required this.id,
     required this.type,
     required this.position,
@@ -31,13 +31,41 @@ class FurnitureItem {
   }
 
   factory FurnitureItem.fromMap(Map<String, dynamic> map) {
+    final typeName = map['type'] as String? ?? 'table';
+    final type = FurnitureType.values.firstWhere(
+      (e) => e.name == typeName || e.name.toUpperCase() == typeName.toUpperCase(),
+      orElse: () => FurnitureType.table,
+    );
+    final pos = map['position'];
+    double dx = 0;
+    double dy = 0;
+    if (pos is Map) {
+      dx = (pos['dx'] as num?)?.toDouble() ?? 0;
+      dy = (pos['dy'] as num?)?.toDouble() ?? 0;
+    }
     return FurnitureItem(
-      id: map['id'],
-      type: FurnitureType.values.firstWhere((e) => e.name == map['type']),
-      position: Offset(map['position']['dx'], map['position']['dy']),
-      rotationAngle: map['rotationAngle'] ?? 0.0,
-      widthInFeet: map['widthInFeet'],
-      lengthInFeet: map['lengthInFeet'],
+      id: map['id'] as String? ?? UniqueKey().toString(),
+      type: type,
+      position: Offset(dx, dy),
+      rotationAngle: (map['rotationAngle'] as num?)?.toDouble() ?? 0.0,
+      widthInFeet: (map['widthInFeet'] as num?)?.toDouble() ?? 3.0,
+      lengthInFeet: (map['lengthInFeet'] as num?)?.toDouble() ?? 3.0,
+    );
+  }
+
+  FurnitureItem copyWith({
+    Offset? position,
+    double? rotationAngle,
+    double? widthInFeet,
+    double? lengthInFeet,
+  }) {
+    return FurnitureItem(
+      id: id,
+      type: type,
+      position: position ?? this.position,
+      rotationAngle: rotationAngle ?? this.rotationAngle,
+      widthInFeet: widthInFeet ?? this.widthInFeet,
+      lengthInFeet: lengthInFeet ?? this.lengthInFeet,
     );
   }
 }

@@ -1,17 +1,30 @@
-# room_craft
+# RoomCraft
 
-A new Flutter project.
+Interior layout MVP: **upload / scan a room → top-down blueprint → arrange furniture**.
 
-## Getting Started
+## Stack
 
-This project is a starting point for a Flutter application.
+- Flutter (Android-first)
+- Riverpod state
+- Gemini AI (optional room scan)
+- Local project storage (versioned JSON)
+- Firebase App Distribution for tester builds
 
-A few resources to get you started if this is your first Flutter project:
+## Getting started
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+flutter pub get
+flutter test
+flutter run
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Set a Gemini API key in **Settings** to use AI scan.
+
+## Docs
+
+- [MVP Implementation Plan](docs/MVP-Implementation-Plan.md)
+- [Firebase App Distribution](docs/FIREBASE_APP_DISTRIBUTION.md)
+
+## Branches
+
+- `dev` — active development + CI APKs

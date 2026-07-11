@@ -1,13 +1,16 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../config/app_config.dart';
+import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../models/stroke_model.dart';
-import '../models/furniture_item.dart';
 
-enum ToolMode { select, wall, door, window, erase, balcony }
+/// Editor tools. [pan] pans/zooms the canvas; [select] moves furniture; others draw.
+enum ToolMode { pan, select, wall, door, window, erase, balcony }
 
 class RoomState {
   final RoomModel room;
@@ -15,14 +18,28 @@ class RoomState {
   final ToolMode currentTool;
   final double pixelsPerFoot;
   final String? selectedFurnitureId;
+  /// True while user is dragging selected furniture (disables pan).
+  final bool isDraggingFurniture;
 
   RoomState({
     required this.room,
     this.currentStroke,
     this.currentTool = ToolMode.select,
-    this.pixelsPerFoot = 20.0,
+    this.pixelsPerFoot = AppConfig.defaultPixelsPerFoot,
     this.selectedFurnitureId,
+    this.isDraggingFurniture = false,
   });
+
+  bool get isDrawTool =>
+      currentTool == ToolMode.wall ||
+      currentTool == ToolMode.door ||
+      currentTool == ToolMode.window ||
+      currentTool == ToolMode.balcony;
+
+  /// Whether InteractiveViewer should pan with one finger.
+  bool get canvasPanEnabled =>
+      currentTool == ToolMode.pan ||
+      (currentTool == ToolMode.select && !isDraggingFurniture && selectedFurnitureId == null);
 
   RoomState copyWith({
     RoomModel? room,
@@ -30,6 +47,7 @@ class RoomState {
     ToolMode? currentTool,
     double? pixelsPerFoot,
     String? selectedFurnitureId,
+    bool? isDraggingFurniture,
     bool clearStroke = false,
     bool clearSelected = false,
   }) {
@@ -38,7 +56,9 @@ class RoomState {
       currentStroke: clearStroke ? null : (currentStroke ?? this.currentStroke),
       currentTool: currentTool ?? this.currentTool,
       pixelsPerFoot: pixelsPerFoot ?? this.pixelsPerFoot,
-      selectedFurnitureId: clearSelected ? null : (selectedFurnitureId ?? this.selectedFurnitureId),
+      selectedFurnitureId:
+          clearSelected ? null : (selectedFurnitureId ?? this.selectedFurnitureId),
+      isDraggingFurniture: isDraggingFurniture ?? this.isDraggingFurniture,
     );
   }
 }
@@ -52,18 +72,23 @@ class RoomNotifier extends Notifier<RoomState> {
       room: RoomModel(
         id: _uuid.v4(),
         name: 'New Room',
-        lengthInFeet: 20.0,
-        widthInFeet: 20.0,
+        lengthInFeet: AppConfig.defaultRoomLengthFt,
+        widthInFeet: AppConfig.defaultRoomWidthFt,
       ),
     );
   }
 
   void setTool(ToolMode tool) {
-    state = state.copyWith(currentTool: tool, clearSelected: true);
+    state = state.copyWith(
+      currentTool: tool,
+      clearSelected: true,
+      isDraggingFurniture: false,
+      clearStroke: true,
+    );
   }
 
   void startStroke(Offset position) {
-    if (state.currentTool == ToolMode.select || state.currentTool == ToolMode.erase) return;
+    if (!state.isDrawTool) return;
 
     StrokeType type = StrokeType.wall;
     if (state.currentTool == ToolMode.door) type = StrokeType.door;
@@ -84,12 +109,12 @@ class RoomNotifier extends Notifier<RoomState> {
   void updateStroke(Offset position) {
     if (state.currentStroke == null) return;
     final snapped = _snapToGrid(position);
-    
+
     final updatedPoints = List<Offset>.from(state.currentStroke!.points);
     if (updatedPoints.length == 1) {
-       updatedPoints.add(snapped);
+      updatedPoints.add(snapped);
     } else {
-       updatedPoints[updatedPoints.length - 1] = snapped;
+      updatedPoints[updatedPoints.length - 1] = snapped;
     }
 
     state = state.copyWith(
@@ -103,9 +128,15 @@ class RoomNotifier extends Notifier<RoomState> {
 
   void endStroke() {
     if (state.currentStroke == null) return;
+    if (state.currentStroke!.points.length < 2) {
+      state = state.copyWith(clearStroke: true);
+      return;
+    }
 
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    updatedRoom.strokes.add(state.currentStroke!);
+    final updatedRoom = state.room.copyWith(
+      strokes: [...state.room.strokes, state.currentStroke!],
+      updatedAt: DateTime.now(),
+    );
 
     state = state.copyWith(
       room: updatedRoom,
@@ -115,27 +146,34 @@ class RoomNotifier extends Notifier<RoomState> {
 
   void undo() {
     if (state.room.strokes.isEmpty && state.room.furniture.isEmpty) return;
-    
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    
-    if (updatedRoom.strokes.isNotEmpty) {
-      updatedRoom.strokes.removeLast();
-    } else if (updatedRoom.furniture.isNotEmpty) {
-      updatedRoom.furniture.removeLast();
-    }
 
-    state = state.copyWith(room: updatedRoom);
+    if (state.room.strokes.isNotEmpty) {
+      final strokes = List<StrokeModel>.from(state.room.strokes)..removeLast();
+      state = state.copyWith(
+        room: state.room.copyWith(strokes: strokes, updatedAt: DateTime.now()),
+      );
+    } else if (state.room.furniture.isNotEmpty) {
+      final furniture = List<FurnitureItem>.from(state.room.furniture)..removeLast();
+      state = state.copyWith(
+        room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+        clearSelected: true,
+      );
+    }
   }
 
   void clearRoom() {
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    updatedRoom.strokes.clear();
-    updatedRoom.furniture.clear();
-    state = state.copyWith(room: updatedRoom, clearSelected: true);
+    state = state.copyWith(
+      room: state.room.copyWith(
+        strokes: [],
+        furniture: [],
+        updatedAt: DateTime.now(),
+      ),
+      clearSelected: true,
+      isDraggingFurniture: false,
+    );
   }
 
   void addFurniture(FurnitureType type, Offset position, double width, double length) {
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
     final newItem = FurnitureItem(
       id: _uuid.v4(),
       type: type,
@@ -143,8 +181,14 @@ class RoomNotifier extends Notifier<RoomState> {
       widthInFeet: width,
       lengthInFeet: length,
     );
-    updatedRoom.furniture.add(newItem);
-    state = state.copyWith(room: updatedRoom, selectedFurnitureId: newItem.id, currentTool: ToolMode.select);
+    state = state.copyWith(
+      room: state.room.copyWith(
+        furniture: [...state.room.furniture, newItem],
+        updatedAt: DateTime.now(),
+      ),
+      selectedFurnitureId: newItem.id,
+      currentTool: ToolMode.select,
+    );
   }
 
   void selectFurnitureAt(Offset position) {
@@ -154,64 +198,98 @@ class RoomNotifier extends Notifier<RoomState> {
       final item = state.room.furniture[i];
       final itemWidth = item.widthInFeet * state.pixelsPerFoot;
       final itemLength = item.lengthInFeet * state.pixelsPerFoot;
-      
+
       final rect = Rect.fromCenter(
         center: item.position,
         width: itemWidth,
         height: itemLength,
       );
 
-      // Simple click bounds handling. Doesn't rotate the rect for the hit test yet.
       if (rect.contains(position)) {
-        state = state.copyWith(selectedFurnitureId: item.id);
+        state = state.copyWith(
+          selectedFurnitureId: item.id,
+          isDraggingFurniture: true,
+        );
         return;
       }
     }
-    state = state.copyWith(clearSelected: true);
+    state = state.copyWith(clearSelected: true, isDraggingFurniture: false);
   }
 
   void updateFurniturePosition(Offset delta) {
     if (state.selectedFurnitureId == null) return;
-    
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    final itemIndex = updatedRoom.furniture.indexWhere((i) => i.id == state.selectedFurnitureId);
-    
-    if (itemIndex != -1) {
-      updatedRoom.furniture[itemIndex].position += delta;
-      state = state.copyWith(room: updatedRoom);
-    }
+
+    final furniture = state.room.furniture.map((item) {
+      if (item.id != state.selectedFurnitureId) return item;
+      return FurnitureItem(
+        id: item.id,
+        type: item.type,
+        position: item.position + delta,
+        rotationAngle: item.rotationAngle,
+        widthInFeet: item.widthInFeet,
+        lengthInFeet: item.lengthInFeet,
+      );
+    }).toList();
+
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+      isDraggingFurniture: true,
+    );
+  }
+
+  void endFurnitureDrag() {
+    state = state.copyWith(isDraggingFurniture: false);
   }
 
   void rotateSelectedFurniture() {
     if (state.selectedFurnitureId == null) return;
 
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    final itemIndex = updatedRoom.furniture.indexWhere((i) => i.id == state.selectedFurnitureId);
-    
-    if (itemIndex != -1) {
-        updatedRoom.furniture[itemIndex].rotationAngle += pi / 2;
-        state = state.copyWith(room: updatedRoom);
-    }
-  }
-  
-  void deleteSelectedFurniture() {
-    if (state.selectedFurnitureId == null) return;
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    updatedRoom.furniture.removeWhere((i) => i.id == state.selectedFurnitureId);
-    state = state.copyWith(room: updatedRoom, clearSelected: true);
+    final furniture = state.room.furniture.map((item) {
+      if (item.id != state.selectedFurnitureId) return item;
+      return FurnitureItem(
+        id: item.id,
+        type: item.type,
+        position: item.position,
+        rotationAngle: item.rotationAngle + pi / 2,
+        widthInFeet: item.widthInFeet,
+        lengthInFeet: item.lengthInFeet,
+      );
+    }).toList();
+
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+    );
   }
 
-  void initFromScan(double width, double length, List<StrokeModel> strokes, List<FurnitureItem> furniture) {
+  void deleteSelectedFurniture() {
+    if (state.selectedFurnitureId == null) return;
+    final furniture = state.room.furniture
+        .where((i) => i.id != state.selectedFurnitureId)
+        .toList();
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+      clearSelected: true,
+      isDraggingFurniture: false,
+    );
+  }
+
+  void initFromScan(
+    double width,
+    double length,
+    List<StrokeModel> strokes,
+    List<FurnitureItem> furniture,
+  ) {
     state = state.copyWith(
       room: RoomModel(
         id: _uuid.v4(),
-        name: 'AI Scan ${DateTime.now().hour}:${DateTime.now().minute}',
+        name: 'AI Scan ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
         widthInFeet: width,
         lengthInFeet: length,
         strokes: strokes,
         furniture: furniture,
       ),
       clearSelected: true,
+      isDraggingFurniture: false,
     );
   }
 
@@ -219,21 +297,25 @@ class RoomNotifier extends Notifier<RoomState> {
     state = state.copyWith(
       room: room,
       clearSelected: true,
-      pixelsPerFoot: 20.0, // Reset to default zoom
+      pixelsPerFoot: AppConfig.defaultPixelsPerFoot,
+      isDraggingFurniture: false,
     );
   }
 
   void updateName(String name) {
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    updatedRoom.name = name;
-    state = state.copyWith(room: updatedRoom);
+    state = state.copyWith(
+      room: state.room.copyWith(name: name, updatedAt: DateTime.now()),
+    );
   }
 
   void updateRoomSize(double width, double length) {
-    final updatedRoom = RoomModel.fromMap(state.room.toMap());
-    updatedRoom.widthInFeet = width;
-    updatedRoom.lengthInFeet = length;
-    state = state.copyWith(room: updatedRoom);
+    state = state.copyWith(
+      room: state.room.copyWith(
+        widthInFeet: width,
+        lengthInFeet: length,
+        updatedAt: DateTime.now(),
+      ),
+    );
   }
 
   Offset _snapToGrid(Offset pos) {
@@ -245,6 +327,4 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 }
 
-final roomProvider = NotifierProvider<RoomNotifier, RoomState>(() {
-  return RoomNotifier();
-});
+final roomProvider = NotifierProvider<RoomNotifier, RoomState>(RoomNotifier.new);

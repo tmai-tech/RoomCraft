@@ -1,69 +1,96 @@
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:mime/mime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/material.dart';
+
+import '../config/app_config.dart';
 import '../models/stroke_model.dart';
 
 class AIScannerService {
-  static const String _apiKeyPrefKey = 'openai_api_key'; // Persistence key
+  /// Resolve Gemini API key (new key, then legacy key).
+  static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
+    final prefs = prefsOverride ?? await SharedPreferences.getInstance();
+    final modern = prefs.getString(AppConfig.apiKeyPrefKey)?.trim();
+    if (modern != null && modern.isNotEmpty) return modern;
+    final legacy = prefs.getString(AppConfig.apiKeyLegacyPrefKey)?.trim();
+    if (legacy != null && legacy.isNotEmpty) {
+      // Migrate to modern key
+      await prefs.setString(AppConfig.apiKeyPrefKey, legacy);
+      return legacy;
+    }
+    return null;
+  }
 
-  static const List<String> _modelCandidates = [
-    'gemini-3.1-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash-latest',
-  ];
+  static Future<void> saveApiKey(String key, [SharedPreferences? prefsOverride]) async {
+    final prefs = prefsOverride ?? await SharedPreferences.getInstance();
+    await prefs.setString(AppConfig.apiKeyPrefKey, key.trim());
+  }
 
   Future<String?> validateImage(File image) async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString(_apiKeyPrefKey)?.trim();
+    final apiKey = await loadApiKey();
     if (apiKey == null || apiKey.isEmpty) return null;
 
-    final model = GenerativeModel(model: 'gemini-3.1-flash', apiKey: apiKey);
     final bytes = await image.readAsBytes();
     final mimeType = lookupMimeType(image.path) ?? 'image/jpeg';
 
-    final prompt = "Analyze this room photo. Is it clear enough for architectural blueprinting? "
-        "Can you see the floor-to-wall junction? Return strictly JSON: "
-        "{\"valid\": bool, \"reason\": \"Short explanation\"}";
+    const prompt =
+        'Analyze this room photo. Is it clear enough for architectural blueprinting? '
+        'Can you see the floor-to-wall junction? Return strictly JSON: '
+        '{"valid": bool, "reason": "Short explanation"}';
 
-    try {
-      final response = await model.generateContent([
-        Content.multi([TextPart(prompt), DataPart(mimeType, bytes)])
-      ]);
-      final result = jsonDecode(response.text!);
-      return result['valid'] == true ? null : result['reason'] as String;
-    } catch (_) {
-      return null; // Silent skip validation on error
+    for (final modelName in AppConfig.geminiModelCandidates) {
+      try {
+        final model = GenerativeModel(
+          model: modelName,
+          apiKey: apiKey,
+          generationConfig: GenerationConfig(responseMimeType: 'application/json'),
+        );
+        final response = await model.generateContent([
+          Content.multi([TextPart(prompt), DataPart(mimeType, bytes)]),
+        ]);
+        final text = response.text;
+        if (text == null || text.isEmpty) continue;
+        final result = jsonDecode(text) as Map<String, dynamic>;
+        return result['valid'] == true ? null : result['reason'] as String?;
+      } catch (_) {
+        continue;
+      }
     }
+    return null; // Silent skip validation on error
   }
 
-  Future<Map<String, dynamic>?> scanRoom(List<File> images, {Map<File, double>? wallMeasurements}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString(_apiKeyPrefKey)?.trim();
+  Future<Map<String, dynamic>?> scanRoom(
+    List<File> images, {
+    Map<File, double>? wallMeasurements,
+  }) async {
+    final apiKey = await loadApiKey();
 
     if (apiKey == null || apiKey.isEmpty) {
       throw Exception('Gemini API Key not found. Please set it in Settings.');
     }
 
     final List<DataPart> imageParts = [];
-    for (var image in images) {
+    for (final image in images) {
       final bytes = await image.readAsBytes();
       final mimeType = lookupMimeType(image.path) ?? 'image/jpeg';
       imageParts.add(DataPart(mimeType, bytes));
     }
 
-    String contextInfo = "";
+    var contextInfo = '';
     if (wallMeasurements != null && wallMeasurements.isNotEmpty) {
       final measurements = wallMeasurements.entries
-          .map((e) => "Photo ${e.key.path.split(Platform.pathSeparator).last}: ${e.value}ft")
-          .join(", ");
-      contextInfo = "The user has provided the following wall measurements for scale: $measurements.";
+          .map((e) =>
+              'Photo ${e.key.path.split(Platform.pathSeparator).last}: ${e.value}ft')
+          .join(', ');
+      contextInfo =
+          'The user has provided the following wall measurements for scale: $measurements.';
     }
 
     final prompt = '''You are an expert architectural assistant. $contextInfo
-Analyze these room photos and estimate its layout. 
+Analyze these room photos and estimate its layout.
 Include walls, doors, windows, balconies AND furniture (bed, sofa, wardrobe, table, chair, etc.).
 
 Return JSON:
@@ -83,7 +110,7 @@ Coordinates are in feet. Furniture type MUST be exactly: BED, WARDROBE, SOFA, TA
 ''';
 
     String? lastError;
-    for (var modelName in _modelCandidates) {
+    for (final modelName in AppConfig.geminiModelCandidates) {
       try {
         final model = GenerativeModel(
           model: modelName,
@@ -91,30 +118,35 @@ Coordinates are in feet. Furniture type MUST be exactly: BED, WARDROBE, SOFA, TA
           generationConfig: GenerationConfig(responseMimeType: 'application/json'),
         );
         final response = await model.generateContent([
-          Content.multi([TextPart(prompt), ...imageParts])
+          Content.multi([TextPart(prompt), ...imageParts]),
         ]);
-        
+
         if (response.text == null || response.text!.isEmpty) {
           throw Exception('AI returned empty response');
         }
-        
-        return jsonDecode(response.text!);
+
+        final decoded = jsonDecode(response.text!);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+        throw Exception('AI returned unexpected JSON type');
       } catch (e) {
         lastError = e.toString();
-        
-        // If the error is a Quota/Rate limit (429) or Blocked (Safety), 
-        // don't bother trying other models as they share the same quota.
-        if (lastError.contains('429') || lastError.contains('quota') || lastError.contains('safety')) {
-          throw Exception('Gemini Limit Reached: Please wait a minute and try again. ($lastError)');
+
+        if (lastError.contains('429') ||
+            lastError.contains('quota') ||
+            lastError.contains('safety')) {
+          throw Exception(
+              'Gemini Limit Reached: Please wait a minute and try again. ($lastError)');
         }
-        
+
         // Only continue to next model if it's a "Not Found" error
         if (!lastError.contains('not found') && !lastError.contains('404')) {
           throw Exception('Gemini Error: $lastError');
         }
       }
     }
-    throw Exception('All Gemini models are unavailable or not found. Please check your API key and region. Last error: $lastError');
+    throw Exception(
+        'All Gemini models are unavailable or not found. Please check your API key and region. Last error: $lastError');
   }
 
   List<StrokeModel> convertToStrokes(Map<String, dynamic> data, double pxf) {
@@ -122,17 +154,30 @@ Coordinates are in feet. Furniture type MUST be exactly: BED, WARDROBE, SOFA, TA
     final walls = data['walls'] as List?;
     if (walls == null) return strokes;
 
-    for (var w in walls) {
+    for (final w in walls) {
+      if (w is! Map) continue;
+      final map = Map<String, dynamic>.from(w);
       StrokeType type = StrokeType.wall;
-      if (w['type'] == 'door') type = StrokeType.door;
-      if (w['type'] == 'window') type = StrokeType.window;
+      if (map['type'] == 'door') type = StrokeType.door;
+      if (map['type'] == 'window') type = StrokeType.window;
+      if (map['type'] == 'balcony') type = StrokeType.balcony;
+
+      final start = map['start'];
+      final end = map['end'];
+      if (start is! Map || end is! Map) continue;
 
       strokes.add(StrokeModel(
         id: UniqueKey().toString(),
         type: type,
         points: [
-          Offset(w['start']['x'].toDouble() * pxf, w['start']['y'].toDouble() * pxf),
-          Offset(w['end']['x'].toDouble() * pxf, w['end']['y'].toDouble() * pxf),
+          Offset(
+            (start['x'] as num).toDouble() * pxf,
+            (start['y'] as num).toDouble() * pxf,
+          ),
+          Offset(
+            (end['x'] as num).toDouble() * pxf,
+            (end['y'] as num).toDouble() * pxf,
+          ),
         ],
       ));
     }
@@ -140,6 +185,6 @@ Coordinates are in feet. Furniture type MUST be exactly: BED, WARDROBE, SOFA, TA
   }
 
   List<dynamic> parseFurniture(Map<String, dynamic> data) {
-    return data['furniture'] ?? [];
+    return data['furniture'] as List? ?? [];
   }
 }
