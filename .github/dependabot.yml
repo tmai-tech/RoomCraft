@@ -1,0 +1,20 @@
+# Dependabot version updates for RoomCraft (Flutter / pub).
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "[Dependency Update]"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "[Dependency Update]"
+    open-pull-requests-limit: 5
