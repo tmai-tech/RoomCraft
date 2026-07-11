@@ -1,4 +1,4 @@
-package com.example.room_craft
+package com.logicrequire.room_craft
 
 import io.flutter.embedding.android.FlutterActivity
 
