@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+4 (2026-07-12)
+
+### Added — free accurate scan (no user API key)
+- **Default scan mode**: Free accurate plan — no Settings key required.
+- **AccurateScan enforcer**: room width × length always match your measurements; clean rectangle walls; furniture uses catalog sizes and stays inside the room.
+- **App-bundled free vision**: CI can inject `ROOMCRAFT_GROQ_API_KEY` / `ROOMCRAFT_GEMINI_API_KEY` via dart-define so testers get furniture assist without pasting keys.
+- Offline path still works with zero keys (exact empty plan).
+
+### Fixed
+- Scan parser no longer inflates room size from AI wall extents.
+
 ## 1.0.0-beta.1+3 (2026-07-11)
 
 ### Fixed — scan proportions & fake furniture

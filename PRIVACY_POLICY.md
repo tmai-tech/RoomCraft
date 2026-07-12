@@ -10,13 +10,14 @@ LogicRequire ("we", "us", or "our") operates the RoomCraft mobile application (t
 Our App requires access to your device's camera. This access is strictly used for:
 - Scanning physical rooms to generate architectural blueprints.
 - Analyzing room dimensions and furniture placement via AI.
-Photos captured are processed locally on the device or sent to the Google Gemini AI API for analysis. **We do not store your photos on our own servers.**
+Photos captured are processed locally on the device, or — only when free vision furniture assist is enabled — sent to a free vision API (Groq Llama vision and/or Google Gemini) for analysis. **We do not store your photos on our own servers.**
 
 ### Local Storage
-The App stores your room blueprints, app settings, and Gemini API keys locally on your device using `SharedPreferences`. This data remains on your device and is not collected by us.
+The App stores your room blueprints, app settings, and optional API keys locally on your device using `SharedPreferences`. This data remains on your device and is not collected by us. Free accurate scan works without any user-provided API key.
 
-### AI Processing (Google Gemini)
-The App uses the Google Gemini API to analyze room photos. By using the AI scanner, you agree to Google's Privacy Policy regarding the processing of data sent to their API.
+### AI Processing (optional free vision)
+- **Offline accurate plan** (default): room size and walls are computed on-device from your measurements; photos are not uploaded.
+- **Free vision furniture assist** (optional): room photos may be sent to Groq and/or Google Gemini to detect furniture. By using that mode, you agree to those providers' privacy policies.
 
 ## 2. Permissions
 To provide its core functionality, the App requests the following permissions:

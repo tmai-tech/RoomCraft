@@ -64,8 +64,26 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      # Optional free vision keys — testers never paste keys in the app.
+      # Set GitHub secrets ROOMCRAFT_GROQ_API_KEY and/or ROOMCRAFT_GEMINI_API_KEY.
       - name: Build debug APK
-        run: flutter build apk --debug
+        env:
+          ROOMCRAFT_GROQ_API_KEY: ${{ secrets.ROOMCRAFT_GROQ_API_KEY }}
+          ROOMCRAFT_GEMINI_API_KEY: ${{ secrets.ROOMCRAFT_GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          DEFS=()
+          if [ -n "${ROOMCRAFT_GROQ_API_KEY:-}" ]; then
+            DEFS+=(--dart-define=ROOMCRAFT_GROQ_API_KEY="${ROOMCRAFT_GROQ_API_KEY}")
+            echo "Bundling free Groq vision key for no-user-key scans"
+          else
+            echo "No ROOMCRAFT_GROQ_API_KEY secret — offline accurate scan only"
+          fi
+          if [ -n "${ROOMCRAFT_GEMINI_API_KEY:-}" ]; then
+            DEFS+=(--dart-define=ROOMCRAFT_GEMINI_API_KEY="${ROOMCRAFT_GEMINI_API_KEY}")
+            echo "Bundling Gemini assist key"
+          fi
+          flutter build apk --debug "${DEFS[@]}"
 
       - name: Locate APK
         id: apk

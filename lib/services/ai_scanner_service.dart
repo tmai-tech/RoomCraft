@@ -1,20 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:mime/mime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
+import '../domain/accurate_scan.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/local_room_scanner.dart';
 import '../domain/scan_parser.dart';
 import '../models/scan_result.dart';
-import '../models/stroke_model.dart';
 import 'free_vision_scanner.dart';
 
-/// Room scanning: free offline (exact size) → free Groq vision → optional Gemini.
+/// Room scanning with free accurate default (no user API key required).
+///
+/// Accuracy contract:
+/// - Room width × length always come from user measurements.
+/// - Walls are a clean rectangle at that size.
+/// - Optional free vision only proposes furniture / openings; never resizes room.
 class AIScannerService {
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
     final prefs = prefsOverride ?? await SharedPreferences.getInstance();
@@ -33,6 +37,17 @@ class AIScannerService {
     await prefs.setString(AppConfig.apiKeyPrefKey, key.trim());
   }
 
+  /// Gemini key: user prefs, then bundled dart-define.
+  static Future<String?> resolveGeminiApiKey([
+    SharedPreferences? prefsOverride,
+  ]) async {
+    final user = await loadApiKey(prefsOverride);
+    if (user != null && user.isNotEmpty) return user;
+    final bundled = AppConfig.bundledGeminiApiKey.trim();
+    if (bundled.isNotEmpty) return bundled;
+    return null;
+  }
+
   /// Always succeeds offline — checks image is readable.
   Future<String?> validateImage(File image) async {
     try {
@@ -45,20 +60,33 @@ class AIScannerService {
     }
   }
 
-  /// Free offline scan with exact room proportions. No invented furniture unless preset.
+  /// Free offline accurate plan (exact size, no invented furniture unless preset).
   Future<ScanResult> scanRoomFree(
     List<File> images, {
     Map<File, double>? wallMeasurements,
     RoomLayoutType? layoutType,
     double? roomWidthFt,
     double? roomLengthFt,
-  }) {
-    return LocalRoomScanner.scan(
+  }) async {
+    final size = resolveSize(
+      roomWidthFt: roomWidthFt,
+      roomLengthFt: roomLengthFt,
+      wallMeasurements: wallMeasurements,
+    );
+    final raw = await LocalRoomScanner.scan(
       images: images,
       wallMeasurementsFt: wallMeasurements,
       preferredLayout: layoutType,
-      roomWidthFt: roomWidthFt,
-      roomLengthFt: roomLengthFt,
+      roomWidthFt: size.widthFt,
+      roomLengthFt: size.lengthFt,
+    );
+    return AccurateScan.enforce(
+      widthFt: size.widthFt,
+      lengthFt: size.lengthFt,
+      openings: raw.walls,
+      furniture: raw.furniture,
+      warnings: raw.warnings.where((w) => !w.startsWith('Exact room')).toList(),
+      sourceLabel: 'Free accurate offline plan — no API key needed',
     );
   }
 
@@ -75,11 +103,103 @@ class AIScannerService {
     );
   }
 
+  /// Primary free path: accurate geometry + optional free vision furniture.
+  ///
+  /// Does **not** require the user to paste a key. Uses app-bundled keys when
+  /// present (`ROOMCRAFT_GROQ_API_KEY` / `ROOMCRAFT_GEMINI_API_KEY`), then user
+  /// keys, then offline empty plan. Room size is always locked.
+  Future<ScanResult> scanRoomAccurateFree(
+    List<File> images, {
+    Map<File, double>? wallMeasurements,
+    RoomLayoutType? layoutType,
+    double? roomWidthFt,
+    double? roomLengthFt,
+    bool tryVision = true,
+  }) async {
+    if (images.isEmpty) {
+      throw Exception('Add at least one room photo.');
+    }
+
+    final size = resolveSize(
+      roomWidthFt: roomWidthFt,
+      roomLengthFt: roomLengthFt,
+      wallMeasurements: wallMeasurements,
+    );
+    final w = size.widthFt;
+    final l = size.lengthFt;
+
+    if (tryVision) {
+      // 1) Free Groq vision (bundled or user key)
+      if (await FreeVisionScanner.isAvailable()) {
+        try {
+          return await FreeVisionScanner().scan(
+            images: images,
+            roomWidthFt: w,
+            roomLengthFt: l,
+          );
+        } catch (e) {
+          // Fall through — accuracy preserved via offline path
+          final free = await scanRoomFree(
+            images,
+            wallMeasurements: wallMeasurements,
+            layoutType: layoutType ?? RoomLayoutType.empty,
+            roomWidthFt: w,
+            roomLengthFt: l,
+          );
+          return free.copyWith(
+            warnings: [
+              ...free.warnings,
+              'Free vision unavailable ($e) — kept exact empty plan',
+            ],
+          );
+        }
+      }
+
+      // 2) Bundled / user Gemini as free-tier alternative
+      final geminiKey = await resolveGeminiApiKey();
+      if (geminiKey != null && geminiKey.isNotEmpty) {
+        try {
+          final gemini = await _scanWithGemini(images, geminiKey, w, l);
+          return AccurateScan.enforce(
+            widthFt: w,
+            lengthFt: l,
+            openings: gemini.walls,
+            furniture: gemini.furniture,
+            warnings: gemini.warnings,
+            sourceLabel: 'Free Gemini furniture assist — room size locked',
+          );
+        } catch (e) {
+          final free = await scanRoomFree(
+            images,
+            wallMeasurements: wallMeasurements,
+            layoutType: layoutType ?? RoomLayoutType.empty,
+            roomWidthFt: w,
+            roomLengthFt: l,
+          );
+          return free.copyWith(
+            warnings: [
+              ...free.warnings,
+              'Gemini assist unavailable ($e) — kept exact empty plan',
+            ],
+          );
+        }
+      }
+    }
+
+    // 3) Offline accurate — always works, zero keys
+    return scanRoomFree(
+      images,
+      wallMeasurements: wallMeasurements,
+      layoutType: layoutType,
+      roomWidthFt: w,
+      roomLengthFt: l,
+    );
+  }
+
   /// Scan photos.
   ///
-  /// [preferFreeVision] uses Groq (free tier) for real furniture from photos.
-  /// [preferGemini] uses Gemini when a Google key is set.
-  /// Default offline path never invents beds / sofas and keeps exact W×L.
+  /// [preferFreeVision] / [preferGemini] force a backend when keys exist.
+  /// Default uses [scanRoomAccurateFree] (no user key required).
   Future<ScanResult> scanRoom(
     List<File> images, {
     Map<File, double>? wallMeasurements,
@@ -101,81 +221,40 @@ class AIScannerService {
     final w = size.widthFt;
     final l = size.lengthFt;
 
-    // 1) Free Groq vision — real furniture, locked proportions
+    // Explicit free vision only
     if (preferFreeVision) {
-      final groqKey = await FreeVisionScanner.loadApiKey();
-      if (groqKey != null && groqKey.isNotEmpty) {
-        try {
-          final vision = await FreeVisionScanner().scan(
-            images: images,
-            roomWidthFt: w,
-            roomLengthFt: l,
-            apiKey: groqKey,
-          );
-          return vision.copyWith(
-            roomWidthFt: w,
-            roomLengthFt: l,
-            walls: _rectangleWalls(w, l, vision.walls),
-          );
-        } catch (e) {
-          final free = await scanRoomFree(
-            images,
-            wallMeasurements: wallMeasurements,
-            layoutType: layoutType ?? RoomLayoutType.empty,
-            roomWidthFt: w,
-            roomLengthFt: l,
-          );
-          return free.copyWith(
-            warnings: [
-              ...free.warnings,
-              'Free AI unavailable ($e) — empty proportionate plan used',
-            ],
-          );
-        }
-      }
-      final free = await scanRoomFree(
+      return scanRoomAccurateFree(
         images,
         wallMeasurements: wallMeasurements,
-        layoutType: layoutType ?? RoomLayoutType.empty,
+        layoutType: layoutType,
         roomWidthFt: w,
         roomLengthFt: l,
-      );
-      return free.copyWith(
-        warnings: [
-          ...free.warnings,
-          'No free AI (Groq) key — used offline proportionate plan',
-        ],
+        tryVision: true,
       );
     }
 
-    // 2) Optional Gemini
+    // Explicit Gemini only
     if (preferGemini) {
-      final apiKey = await loadApiKey();
+      final apiKey = await resolveGeminiApiKey();
       if (apiKey == null || apiKey.isEmpty) {
-        final free = await scanRoomFree(
+        return scanRoomAccurateFree(
           images,
           wallMeasurements: wallMeasurements,
           layoutType: layoutType ?? RoomLayoutType.empty,
           roomWidthFt: w,
           roomLengthFt: l,
-        );
-        return free.copyWith(
-          warnings: [
-            ...free.warnings,
-            'No Gemini key — used free offline scan',
-          ],
+          tryVision: false,
         );
       }
       try {
         final gemini = await _scanWithGemini(images, apiKey, w, l);
-        return gemini.copyWith(
-          roomWidthFt: w,
-          roomLengthFt: l,
-          walls: _rectangleWalls(w, l, gemini.walls),
-          warnings: [
-            'Room locked to ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft (your size)',
-            ...gemini.warnings,
-          ],
+        return AccurateScan.enforce(
+          widthFt: w,
+          lengthFt: l,
+          openings: gemini.walls,
+          furniture: gemini.furniture,
+          warnings: gemini.warnings,
+          sourceLabel: 'Gemini scan — room size locked to your measurements',
         );
       } catch (e) {
         final free = await scanRoomFree(
@@ -188,72 +267,21 @@ class AIScannerService {
         return free.copyWith(
           warnings: [
             ...free.warnings,
-            'Gemini unavailable ($e) — used free offline scan instead',
+            'Gemini unavailable ($e) — used free accurate offline scan',
           ],
         );
       }
     }
 
-    // 3) Default offline — exact size, no invented furniture unless preset
-    return scanRoomFree(
+    // Default: free accurate (vision if app/user key, else offline)
+    return scanRoomAccurateFree(
       images,
       wallMeasurements: wallMeasurements,
       layoutType: layoutType,
       roomWidthFt: w,
       roomLengthFt: l,
+      tryVision: true,
     );
-  }
-
-  /// Prefer a clean rectangle at exact size; keep door/window segments if present.
-  List<ScanWallSegment> _rectangleWalls(
-    double w,
-    double l,
-    List<ScanWallSegment> fromAi,
-  ) {
-    final outline = <ScanWallSegment>[
-      ScanWallSegment(
-        type: StrokeType.wall,
-        startFt: Offset.zero,
-        endFt: Offset(w, 0),
-      ),
-      ScanWallSegment(
-        type: StrokeType.wall,
-        startFt: Offset(w, 0),
-        endFt: Offset(w, l),
-      ),
-      ScanWallSegment(
-        type: StrokeType.wall,
-        startFt: Offset(w, l),
-        endFt: Offset(0, l),
-      ),
-      ScanWallSegment(
-        type: StrokeType.wall,
-        startFt: Offset(0, l),
-        endFt: Offset.zero,
-      ),
-    ];
-    final openings = fromAi
-        .where((s) =>
-            s.type == StrokeType.door ||
-            s.type == StrokeType.window ||
-            s.type == StrokeType.balcony)
-        .toList();
-    if (openings.isEmpty) {
-      final doorLen = (3.0).clamp(1.0, w * 0.3);
-      openings.addAll([
-        ScanWallSegment(
-          type: StrokeType.door,
-          startFt: Offset(w * 0.35, 0),
-          endFt: Offset(w * 0.35 + doorLen, 0),
-        ),
-        ScanWallSegment(
-          type: StrokeType.window,
-          startFt: Offset(w * 0.25, l),
-          endFt: Offset(w * 0.55, l),
-        ),
-      ]);
-    }
-    return [...outline, ...openings];
   }
 
   Future<ScanResult> _scanWithGemini(

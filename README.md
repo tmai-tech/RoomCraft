@@ -21,7 +21,15 @@ flutter test
 flutter run
 ```
 
-Set a **Gemini API key** in Settings to use AI scan.
+**Free accurate scan needs no API key** — enter exact width × length; the plan always matches those measurements.
+
+Optional furniture assist: set GitHub secret `ROOMCRAFT_GROQ_API_KEY` for CI builds, or run locally with:
+
+```bash
+flutter run --dart-define=ROOMCRAFT_GROQ_API_KEY=gsk_...
+```
+
+Personal keys in Settings are optional advanced overrides.
 
 ## Docs
 

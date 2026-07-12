@@ -1,20 +1,26 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:mime/mime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
-import '../domain/local_room_scanner.dart';
+import '../domain/accurate_scan.dart';
 import '../domain/scan_parser.dart';
 import '../models/scan_result.dart';
 
 /// Free multimodal scan via Groq (Llama 4 Scout vision).
 ///
-/// Requires a free key from https://console.groq.com — stored on device only.
+/// Key resolution (first non-empty wins):
+/// 1. Explicit [apiKey] argument
+/// 2. User key in SharedPreferences (optional Settings)
+/// 3. App-bundled [AppConfig.bundledGroqApiKey] from `--dart-define`
+///
 /// Room size always comes from user dimensions; AI may only propose furniture
-/// and openings that appear in the photo.
+/// and openings. Output is always run through [AccurateScan.enforce].
 class FreeVisionScanner {
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
     final prefs = prefsOverride ?? await SharedPreferences.getInstance();
@@ -28,6 +34,28 @@ class FreeVisionScanner {
     await prefs.setString(AppConfig.groqApiKeyPrefKey, key.trim());
   }
 
+  /// Resolve key without requiring the user to open Settings.
+  static Future<String?> resolveApiKey({
+    String? apiKey,
+    SharedPreferences? prefsOverride,
+  }) async {
+    final explicit = apiKey?.trim();
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+
+    final user = await loadApiKey(prefsOverride);
+    if (user != null && user.isNotEmpty) return user;
+
+    final bundled = AppConfig.bundledGroqApiKey.trim();
+    if (bundled.isNotEmpty) return bundled;
+
+    return null;
+  }
+
+  static Future<bool> isAvailable({SharedPreferences? prefsOverride}) async {
+    final key = await resolveApiKey(prefsOverride: prefsOverride);
+    return key != null && key.isNotEmpty;
+  }
+
   /// Detect furniture / openings from photos. [roomWidthFt]×[roomLengthFt] win.
   Future<ScanResult> scan({
     required List<File> images,
@@ -35,9 +63,9 @@ class FreeVisionScanner {
     required double roomLengthFt,
     String? apiKey,
   }) async {
-    final key = apiKey ?? await loadApiKey();
+    final key = await resolveApiKey(apiKey: apiKey);
     if (key == null || key.isEmpty) {
-      throw Exception('No Groq API key — add a free key in Settings');
+      throw Exception('No free vision key available');
     }
     if (images.isEmpty) {
       throw Exception('Add at least one room photo.');
@@ -53,22 +81,21 @@ class FreeVisionScanner {
     // Cap images for free-tier latency / payload size.
     final limited = images.take(3).toList();
     for (final image in limited) {
-      final bytes = await image.readAsBytes();
-      if (bytes.isEmpty) continue;
-      // Downsize large photos to keep request small.
-      final mime = lookupMimeType(image.path) ?? 'image/jpeg';
-      final b64 = base64Encode(bytes);
+      final prepared = await _prepareImageDataUrl(image);
+      if (prepared == null) continue;
       content.add({
         'type': 'image_url',
-        'image_url': {
-          'url': 'data:$mime;base64,$b64',
-        },
+        'image_url': {'url': prepared},
       });
+    }
+
+    if (content.length < 2) {
+      throw Exception('Could not read any room photos');
     }
 
     final body = {
       'model': AppConfig.groqVisionModel,
-      'temperature': 0.1,
+      'temperature': 0.0,
       'response_format': {'type': 'json_object'},
       'messages': [
         {
@@ -76,7 +103,8 @@ class FreeVisionScanner {
           'content':
               'You are a careful floor-plan assistant. Only report furniture '
               'you can see in the photos. Never invent a bed, sofa, or other '
-              'item that is not visible. Return JSON only.',
+              'item that is not visible. Return JSON only. '
+              'Room size is fixed by the user and must not change.',
         },
         {
           'role': 'user',
@@ -97,58 +125,70 @@ class FreeVisionScanner {
         .timeout(const Duration(seconds: 60));
 
     if (response.statusCode == 401 || response.statusCode == 403) {
-      throw Exception('Groq API key rejected — check Settings');
+      throw Exception('Free vision key rejected');
     }
     if (response.statusCode == 429) {
-      throw Exception('Groq rate limit — try again in a minute');
+      throw Exception('Free vision rate limit — try again in a minute');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
-        'Groq error ${response.statusCode}: ${_short(response.body)}',
+        'Free vision error ${response.statusCode}: ${_short(response.body)}',
       );
     }
 
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final choices = decoded['choices'];
     if (choices is! List || choices.isEmpty) {
-      throw Exception('Groq returned no choices');
+      throw Exception('Free vision returned no choices');
     }
     final message = (choices.first as Map)['message'];
     final text = message is Map ? message['content']?.toString() : null;
     if (text == null || text.trim().isEmpty) {
-      throw Exception('Groq returned empty content');
+      throw Exception('Free vision returned empty content');
     }
 
     final jsonMap = _extractJsonMap(text);
-    // Force user dimensions so AI cannot reshape the room.
     jsonMap['roomWidth'] = roomWidthFt;
     jsonMap['roomLength'] = roomLengthFt;
 
     final parsed = ScanParser.parse(jsonMap);
-    return parsed.copyWith(
-      roomWidthFt: roomWidthFt,
-      roomLengthFt: roomLengthFt,
-      warnings: [
-        'Free AI (Groq Llama 4 Scout) — furniture only if visible in photos',
-        'Room locked to ${roomWidthFt.toStringAsFixed(1)} × '
-            '${roomLengthFt.toStringAsFixed(1)} ft (your size)',
-        ...parsed.warnings,
-      ],
+
+    // Dimensionally correct plan — never trust AI for room size.
+    return AccurateScan.enforce(
+      widthFt: roomWidthFt,
+      lengthFt: roomLengthFt,
+      openings: parsed.walls,
+      furniture: parsed.furniture,
+      warnings: parsed.warnings,
+      sourceLabel:
+          'Free AI furniture (Groq Llama 4 Scout) — no user key required when app key is set',
     );
   }
 
-  /// Offline rectangle with exact size + optional free-vision furniture.
-  static Future<ScanResult> offlineShell({
-    required List<File> images,
-    required double roomWidthFt,
-    required double roomLengthFt,
-  }) {
-    return LocalRoomScanner.scan(
-      images: images,
-      roomWidthFt: roomWidthFt,
-      roomLengthFt: roomLengthFt,
-      preferredLayout: null, // empty
-    );
+  /// Resize / re-encode for smaller free-tier payloads.
+  static Future<String?> _prepareImageDataUrl(File image) async {
+    try {
+      final bytes = await image.readAsBytes();
+      if (bytes.isEmpty) return null;
+
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) {
+        final mime = lookupMimeType(image.path) ?? 'image/jpeg';
+        return 'data:$mime;base64,${base64Encode(bytes)}';
+      }
+
+      var frame = decoded;
+      const maxSide = 768;
+      if (frame.width > maxSide || frame.height > maxSide) {
+        frame = frame.width >= frame.height
+            ? img.copyResize(frame, width: maxSide)
+            : img.copyResize(frame, height: maxSide);
+      }
+      final jpg = Uint8List.fromList(img.encodeJpg(frame, quality: 75));
+      return 'data:image/jpeg;base64,${base64Encode(jpg)}';
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _prompt(double w, double l) => '''
@@ -195,7 +235,7 @@ Rules:
     final decoded = jsonDecode(t);
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    throw Exception('Groq JSON was not an object');
+    throw Exception('Free vision JSON was not an object');
   }
 
   static String _short(String body) {

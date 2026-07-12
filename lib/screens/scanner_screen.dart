@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../config/app_config.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../providers/room_provider.dart';
@@ -13,7 +14,7 @@ import 'blueprint_screen.dart';
 import 'scan_review_screen.dart';
 import 'settings_screen.dart';
 
-/// Guided multi-photo capture → proportionate plan → optional free AI furniture.
+/// Guided multi-photo capture → free accurate plan (no user API key required).
 class ScannerScreen extends ConsumerStatefulWidget {
   const ScannerScreen({super.key});
 
@@ -34,10 +35,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   final _lengthController = TextEditingController(text: '10');
 
   bool _isLoading = false;
-  /// free offline | free_vision (Groq) | gemini
-  String _scanMode = 'offline';
+  /// free (default, no key) | offline_only | gemini
+  String _scanMode = 'free';
   RoomLayoutType _layoutType = RoomLayoutType.empty;
   int _guideStep = 0;
+  bool? _freeVisionReady;
 
   static const _guideTips = [
     'Photo 1: Stand in a corner — show two walls meeting the floor.',
@@ -47,86 +49,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _refreshVisionStatus();
+  }
+
+  Future<void> _refreshVisionStatus() async {
+    final ready = await FreeVisionScanner.isAvailable() ||
+        AppConfig.hasBundledFreeVision ||
+        ((await AIScannerService.resolveGeminiApiKey())?.isNotEmpty ?? false);
+    if (mounted) setState(() => _freeVisionReady = ready);
+  }
+
+  @override
   void dispose() {
     _widthController.dispose();
     _lengthController.dispose();
     super.dispose();
-  }
-
-  Future<bool> _ensureKeyIfNeeded() async {
-    if (_scanMode == 'offline') return true;
-
-    if (_scanMode == 'free_vision') {
-      final key = await FreeVisionScanner.loadApiKey();
-      if (key != null && key.isNotEmpty) return true;
-      if (!mounted) return false;
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Free AI key needed'),
-          content: const Text(
-            'Furniture detection uses Groq Llama 4 Scout (free tier).\n\n'
-            '1. Create a free key at console.groq.com\n'
-            '2. Paste it in Settings\n\n'
-            'Or continue offline — your room size stays exact, empty furniture.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Offline plan'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Settings'),
-            ),
-          ],
-        ),
-      );
-      if (!mounted) return false;
-      if (go == true) {
-        await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const SettingsScreen()),
-        );
-        final again = await FreeVisionScanner.loadApiKey();
-        if (again != null && again.isNotEmpty) return true;
-      }
-      setState(() => _scanMode = 'offline');
-      return true;
-    }
-
-    // Gemini
-    final key = await AIScannerService.loadApiKey();
-    if (key != null && key.isNotEmpty) return true;
-    if (!mounted) return false;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Gemini API key needed'),
-        content: const Text(
-          'Optional Gemini needs an API key. Use free offline (exact size) or free AI (Groq) instead.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Use free scan'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Settings'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted) return false;
-    if (go == true) {
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-      );
-      final again = await AIScannerService.loadApiKey();
-      return again != null && again.isNotEmpty;
-    }
-    setState(() => _scanMode = 'offline');
-    return true;
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -193,19 +132,72 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       return;
     }
 
-    final ok = await _ensureKeyIfNeeded();
-    if (!ok) return;
+    // Gemini optional path only — free path never asks for a key.
+    if (_scanMode == 'gemini') {
+      final key = await AIScannerService.resolveGeminiApiKey();
+      if (key == null || key.isEmpty) {
+        if (!mounted) return;
+        final go = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Gemini key not set'),
+            content: const Text(
+              'Free accurate scan works without any key.\n\n'
+              'Gemini is optional. Use Free accurate scan, or add a key in Settings.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Use free scan'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Settings'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (go == true) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          );
+          await _refreshVisionStatus();
+          final again = await AIScannerService.resolveGeminiApiKey();
+          if (again == null || again.isEmpty) {
+            setState(() => _scanMode = 'free');
+          }
+        } else {
+          setState(() => _scanMode = 'free');
+        }
+      }
+    }
 
     setState(() => _isLoading = true);
     try {
-      final result = await _aiService.scanRoom(
-        _images,
-        preferGemini: _scanMode == 'gemini',
-        preferFreeVision: _scanMode == 'free_vision',
-        layoutType: _layoutType,
-        roomWidthFt: size.$1,
-        roomLengthFt: size.$2,
-      );
+      final result = _scanMode == 'offline_only'
+          ? await _aiService.scanRoomAccurateFree(
+              _images,
+              layoutType: _layoutType,
+              roomWidthFt: size.$1,
+              roomLengthFt: size.$2,
+              tryVision: false,
+            )
+          : _scanMode == 'gemini'
+              ? await _aiService.scanRoom(
+                  _images,
+                  preferGemini: true,
+                  roomWidthFt: size.$1,
+                  roomLengthFt: size.$2,
+                )
+              : await _aiService.scanRoomAccurateFree(
+                  // Free accurate — no user key required
+                  _images,
+                  layoutType: RoomLayoutType.empty,
+                  roomWidthFt: size.$1,
+                  roomLengthFt: size.$2,
+                  tryVision: true,
+                );
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -255,24 +247,24 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   String get _loadingLabel {
     switch (_scanMode) {
-      case 'free_vision':
-        return 'Free AI detecting furniture…';
       case 'gemini':
         return 'Gemini analyzing…';
+      case 'offline_only':
+        return 'Building exact-size plan…';
       default:
-        return 'Building proportionate plan…';
+        return 'Free accurate scan…';
     }
   }
 
   String get _generateLabel {
     if (_images.isEmpty) return 'Add photos to continue';
     switch (_scanMode) {
-      case 'free_vision':
-        return 'Generate with free AI';
       case 'gemini':
         return 'Generate with Gemini';
+      case 'offline_only':
+        return 'Generate exact plan (offline)';
       default:
-        return 'Generate proportionate plan';
+        return 'Generate free accurate plan';
     }
   }
 
@@ -280,6 +272,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   Widget build(BuildContext context) {
     final tip = _guideTips[_guideStep.clamp(0, _guideTips.length - 1)];
     final unit = ref.watch(roomProvider).unitSystem;
+    final visionHint = _freeVisionReady == true
+        ? 'Furniture assist available (no key paste needed)'
+        : 'Exact room size always — furniture from catalog if vision offline';
 
     return Scaffold(
       appBar: AppBar(
@@ -287,10 +282,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.of(context).push(
+            onPressed: () async {
+              await Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               );
+              await _refreshVisionStatus();
             },
           ),
         ],
@@ -305,7 +301,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   Text(_loadingLabel),
                   const SizedBox(height: 8),
                   const Text(
-                    'Room size stays exact — no random reshaping',
+                    'Room size stays exact — never warped by the photo',
                     style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                 ],
@@ -379,7 +375,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    '10 × 10 stays 10 × 10 — photo aspect is not used for size',
+                    '10 × 10 stays 10 × 10 — free scan needs no API key',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ),
@@ -387,10 +383,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: InputDecorator(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Scan mode',
                       isDense: true,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      helperText: visionHint,
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
@@ -398,12 +395,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                         value: _scanMode,
                         items: const [
                           DropdownMenuItem(
-                            value: 'offline',
-                            child: Text('Free offline (exact size, empty)'),
+                            value: 'free',
+                            child: Text('Free accurate (recommended, no key)'),
                           ),
                           DropdownMenuItem(
-                            value: 'free_vision',
-                            child: Text('Free AI furniture (Groq)'),
+                            value: 'offline_only',
+                            child: Text('Offline only (exact size, empty)'),
                           ),
                           DropdownMenuItem(
                             value: 'gemini',
@@ -417,7 +414,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     ),
                   ),
                 ),
-                if (_scanMode == 'offline') ...[
+                if (_scanMode == 'offline_only') ...[
                   const SizedBox(height: 8),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),

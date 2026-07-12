@@ -271,12 +271,12 @@ class ScanParser {
         )
         .toList();
 
-    final width = max(r.roomWidthFt, maxX - minX);
-    final length = max(r.roomLengthFt, maxY - minY);
-
+    // Keep declared room size — do not inflate from wall extents (AI often
+    // draws walls slightly past the room). AccurateScan.enforce will rebuild
+    // a clean rectangle at the user-measured size.
     return ScanResult(
-      roomWidthFt: width,
-      roomLengthFt: length,
+      roomWidthFt: r.roomWidthFt,
+      roomLengthFt: r.roomLengthFt,
       walls: walls,
       furniture: furniture,
       warnings: r.warnings,

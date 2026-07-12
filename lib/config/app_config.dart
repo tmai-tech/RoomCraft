@@ -5,7 +5,7 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 3;
+  static const int buildNumber = 4;
   static const bool isBeta = true;
 
   /// Feedback — opens mail client on device.
@@ -46,6 +46,24 @@ class AppConfig {
       'https://api.groq.com/openai/v1/chat/completions';
   static const String groqVisionModel =
       'meta-llama/llama-4-scout-17b-16e-instruct';
+
+  /// Optional app-bundled keys so testers never paste a key.
+  /// Pass at build/run time:
+  ///   flutter run --dart-define=ROOMCRAFT_GROQ_API_KEY=gsk_...
+  ///   flutter build apk --dart-define=ROOMCRAFT_GEMINI_API_KEY=...
+  /// Empty string = not set (offline accurate plan still works).
+  static const String bundledGroqApiKey = String.fromEnvironment(
+    'ROOMCRAFT_GROQ_API_KEY',
+    defaultValue: '',
+  );
+  static const String bundledGeminiApiKey = String.fromEnvironment(
+    'ROOMCRAFT_GEMINI_API_KEY',
+    defaultValue: '',
+  );
+
+  static bool get hasBundledFreeVision =>
+      bundledGroqApiKey.trim().isNotEmpty ||
+      bundledGeminiApiKey.trim().isNotEmpty;
 
   static const double defaultPixelsPerFoot = 20.0;
   static const double defaultRoomWidthFt = 10.0;

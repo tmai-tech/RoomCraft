@@ -77,15 +77,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 16),
           ],
+          Card(
+            color: Colors.green.shade50,
+            child: const ListTile(
+              leading: Icon(Icons.check_circle_outline, color: Colors.green),
+              title: Text('Free accurate scan — no key needed'),
+              subtitle: Text(
+                'Enter exact width × length. The plan always uses those '
+                'measurements. Furniture assist uses an app free key when '
+                'available, otherwise an empty correct plan (add from catalog).',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           const Text(
-            'Free AI (Groq) — recommended',
+            'Optional keys (advanced)',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Optional free vision for real furniture from photos (Llama 4 Scout). '
-            'Get a free key at console.groq.com. Room width × length always stay exact. '
-            'Stored only on this device.',
+            'Not required for free scan. Only paste if you want your own free '
+            'vision quota. Room size always stays exact either way.',
             style: TextStyle(color: Colors.grey),
           ),
           const SizedBox(height: 12),
@@ -93,29 +105,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _groqKeyController,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              labelText: 'Groq API key (free)',
-              helperText: 'console.groq.com → API Keys',
+              labelText: 'Groq API key (optional free furniture AI)',
+              helperText: 'console.groq.com — leave blank to use free default',
             ),
             obscureText: true,
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Gemini API key (optional)',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Optional. Offline scan works without any key. '
-            'Gemini needs a key from aistudio.google.com.',
-            style: TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           TextField(
             controller: _geminiKeyController,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              labelText: 'Gemini API key',
-              helperText: 'Paste from Google AI Studio',
+              labelText: 'Gemini API key (optional)',
+              helperText: 'aistudio.google.com — not required',
             ),
             obscureText: true,
           ),

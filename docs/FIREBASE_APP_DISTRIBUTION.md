@@ -9,6 +9,7 @@
 | App ID | `1:768748224321:android:2ef77f7bc86ecb080fabc0` |
 | Service account | `firebase-adminsdk-fbsvc@roomcraft-e1312.iam.gserviceaccount.com` |
 | GitHub secrets | `FIREBASE_ANDROID_APP_ID`, `FIREBASE_SERVICE_ACCOUNT` set on `tmai-tech/RoomCraft` |
+| Optional free vision | `ROOMCRAFT_GROQ_API_KEY` (and/or `ROOMCRAFT_GEMINI_API_KEY`) — bundled into APK so testers never paste keys |
 
 ## Required: one permission grant (you must do this once)
 
