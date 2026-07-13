@@ -1,8 +1,8 @@
 # RoomCraft — Market Study & Feature Phase Plan
 
-**Date:** 2026-07-13  
-**Product version analyzed:** `1.0.0-beta.1+4` (`dev`)  
-**Stack:** Flutter · ~6.7k LOC Dart · Android closed beta (Firebase App Distribution)  
+**Date:** 2026-07-13 (progress refresh same day)  
+**Product version:** `1.0.0-beta.1+7` (`dev`)  
+**Stack:** Flutter · ~7k+ LOC Dart · Android closed beta (Firebase App Distribution)  
 **Target product:** Photo/scan of a room → **top-down blueprint** → **arrange furniture properly** (clearances, walkways, scale)
 
 ---
@@ -154,25 +154,29 @@ Legend: **●** strong · **◐** partial / limited · **○** weak or absent
 | Furniture | Catalog categories, custom size, drag, rotate 45°, resize FAB | `furniture_catalog.dart`, catalog sheet |
 | Layout IP | Collision, bounds clamp, clearances, auto-arrange (bed/living/office), score 0–100 | `domain/layout/*` |
 | Scan path | Guided photos, free accurate W×L plan, review, scale, include/exclude furniture | `scanner_screen`, `accurate_scan`, `scan_review` |
-| Free AI | Offline plan always; optional Groq vision + Gemini path | `ai_scanner_service`, `free_vision_scanner` |
+| Free AI | Groq vision (bundled CI key) + Gemini optional; strict anti-hallucination filter | `free_vision_scanner`, `furniture_vision_filter` |
+| Arrange | Spacious reflow of **existing** pieces; presets secondary | `auto_arrange.dart`, blueprint sheet |
 | Export | PNG + system share | `export_service.dart` |
-| Settings | Units, optional keys, privacy, feedback, onboarding reset | `settings_screen.dart` |
+| Settings | Units, secure optional keys, privacy, feedback | `settings_screen.dart`, `secure_key_store` |
 | Storage | Versioned local JSON, migration stub | `storage_service.dart` |
-| CI / beta | Build APK + Firebase App Distribution on `dev` | `.github/workflows`, `AGENTS.md` |
-| Tests | Unit/widget coverage for scan, layout, storage, history | `test/*` |
+| Analytics | `scan_start/success/fail`, `auto_arrange`, `export` | `analytics_service.dart` |
+| CI / beta | Build APK + Firebase App Distribution on `dev`; group `testers` | `.github/workflows`, `AGENTS.md` |
+| Tests | Unit/widget coverage for scan, layout, storage, vision filter | `test/*` |
 
-### 4.2 Incomplete — must finish for product quality (MVP debt)
+### 4.2 MVP debt — status after +5…+7
 
-| ID | Feature | Status | Why it matters | Competitor bar |
-|----|---------|--------|----------------|----------------|
-| D1 | True rotated hit-test + OBB collision | Partial / broken feel | Dragging rotated pieces is unreliable | Sweet Home / Planner 5D |
-| D2 | Furniture-from-photo always works for testers | Blocked on build secret | Empty furniture after scan kills trust | Home Planner AI, magicplan |
-| D3 | Scan copy under-promises (“measured sketch, not LiDAR”) | Weak messaging | Avoids bad reviews vs magicplan | All honest scanners |
-| D4 | Analytics funnel (`scan_start`, `scan_success`, `auto_arrange`, `export`) | Missing | No way to measure beta success | All mature apps |
-| D5 | Beta tester cohort + pain list | Ops incomplete | Market study said install top apps + talk to users | — |
-| D6 | Secure storage for API keys | SharedPreferences only | Security hygiene | Table stakes |
-| D7 | Dead Firebase Auth/Firestore deps | In pubspec, unused | Either wire or remove | All cloud apps |
-| D8 | Selection ignores rotation | Known MVP shortcut | Feels unfinished | All planners |
+| ID | Feature | Status |
+|----|---------|--------|
+| D1 | True rotated hit-test + OBB collision | ✅ Done (+5) |
+| D2 | Furniture-from-photo for testers | ✅ Groq secret + bundled builds (+6) |
+| D3 | Honest scan messaging | ✅ Done (+5) |
+| D4 | Analytics funnel | ✅ Done (+5) |
+| D5 | Beta tester cohort + pain list | ⏳ Ops still open (recruit ≥10, write top-5) |
+| D6 | Secure storage for API keys | ✅ Done (+5) |
+| D7 | Dead Firebase Auth/Firestore deps | ⏳ Still unused (Phase 1.1 wires or remove) |
+| D8 | Selection ignores rotation | ✅ Fixed with OBB hit-test (+5) |
+| — | Scan as-is + spacious arrange | ✅ Done (+6) |
+| — | Strict scan (no invented bed/sofa) | ✅ Done (+7) |
 
 ### 4.3 Incomplete — competitive table stakes (v1.1)
 
@@ -224,93 +228,97 @@ Legend: **●** strong · **◐** partial / limited · **○** weak or absent
 | Top-down edit UX | 6/10 | 7/10 | **8/10** | **9/10** | 8/10 | 0/10 |
 | Furniture catalog | 2/10 | 4/10 | **10/10** | **9/10** | **9/10** | 0/10 |
 | Layout intelligence | **8/10** | 2/10 | 5/10 | 5/10 | 3/10 | 0/10 |
-| Auto organize | **7/10** | 1/10 | 6/10 | 6/10 | 3/10 | 0/10 |
-| Free / no-friction scan | **8/10** | 5/10 | 5/10 | 5/10 | 6/10 | 5/10 |
+| Auto organize | **7.5/10** (spacious reflow of *your* pieces) | 1/10 | 6/10 | 6/10 | 3/10 | 0/10 |
+| Free / no-friction scan | **8.5/10** (Groq bundled; strict vision) | 5/10 | 5/10 | 5/10 | 6/10 | 5/10 |
 | 3D / wow polish | 1/10 | 6/10 | **9/10** | **9/10** | 7/10 | **10/10** |
 | Cloud / multi-device | 1/10 | **8/10** | **9/10** | **9/10** | **8/10** | 7/10 |
-| Ship readiness | 5/10 (beta) | 9/10 | 9/10 | 9/10 | 9/10 | 9/10 |
+| Ship readiness | 6/10 (beta + testers group) | 9/10 | 9/10 | 9/10 | 9/10 | 9/10 |
 
-**Takeaway:** RoomCraft is **ahead only on layout intelligence** (score, clearances, auto-arrange). Everywhere else is behind. Do not dilute into restyle; **double down on measured layout quality** while closing scan trust + catalog + cloud table stakes.
+**Takeaway:** RoomCraft leads on **layout intelligence + free measured scan**. Still far behind on **catalog, cloud, editor polish, 3D**. Next: **Phase 1 table stakes**.
 
 ---
 
 ## 6. Phase plan (what to build, in order)
 
-### Phase 0 — Stabilize beta trust (1–2 weeks) ✅ *shipped in 1.0.0-beta.1+5*  
+### Phase 0 — Stabilize beta trust ✅ *mostly shipped (+5…+7)*  
 **Goal:** Testers finish scan → arrange → export without “broken / empty / lying” moments.
 
-| # | Deliverable | Incomplete IDs | Exit criteria |
-|---|-------------|----------------|---------------|
-| 0.1 | OBB collision + rotation-aware hit-test | D1, D8 | Rotated sofa selects & collides correctly |
-| 0.2 | CI always injects free vision key; empty-furniture UX explains why | D2 | Fresh APK scan shows real furniture when photo has it |
-| 0.3 | Honest scan messaging + KNOWN_ISSUES update | D3 | Onboarding/scan copy matches capability |
-| 0.4 | Firebase Analytics events | D4 | Events visible in console after smoke test |
-| 0.5 | Secure key storage | D6 | Keys not in plain SharedPreferences |
-| 0.6 | Recruit ≥10 testers; write top-5 pains | D5 | Feedback doc exists |
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 0.1 | OBB collision + rotation-aware hit-test | ✅ +5 |
+| 0.2 | CI free vision key + empty-furniture UX | ✅ +6 (Groq secret) |
+| 0.3 | Honest scan messaging | ✅ +5 |
+| 0.4 | Firebase Analytics events | ✅ +5 |
+| 0.5 | Secure key storage | ✅ +5 |
+| 0.6 | Recruit ≥10 testers; write top-5 pains | ⏳ **Still open** |
+| 0.7 | Furniture as-is + spacious arrange | ✅ +6 (bonus) |
+| 0.8 | Strict scan (no invented furniture) | ✅ +7 (bonus) |
 
-**Not in this phase:** 3D, restyle, AR, catalog mega-expansion.
+**Remaining Phase 0 ops:** invite more testers, collect top-5 pain points from real use.
 
 ---
 
-### Phase 1 — Competitive table stakes (2–4 weeks) → **v1.1**  
-**Goal:** App feels like a real consumer planner, not a demo.
+### Phase 1 — Competitive table stakes → **v1.1** ⏳ *in progress (+8)*  
+**Goal:** App feels like a real consumer planner, not a demo. **~2–4 weeks.**
 
-| # | Deliverable | Incomplete IDs | Competitor parity |
-|---|-------------|----------------|-------------------|
-| 1.1 | Google Sign-In + Firestore cloud backup of rooms | T1, D7 | Home Planner AI, Planner 5D |
-| 1.2 | Backend proxy for vision (rate-limited; no user key) | T2 | Mature freemium |
-| 1.3 | Expand catalog to 30–50 pieces + search | T3 | Still far from 400k — enough for daily use |
-| 1.4 | Snap: wall edges + neighbor alignment | T4 | Sweet Home / Planner 5D |
-| 1.5 | Draw door swing arcs; optional window light wedges | T5 | Visual clearance |
-| 1.6 | Home search + sort | T6 | All apps |
-| 1.7 | Multi-select | T7 | All planners |
-| 1.8 | PDF one-page plan export | T8 | magicplan / RoomSketcher |
-| 1.9 | On-canvas rotate handle (15°/45°) | T9 | Sweet Home UX |
-| 1.10 | Release signing + Play closed testing track | T11 | Public path |
+| # | Deliverable | Status | Competitor bar |
+|---|-------------|--------|----------------|
+| 1.1 | Google Sign-In + Firestore cloud backup of rooms | ✅ Settings backup/restore (+8; needs SHA) | Home Planner AI, Planner 5D |
+| 1.2 | Backend proxy for vision (rate-limited; no client key in APK) | ⏳ Not started | Mature freemium |
+| 1.3 | Expand catalog to 30–50 pieces + search | ✅ ~40 + search (+8) | Homestyler / Planner 5D |
+| 1.4 | Snap: wall edges + neighbor alignment | ✅ (+8) | Sweet Home / Planner 5D |
+| 1.5 | Draw door swing arcs; optional window light wedges | ✅ filled door arc (+8); windows later | Planner 5D, Sweet Home |
+| 1.6 | Home search + sort | ✅ (+8) | All apps |
+| 1.7 | Multi-select | ✅ Multi tool (+8) | All planners |
+| 1.8 | PDF one-page plan export | ✅ text plan PDF (+8); image PDF later | magicplan / RoomSketcher |
+| 1.9 | On-canvas rotate handle (15°/45°) | ✅ 45° handle (+8) | Sweet Home UX |
+| 1.10 | Release signing + Play closed testing track | ⏳ Debug beta only | Public competitors |
 
 **Exit:** New user can scan, arrange, cloud-save, export PDF without pasting API keys.
 
----
-
-### Phase 2 — Differentiator depth (3–5 weeks) → **v1.2**  
-**Goal:** Own “organize this room properly” so reviews mention layout help, not catalog size.
-
-| # | Deliverable | Incomplete IDs | Why |
-|---|-------------|----------------|-----|
-| 2.1 | L-shape / multi-wall rooms from openings or multi-segment input | U1 | Real homes |
-| 2.2 | Multi-photo fusion for furniture + openings | U2 | Scan quality |
-| 2.3 | Auto-arrange v2: door corridor graph, walkway ≥2.5 ft, room-type rules | U3, U6 | Core wedge |
-| 2.4 | 2–3 alternative layouts + one-tap apply | U5 | Beats single auto-furnish |
-| 2.5 | Vision confidence badges + “detect again” quality | U4 | Trust |
-| 2.6 | Wall corner join / orthogonal polish | T10 | Editor polish |
-| 2.7 | Accessibility audit | T12 | Play readiness |
-
-**Exit:** Blind test — users prefer RoomCraft auto-arrange tips over Planner 5D auto-furnish for a real bedroom.
+**Suggested Phase 1 order:** 1.3 catalog → 1.4 snap → 1.6 home → 1.5 door arcs → 1.1 cloud → 1.8 PDF → 1.7 multi-select → 1.9 rotate handle → 1.2 proxy → 1.10 Play closed.
 
 ---
 
-### Phase 3 — Distribution & growth (2–3 weeks) → **v1.3 public beta**  
-**Goal:** Leave closed Firebase-only distribution.
+### Phase 2 — Differentiator depth → **v1.2** ⏳ *after Phase 1*  
+**Goal:** Own “organize this room properly” so reviews mention layout help. **~3–5 weeks.**
 
-| # | Deliverable |
-|---|-------------|
-| 3.1 | Play Store listing (short form), screenshots, privacy, data safety |
-| 3.2 | Crashlytics / ANR budget green |
-| 3.3 | In-app feedback → issue triage weekly |
-| 3.4 | Soft paywall experiment only if needed (export HD / cloud projects) — optional |
-| 3.5 | iOS TestFlight (Flutter already multi-platform) — if Android metrics healthy |
+| # | Deliverable | Status | Why |
+|---|-------------|--------|-----|
+| 2.1 | L-shape / multi-wall rooms | ⏳ Rectangle-only scan | Real apartments |
+| 2.2 | Multi-photo fusion for furniture + openings | ⏳ Weak merge | Scan quality |
+| 2.3 | Auto-arrange v2 (walkway graph, door corridor) | ⏳ Partial (spacious reflow v1 exists) | Core wedge |
+| 2.4 | 2–3 alternative layouts + one-tap apply | ⏳ Single suggestion | Beats Planner 5D auto-furnish |
+| 2.5 | Vision confidence badges + “detect again” UI | ⏳ Filter exists; no badges | Trust |
+| 2.6 | Wall corner join / orthogonal polish | ⏳ Weak | Editor polish |
+| 2.7 | Accessibility audit | ⏳ Partial | Play readiness |
+
+**Exit:** Users prefer RoomCraft spacious suggestions over pure catalog apps for a real bedroom.
 
 ---
 
-### Phase 4 — Post-PMF expansion (later / v2)  
+### Phase 3 — Distribution & growth → **v1.3 public beta** ⏳  
+**Goal:** Leave closed Firebase-only distribution. **~2–3 weeks.**
+
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 3.1 | Play Store listing, screenshots, privacy, data safety | ⏳ |
+| 3.2 | Crashlytics / ANR budget green | ⏳ |
+| 3.3 | In-app feedback → issue triage weekly | ⏳ Partial (email feedback exists) |
+| 3.4 | Soft paywall experiment (optional) | ⏳ |
+| 3.5 | iOS TestFlight if Android metrics healthy | ⏳ |
+
+---
+
+### Phase 4 — Post-PMF expansion → **v2** ⏸ *later*  
 **Only after Phase 2 metrics prove weekly use.**
 
 | # | Deliverable | Condition |
 |---|-------------|-----------|
 | 4.1 | Optional restyle **after** layout locked | Users ask for “how it looks” |
 | 4.2 | Lightweight 3D orbit (not full Coohom) | Demand for shareable 3D |
-| 4.3 | AR preview / better scan via **Kotlin module** or ARCore plugin | Scan accuracy still loses to magicplan |
-| 4.4 | Brand catalog partnerships | Monetization path |
+| 4.3 | AR preview / better scan (Kotlin / ARCore if needed) | Still loses to magicplan |
+| 4.4 | Brand catalog partnerships | Monetization |
 | 4.5 | Contractor PDF pack | Only if B2B pivot |
 
 ---
@@ -318,38 +326,36 @@ Legend: **●** strong · **◐** partial / limited · **○** weak or absent
 ## 7. Prioritized backlog (implementation order)
 
 ```
-Phase 0
-  1. Rotation hit-test + OBB collision
-  2. Free vision always-on for tester builds
-  3. Analytics events
-  4. Secure prefs for keys
-  5. Scan honesty copy + tester ops
+Phase 0 ✅ (ops left: tester cohort + top-5 pains)
+  OBB, vision key, analytics, secure keys, honest copy
+  Furniture as-is, spacious arrange, strict no-hallucination scan
 
-Phase 1
-  6. Auth + cloud rooms
-  7. Vision backend proxy
-  8. Catalog expansion + search
-  9. Wall/edge snap + align
- 10. Door swing visuals
- 11. Home search/sort + multi-select
- 12. PDF export
- 13. Rotate handle
- 14. Play closed testing
+Phase 1 ⏳ NEXT
+  1. Catalog 30–50 + search
+  2. Wall/edge snap + align
+  3. Home search/sort
+  4. Door swing visuals
+  5. Cloud + Google Sign-In
+  6. PDF export
+  7. Multi-select
+  8. On-canvas rotate handle
+  9. Vision backend proxy (optional hardening)
+ 10. Play closed testing track
 
 Phase 2
- 15. L-shape rooms
- 16. Multi-photo fusion
- 17. Auto-arrange v2 + alternatives
- 18. Vision confidence UX
- 19. Corner join + a11y
+ 11. L-shape rooms
+ 12. Multi-photo fusion
+ 13. Auto-arrange v2 + A/B alternatives
+ 14. Vision confidence badges UI
+ 15. Corner join + accessibility
 
 Phase 3
- 20. Public Play beta
- 21. Optional iOS TestFlight
+ 16. Public Play beta
+ 17. Optional iOS TestFlight
 
 Phase 4 (later)
- 22. Restyle after layout
- 23. Light 3D / AR hybrid
+ 18. Restyle after layout
+ 19. Light 3D / AR hybrid
 ```
 
 ---
@@ -412,12 +418,12 @@ There is still **no strong OSS** that ships: `casual phone photo → accurate to
 |----------|--------|
 | Market job RoomCraft should own | Measured layout: photo → top view → organize furniture properly |
 | Biggest competitor threat | Home Planner AI (scan+catalog+3D) + magicplan (scan accuracy) |
-| What we already have | Full MVP loop, layout score, auto-arrange, free accurate dimensions |
-| What’s incomplete (critical) | Rotation collision, always-on photo furniture, analytics, cloud, catalog, snap polish |
+| What we already have (beta.1+7) | MVP loop + OBB + analytics + secure keys + Groq vision (strict) + spacious reflow |
+| What’s incomplete (critical next) | **Cloud, catalog, snap polish, PDF, multi-select, Play track** |
 | What competitors have that we skip for now | Photoreal restyle, 400k catalog, contractor estimates, full 3D/AR |
-| Next build phase | **Phase 0** (trust) → **Phase 1** (table stakes) → **Phase 2** (layout IP) |
+| Next build phase | **Phase 1 table stakes** → Phase 2 layout IP → Phase 3 public beta |
 | Stack decision | Stay Flutter |
 
 ---
 
-*Document version: 2.0 · Research date: 2026-07-13 · Branch target: `dev`*
+*Document version: 2.1 · Research date: 2026-07-13 · Progress: through `1.0.0-beta.1+7` · Branch: `dev`*

@@ -49,7 +49,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     final panEnabled = roomState.currentTool == ToolMode.pan ||
         (roomState.currentTool == ToolMode.select &&
             !roomState.isDraggingFurniture &&
-            roomState.selectedFurnitureId == null);
+            !roomState.hasSelection);
 
     return PopScope(
       canPop: true,
@@ -85,17 +85,25 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               },
               tooltip: 'Save',
             ),
-            IconButton(
+            PopupMenuButton<String>(
+              tooltip: 'Export',
               icon: const Icon(Icons.ios_share),
-              tooltip: 'Export PNG',
-              onPressed: () async {
+              onSelected: (v) async {
                 try {
-                  await ExportService.sharePng(
-                    roomState.room,
-                    pixelsPerFoot: roomState.pixelsPerFoot,
-                    unitSystem: roomState.unitSystem,
-                  );
-                  await AnalyticsService.instance.exportPng();
+                  if (v == 'png') {
+                    await ExportService.sharePng(
+                      roomState.room,
+                      pixelsPerFoot: roomState.pixelsPerFoot,
+                      unitSystem: roomState.unitSystem,
+                    );
+                    await AnalyticsService.instance.exportPng();
+                  } else if (v == 'pdf') {
+                    await ExportService.sharePdf(
+                      roomState.room,
+                      unitSystem: roomState.unitSystem,
+                    );
+                    await AnalyticsService.instance.logEvent('export_pdf');
+                  }
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -104,6 +112,10 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   }
                 }
               },
+              itemBuilder: (ctx) => const [
+                PopupMenuItem(value: 'png', child: Text('Share PNG image')),
+                PopupMenuItem(value: 'pdf', child: Text('Share PDF summary')),
+              ],
             ),
             IconButton(
               icon: const Icon(Icons.undo),
@@ -154,7 +166,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                         if (roomState.isDrawTool) {
                           roomNotifier.updateStroke(details.localPosition);
                         } else if (roomState.currentTool == ToolMode.select &&
-                            roomState.selectedFurnitureId != null) {
+                            roomState.hasSelection) {
                           roomNotifier.updateFurniturePosition(details.delta);
                         }
                       },
@@ -176,6 +188,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                         foregroundPainter: FurniturePainter(
                           furniture: roomState.room.furniture,
                           selectedId: roomState.selectedFurnitureId,
+                          selectedIds: roomState.selectedFurnitureIds,
                           pixelsPerFoot: roomState.pixelsPerFoot,
                           unitSystem: roomState.unitSystem,
                           collisionIds: roomState.collisionIds,
@@ -188,13 +201,13 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             ),
           ],
         ),
-        floatingActionButton: roomState.selectedFurnitureId != null
+        floatingActionButton: roomState.hasSelection
             ? Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   FloatingActionButton.small(
                     heroTag: 'rotate45FAB',
-                    tooltip: 'Rotate 45°',
+                    tooltip: 'Rotate 45° (or drag amber handle)',
                     onPressed: () => roomNotifier.rotateSelectedFurniture(),
                     child: const Icon(Icons.rotate_right),
                   ),
@@ -206,18 +219,24 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                         roomNotifier.rotateSelectedFurniture(degrees: 90),
                     child: const Icon(Icons.rotate_90_degrees_cw),
                   ),
-                  const SizedBox(height: 8),
-                  FloatingActionButton.small(
-                    heroTag: 'resizeFAB',
-                    tooltip: 'Resize',
-                    onPressed: () => _resizeSelected(context, roomNotifier, roomState),
-                    child: const Icon(Icons.photo_size_select_small),
-                  ),
+                  if (roomState.selectedFurnitureId != null &&
+                      roomState.effectiveSelection.length == 1) ...[
+                    const SizedBox(height: 8),
+                    FloatingActionButton.small(
+                      heroTag: 'resizeFAB',
+                      tooltip: 'Resize',
+                      onPressed: () =>
+                          _resizeSelected(context, roomNotifier, roomState),
+                      child: const Icon(Icons.photo_size_select_small),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   FloatingActionButton.small(
                     heroTag: 'deleteFAB',
                     backgroundColor: Colors.red.shade100,
-                    tooltip: 'Delete',
+                    tooltip: roomState.effectiveSelection.length > 1
+                        ? 'Delete selected'
+                        : 'Delete',
                     onPressed: () => roomNotifier.deleteSelectedFurniture(),
                     child: const Icon(Icons.delete, color: Colors.red),
                   ),
@@ -503,7 +522,9 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
       case ToolMode.pan:
         text = 'Pan — drag canvas · pinch zoom';
       case ToolMode.select:
-        text = 'Select — drag furniture · ends snap to grid · rotate FAB = 45°';
+        text = state.multiSelectMode
+            ? 'Multi-select — tap to add/remove · drag moves all · wall snap on release'
+            : 'Select — drag · wall/edge snap · amber handle rotates 45°';
       case ToolMode.wall:
         text = 'Wall — drag; snaps horizontal/vertical';
       case ToolMode.door:
@@ -682,8 +703,21 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             _ToolButton(
               icon: Icons.near_me,
               label: 'Select',
-              isActive: state.currentTool == ToolMode.select,
-              onTap: () => notifier.setTool(ToolMode.select),
+              isActive: state.currentTool == ToolMode.select && !state.multiSelectMode,
+              onTap: () {
+                notifier.setTool(ToolMode.select);
+                notifier.setMultiSelectMode(false);
+              },
+            ),
+            const SizedBox(width: 8),
+            _ToolButton(
+              icon: Icons.select_all,
+              label: 'Multi',
+              isActive: state.currentTool == ToolMode.select && state.multiSelectMode,
+              onTap: () {
+                notifier.setTool(ToolMode.select);
+                notifier.setMultiSelectMode(true);
+              },
             ),
             const SizedBox(width: 8),
             _ToolButton(

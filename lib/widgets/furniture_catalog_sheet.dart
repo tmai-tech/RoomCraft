@@ -4,7 +4,7 @@ import '../catalog/furniture_catalog.dart';
 import '../domain/units.dart';
 import '../models/furniture_item.dart';
 
-/// Bottom sheet furniture catalog with categories and customizable size.
+/// Bottom sheet furniture catalog with search, categories, custom size.
 class FurnitureCatalogSheet extends StatefulWidget {
   final UnitSystem unitSystem;
   final void Function(FurnitureType type, double widthFt, double lengthFt) onAdd;
@@ -37,6 +37,24 @@ class FurnitureCatalogSheet extends StatefulWidget {
 
 class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
   FurnitureCategory? _filter;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<FurnitureCatalogEntry> get _entries {
+    var list = _query.isEmpty
+        ? FurnitureCatalog.all
+        : FurnitureCatalog.search(_query);
+    if (_filter != null) {
+      list = list.where((e) => e.category == _filter).toList();
+    }
+    return list;
+  }
 
   Future<void> _pickSizeAndAdd(FurnitureCatalogEntry e) async {
     final unit = widget.unitSystem;
@@ -86,7 +104,6 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
           ),
           TextButton(
             onPressed: () {
-              // Use defaults without editing
               Navigator.pop(ctx, (e.defaultWidthFt, e.defaultLengthFt));
             },
             child: const Text('Use default'),
@@ -113,34 +130,57 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
     );
 
     if (result == null || !mounted) return;
-    Navigator.of(context).pop(); // close sheet
+    Navigator.of(context).pop();
     widget.onAdd(e.type, result.$1, result.$2);
   }
 
   @override
   Widget build(BuildContext context) {
-    final entries = _filter == null
-        ? FurnitureCatalog.all
-        : FurnitureCatalog.byCategory(_filter!);
+    final entries = _entries;
 
     return SafeArea(
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.62,
+        height: MediaQuery.of(context).size.height * 0.72,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(
-                'Furniture catalog',
-                style: Theme.of(context).textTheme.titleLarge,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Furniture catalog',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  Text(
+                    '${FurnitureCatalog.all.length} items',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                ],
               ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Tap Add to set custom width × length before placing.',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search bed, desk, sofa…',
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                ),
+                onChanged: (v) => setState(() => _query = v),
               ),
             ),
             const SizedBox(height: 8),
@@ -170,34 +210,41 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                itemCount: entries.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (ctx, i) {
-                  final e = entries[i];
-                  final sizeLabel =
-                      '${LengthFormat.formatFeet(e.defaultWidthFt, widget.unitSystem)}'
-                      ' × '
-                      '${LengthFormat.formatFeet(e.defaultLengthFt, widget.unitSystem)}';
-                  return Card(
-                    elevation: 0,
-                    color: Colors.blueGrey.shade50,
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.white,
-                        child: Icon(e.icon, color: Colors.blueGrey.shade700),
+              child: entries.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No matches for “$_query”',
+                        style: TextStyle(color: Colors.grey.shade600),
                       ),
-                      title: Text(e.label),
-                      subtitle: Text('${e.description} · default $sizeLabel'),
-                      trailing: FilledButton(
-                        onPressed: () => _pickSizeAndAdd(e),
-                        child: const Text('Add'),
-                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                      itemCount: entries.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (ctx, i) {
+                        final e = entries[i];
+                        final sizeLabel =
+                            '${LengthFormat.formatFeet(e.defaultWidthFt, widget.unitSystem)}'
+                            ' × '
+                            '${LengthFormat.formatFeet(e.defaultLengthFt, widget.unitSystem)}';
+                        return Card(
+                          elevation: 0,
+                          color: Colors.blueGrey.shade50,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.white,
+                              child: Icon(e.icon, color: Colors.blueGrey.shade700),
+                            ),
+                            title: Text(e.label),
+                            subtitle: Text('${e.description} · $sizeLabel'),
+                            trailing: FilledButton(
+                              onPressed: () => _pickSizeAndAdd(e),
+                              child: const Text('Add'),
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),

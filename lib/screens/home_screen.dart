@@ -19,19 +19,59 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
+enum _HomeSort { updatedDesc, updatedAsc, nameAsc }
+
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final StorageService _storageService = StorageService();
   final PrefsService _prefs = PrefsService();
+  final _searchCtrl = TextEditingController();
   List<RoomModel> _rooms = [];
   bool _isLoading = true;
   String? _loadError;
   UnitSystem _units = UnitSystem.feet;
   bool _showBetaBanner = false;
+  String _query = '';
+  _HomeSort _sort = _HomeSort.updatedDesc;
 
   @override
   void initState() {
     super.initState();
     _loadRooms();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<RoomModel> get _filteredRooms {
+    var list = List<RoomModel>.from(_rooms);
+    final q = _query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list
+          .where((r) => r.name.toLowerCase().contains(q))
+          .toList();
+    }
+    switch (_sort) {
+      case _HomeSort.updatedDesc:
+        list.sort((a, b) {
+          final au = a.updatedAt ?? DateTime(1970);
+          final bu = b.updatedAt ?? DateTime(1970);
+          return bu.compareTo(au);
+        });
+      case _HomeSort.updatedAsc:
+        list.sort((a, b) {
+          final au = a.updatedAt ?? DateTime(1970);
+          final bu = b.updatedAt ?? DateTime(1970);
+          return au.compareTo(bu);
+        });
+      case _HomeSort.nameAsc:
+        list.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+    }
+    return list;
   }
 
   Future<void> _loadRooms() async {
@@ -113,6 +153,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Column(
         children: [
           if (_showBetaBanner) _buildBetaBanner(),
+          if (_rooms.isNotEmpty) _buildSearchSortBar(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -120,10 +161,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ? _buildErrorState()
                     : _rooms.isEmpty
                         ? _buildEmptyState()
-                        : RefreshIndicator(
-                            onRefresh: _loadRooms,
-                            child: _buildRoomList(),
-                          ),
+                        : _filteredRooms.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No plans match “$_query”',
+                                  style: TextStyle(color: Colors.grey.shade600),
+                                ),
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _loadRooms,
+                                child: _buildRoomList(),
+                              ),
           ),
         ],
       ),
@@ -221,12 +269,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildSearchSortBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search plans…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                isDense: true,
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
+          const SizedBox(width: 8),
+          PopupMenuButton<_HomeSort>(
+            tooltip: 'Sort',
+            initialValue: _sort,
+            onSelected: (v) => setState(() => _sort = v),
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(
+                value: _HomeSort.updatedDesc,
+                child: Text('Newest first'),
+              ),
+              PopupMenuItem(
+                value: _HomeSort.updatedAsc,
+                child: Text('Oldest first'),
+              ),
+              PopupMenuItem(
+                value: _HomeSort.nameAsc,
+                child: Text('Name A–Z'),
+              ),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(Icons.sort),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRoomList() {
+    final rooms = _filteredRooms;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-      itemCount: _rooms.length,
+      itemCount: rooms.length,
       itemBuilder: (ctx, index) {
-        final room = _rooms[index];
+        final room = rooms[index];
         final dim =
             '${LengthFormat.formatFeet(room.widthInFeet, _units)} × '
             '${LengthFormat.formatFeet(room.lengthInFeet, _units)}';

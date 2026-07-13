@@ -2,6 +2,18 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+8 (2026-07-13)
+
+### Phase 1 — table stakes (partial)
+- **Catalog**: 40 pieces with search + categories (beds, sofas, desks, storage…).
+- **Snap**: furniture snaps to grid, outer walls, and neighbor edges on drag end.
+- **Home**: search plans + sort (newest / oldest / name).
+- **Door swing**: filled arc keep-out visual.
+- **Multi-select**: Multi tool + bulk move/delete.
+- **Rotate handle**: amber handle on selected piece (45°).
+- **Export PDF**: share text plan PDF (+ PNG).
+- **Cloud backup**: Google Sign-In + Firestore backup/restore in Settings (needs Firebase SHA config).
+
 ## 1.0.0-beta.1+7 (2026-07-13)
 
 ### Fix — stop inventing furniture on scan

@@ -181,8 +181,23 @@ class BlueprintPainter extends CustomPainter {
     final r = (p1 - p2).distance;
     final angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
 
+    // Filled swing sector (keep-out visual)
+    final fill = Paint()
+      ..color = Colors.orange.withValues(alpha: 0.12)
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(p1.dx, p1.dy)
+      ..arcTo(
+        Rect.fromCircle(center: p1, radius: r),
+        angle,
+        pi / 2,
+        false,
+      )
+      ..close();
+    canvas.drawPath(path, fill);
+
     final paint = Paint()
-      ..color = Colors.orange.withValues(alpha: 0.5)
+      ..color = Colors.orange.withValues(alpha: 0.65)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
@@ -192,6 +207,18 @@ class BlueprintPainter extends CustomPainter {
       pi / 2,
       false,
       paint,
+    );
+    // Swing radius tick
+    final end = Offset(
+      p1.dx + r * cos(angle + pi / 2),
+      p1.dy + r * sin(angle + pi / 2),
+    );
+    canvas.drawLine(
+      p1,
+      end,
+      Paint()
+        ..color = Colors.orange.withValues(alpha: 0.45)
+        ..strokeWidth = 1.5,
     );
   }
 

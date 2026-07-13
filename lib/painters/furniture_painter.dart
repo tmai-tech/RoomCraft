@@ -7,26 +7,45 @@ import '../models/furniture_item.dart';
 class FurniturePainter extends CustomPainter {
   final List<FurnitureItem> furniture;
   final String? selectedId;
+  final Set<String> selectedIds;
   final double pixelsPerFoot;
   final UnitSystem unitSystem;
   final Set<String> collisionIds;
+  final bool showRotateHandle;
 
   FurniturePainter({
     required this.furniture,
     this.selectedId,
+    this.selectedIds = const {},
     required this.pixelsPerFoot,
     this.unitSystem = UnitSystem.feet,
     this.collisionIds = const {},
+    this.showRotateHandle = true,
   });
+
+  bool _isSelected(String id) =>
+      id == selectedId || selectedIds.contains(id);
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final item in furniture) {
-      _drawFurnitureItem(canvas, item, item.id == selectedId, collisionIds.contains(item.id));
+      _drawFurnitureItem(
+        canvas,
+        item,
+        _isSelected(item.id),
+        collisionIds.contains(item.id),
+        primary: item.id == selectedId,
+      );
     }
   }
 
-  void _drawFurnitureItem(Canvas canvas, FurnitureItem item, bool isSelected, bool inCollision) {
+  void _drawFurnitureItem(
+    Canvas canvas,
+    FurnitureItem item,
+    bool isSelected,
+    bool inCollision, {
+    bool primary = false,
+  }) {
     canvas.save();
     canvas.translate(item.position.dx, item.position.dy);
     canvas.rotate(item.rotationAngle);
@@ -79,10 +98,37 @@ class FurniturePainter extends CustomPainter {
         RRect.fromRectAndRadius(rect.inflate(5), const Radius.circular(4)),
         highlightPaint,
       );
-      // Corner handles
       final handle = Paint()..color = Colors.amber.shade700;
       for (final c in [rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight]) {
         canvas.drawCircle(c, 4, handle);
+      }
+      // Rotate handle (above item, local -Y)
+      if (showRotateHandle && primary) {
+        final hy = rect.top - 22;
+        final stem = Paint()
+          ..color = Colors.amber.shade800
+          ..strokeWidth = 2;
+        canvas.drawLine(Offset(0, rect.top), Offset(0, hy), stem);
+        canvas.drawCircle(Offset(0, hy), 9, Paint()..color = Colors.amber.shade700);
+        canvas.drawCircle(
+          Offset(0, hy),
+          9,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+        // small curved arrow mark
+        canvas.drawArc(
+          Rect.fromCircle(center: Offset(0, hy), radius: 5),
+          -2.2,
+          2.5,
+          false,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
       }
     }
 

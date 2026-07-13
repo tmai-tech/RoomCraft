@@ -5,6 +5,7 @@ import '../config/app_config.dart';
 import '../domain/units.dart';
 import '../services/ai_scanner_service.dart';
 import '../services/free_vision_scanner.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/prefs_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -19,6 +20,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _groqKeyController = TextEditingController();
   final _prefs = PrefsService();
   UnitSystem _units = UnitSystem.feet;
+  final _cloud = CloudSyncService();
+  bool _cloudBusy = false;
+  String? _cloudUserEmail;
 
   @override
   void initState() {
@@ -30,12 +34,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final gemini = await AIScannerService.loadApiKey();
     final groq = await FreeVisionScanner.loadApiKey();
     final units = await _prefs.loadUnitSystem();
+    await _cloud.ensureReady();
     if (!mounted) return;
     setState(() {
       _geminiKeyController.text = gemini ?? '';
       _groqKeyController.text = groq ?? '';
       _units = units;
+      _cloudUserEmail = _cloud.currentUser?.email;
     });
+  }
+
+  Future<void> _cloudSignIn() async {
+    setState(() => _cloudBusy = true);
+    try {
+      final u = await _cloud.signInWithGoogle();
+      if (!mounted) return;
+      setState(() => _cloudUserEmail = u?.email);
+      if (u != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Signed in as ${u.email}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sign-in failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cloudBusy = false);
+    }
+  }
+
+  Future<void> _cloudBackup() async {
+    setState(() => _cloudBusy = true);
+    try {
+      final n = await _cloud.backupAllLocalRooms();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Backed up $n plan(s) to cloud')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Backup failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cloudBusy = false);
+    }
+  }
+
+  Future<void> _cloudRestore() async {
+    setState(() => _cloudBusy = true);
+    try {
+      final n = await _cloud.restoreFromCloud();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restored $n plan(s) from cloud')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restore failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cloudBusy = false);
+    }
+  }
+
+  Future<void> _cloudSignOut() async {
+    await _cloud.signOut();
+    if (mounted) setState(() => _cloudUserEmail = null);
   }
 
   Future<void> _saveKeys() async {
@@ -87,6 +160,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'the plan always uses those measurements. Furniture assist uses a '
                 'bundled free key when available; otherwise an empty correct plan '
                 '(add pieces from the catalog). Optional keys below are stored securely on device.',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Cloud backup (Phase 1)',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    _cloudUserEmail == null
+                        ? 'Sign in with Google to back up plans across devices.'
+                        : 'Signed in as $_cloudUserEmail',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_cloudBusy)
+                    const Center(child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(),
+                    ))
+                  else if (_cloudUserEmail == null)
+                    FilledButton.icon(
+                      onPressed: _cloudSignIn,
+                      icon: const Icon(Icons.login),
+                      label: const Text('Sign in with Google'),
+                    )
+                  else ...[
+                    FilledButton.icon(
+                      onPressed: _cloudBackup,
+                      icon: const Icon(Icons.cloud_upload),
+                      label: const Text('Backup plans to cloud'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _cloudRestore,
+                      icon: const Icon(Icons.cloud_download),
+                      label: const Text('Restore from cloud'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: _cloudSignOut,
+                      child: const Text('Sign out'),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),

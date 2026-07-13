@@ -14,6 +14,7 @@ import '../domain/layout/clearances.dart';
 import '../domain/layout/collision.dart';
 import '../domain/layout/furniture_bounds.dart';
 import '../domain/layout/layout_score.dart';
+import '../domain/layout/snap.dart';
 
 /// Editor tools. [pan] pans/zooms the canvas; [select] moves furniture; others draw.
 enum ToolMode { pan, select, wall, door, window, erase, balcony }
@@ -24,6 +25,9 @@ class RoomState {
   final ToolMode currentTool;
   final double pixelsPerFoot;
   final String? selectedFurnitureId;
+  /// Multi-select set (includes [selectedFurnitureId] when non-null).
+  final Set<String> selectedFurnitureIds;
+  final bool multiSelectMode;
   final bool isDraggingFurniture;
   final UnitSystem unitSystem;
   final bool canUndo;
@@ -39,6 +43,8 @@ class RoomState {
     this.currentTool = ToolMode.select,
     this.pixelsPerFoot = AppConfig.defaultPixelsPerFoot,
     this.selectedFurnitureId,
+    this.selectedFurnitureIds = const {},
+    this.multiSelectMode = false,
     this.isDraggingFurniture = false,
     this.unitSystem = UnitSystem.feet,
     this.canUndo = false,
@@ -55,11 +61,20 @@ class RoomState {
       currentTool == ToolMode.window ||
       currentTool == ToolMode.balcony;
 
+  bool get hasSelection =>
+      selectedFurnitureId != null || selectedFurnitureIds.isNotEmpty;
+
+  Set<String> get effectiveSelection {
+    if (selectedFurnitureIds.isNotEmpty) return selectedFurnitureIds;
+    if (selectedFurnitureId != null) return {selectedFurnitureId!};
+    return {};
+  }
+
   bool get canvasPanEnabled =>
       currentTool == ToolMode.pan ||
       (currentTool == ToolMode.select &&
           !isDraggingFurniture &&
-          selectedFurnitureId == null);
+          !hasSelection);
 
   RoomState copyWith({
     RoomModel? room,
@@ -67,6 +82,8 @@ class RoomState {
     ToolMode? currentTool,
     double? pixelsPerFoot,
     String? selectedFurnitureId,
+    Set<String>? selectedFurnitureIds,
+    bool? multiSelectMode,
     bool? isDraggingFurniture,
     UnitSystem? unitSystem,
     bool? canUndo,
@@ -85,6 +102,10 @@ class RoomState {
       pixelsPerFoot: pixelsPerFoot ?? this.pixelsPerFoot,
       selectedFurnitureId:
           clearSelected ? null : (selectedFurnitureId ?? this.selectedFurnitureId),
+      selectedFurnitureIds: clearSelected
+          ? const {}
+          : (selectedFurnitureIds ?? this.selectedFurnitureIds),
+      multiSelectMode: multiSelectMode ?? this.multiSelectMode,
       isDraggingFurniture: isDraggingFurniture ?? this.isDraggingFurniture,
       unitSystem: unitSystem ?? this.unitSystem,
       canUndo: canUndo ?? this.canUndo,
@@ -330,14 +351,30 @@ class RoomNotifier extends Notifier<RoomState> {
         updatedAt: DateTime.now(),
       ),
       selectedFurnitureId: newItem.id,
+      selectedFurnitureIds: {newItem.id},
       currentTool: ToolMode.select,
     );
     _syncHistoryFlags();
     _refreshLayout();
   }
 
+  void setMultiSelectMode(bool enabled) {
+    state = state.copyWith(multiSelectMode: enabled);
+  }
+
   void selectFurnitureAt(Offset position) {
     if (state.currentTool != ToolMode.select) return;
+
+    // Rotate handle hit on primary selection
+    final primaryId = state.selectedFurnitureId;
+    if (primaryId != null && !state.multiSelectMode) {
+      final primary = state.room.furniture.where((f) => f.id == primaryId);
+      if (primary.isNotEmpty &&
+          _hitRotateHandle(primary.first, position)) {
+        rotateSelectedFurniture(degrees: AppConfig.rotateSnapDegrees);
+        return;
+      }
+    }
 
     for (var i = state.room.furniture.length - 1; i >= 0; i--) {
       final item = state.room.furniture[i];
@@ -347,10 +384,31 @@ class RoomNotifier extends Notifier<RoomState> {
           strokes: List.of(state.room.strokes),
           furniture: List.of(state.room.furniture),
         );
-        state = state.copyWith(
-          selectedFurnitureId: item.id,
-          isDraggingFurniture: true,
-        );
+
+        if (state.multiSelectMode) {
+          final ids = Set<String>.from(state.selectedFurnitureIds);
+          if (ids.contains(item.id)) {
+            ids.remove(item.id);
+          } else {
+            ids.add(item.id);
+          }
+          state = state.copyWith(
+            selectedFurnitureId: ids.isEmpty ? null : item.id,
+            selectedFurnitureIds: ids,
+            isDraggingFurniture: ids.isNotEmpty,
+            clearSelected: ids.isEmpty,
+          );
+          if (ids.isEmpty) {
+            _draggingFurniture = false;
+            _roomBeforeDrag = null;
+          }
+        } else {
+          state = state.copyWith(
+            selectedFurnitureId: item.id,
+            selectedFurnitureIds: {item.id},
+            isDraggingFurniture: true,
+          );
+        }
         return;
       }
     }
@@ -358,7 +416,6 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 
   bool _hitTestFurniture(FurnitureItem item, Offset position) {
-    // True OBB hit-test (accounts for rotation).
     return FurnitureBounds.containsPoint(
       item,
       position,
@@ -367,11 +424,24 @@ class RoomNotifier extends Notifier<RoomState> {
     );
   }
 
+  /// Rotate handle sits above the item in local space (after rotation).
+  bool _hitRotateHandle(FurnitureItem item, Offset world) {
+    final halfH = item.lengthInFeet * state.pixelsPerFoot / 2;
+    final localY = -(halfH + 22);
+    final cosA = cos(item.rotationAngle);
+    final sinA = sin(item.rotationAngle);
+    final hx = item.position.dx - localY * sinA;
+    final hy = item.position.dy + localY * cosA;
+    final d = (world - Offset(hx, hy)).distance;
+    return d <= 18;
+  }
+
   void updateFurniturePosition(Offset delta) {
-    if (state.selectedFurnitureId == null) return;
+    final ids = state.effectiveSelection;
+    if (ids.isEmpty) return;
 
     final furniture = state.room.furniture.map((item) {
-      if (item.id != state.selectedFurnitureId) return item;
+      if (!ids.contains(item.id)) return item;
       return item.copyWith(position: item.position + delta);
     }).toList();
 
@@ -394,10 +464,20 @@ class RoomNotifier extends Notifier<RoomState> {
         state.room.lengthInFeet,
         state.pixelsPerFoot,
       );
+      final ids = state.effectiveSelection;
 
       final furniture = state.room.furniture.map((item) {
-        if (item.id != state.selectedFurnitureId) return item;
-        var next = item.copyWith(position: _snapToGrid(item.position));
+        if (!ids.contains(item.id)) return item;
+        final others =
+            state.room.furniture.where((f) => f.id != item.id).toList();
+        var next = item.copyWith(
+          position: FurnitureSnap.snap(
+            item: item,
+            room: state.room,
+            pixelsPerFoot: state.pixelsPerFoot,
+            others: others,
+          ),
+        );
         next = next.copyWith(
           position: FurnitureBounds.clampCenterInRoom(
             next,
@@ -405,7 +485,6 @@ class RoomNotifier extends Notifier<RoomState> {
             roomR,
           ),
         );
-        final others = state.room.furniture.where((f) => f.id != item.id).toList();
         return Collision.resolveOverlaps(
           next,
           others,
@@ -430,14 +509,14 @@ class RoomNotifier extends Notifier<RoomState> {
 
   /// Rotate selected furniture by [degrees] (default 45° snap).
   void rotateSelectedFurniture({double degrees = AppConfig.rotateSnapDegrees}) {
-    if (state.selectedFurnitureId == null) return;
+    final ids = state.effectiveSelection;
+    if (ids.isEmpty) return;
     _pushHistory();
 
     final radians = degrees * pi / 180.0;
     final furniture = state.room.furniture.map((item) {
-      if (item.id != state.selectedFurnitureId) return item;
+      if (!ids.contains(item.id)) return item;
       var next = item.rotationAngle + radians;
-      // Normalize to 0..2π and snap to nearest step.
       final step = radians;
       next = (next / step).round() * step;
       return item.copyWith(rotationAngle: next);
@@ -449,7 +528,6 @@ class RoomNotifier extends Notifier<RoomState> {
     _syncHistoryFlags();
     _refreshLayout();
   }
-
 
   void resizeSelectedFurniture(double widthFt, double lengthFt) {
     if (state.selectedFurnitureId == null) return;
@@ -469,11 +547,11 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 
   void deleteSelectedFurniture() {
-    if (state.selectedFurnitureId == null) return;
+    final ids = state.effectiveSelection;
+    if (ids.isEmpty) return;
     _pushHistory();
-    final furniture = state.room.furniture
-        .where((i) => i.id != state.selectedFurnitureId)
-        .toList();
+    final furniture =
+        state.room.furniture.where((i) => !ids.contains(i.id)).toList();
     state = state.copyWith(
       room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
       clearSelected: true,
