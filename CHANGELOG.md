@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+10 (2026-07-13)
+
+### Precision redesign — wall-by-wall (how designers & magicplan-class apps work)
+- Research: magicplan etc. use **AR/LiDAR + guided walls/corners**, not single photo→LLM freeform XY.
+- **Wall-by-wall capture**: photo Wall A–D; openings as fractions along that wall; furniture as t + depth from wall.
+- **Deterministic compose** to top-down plan (no freestyle coordinate guessing).
+- Optional overview photos for center furniture.
+- Free multi-frame/video remains as fallback mode.
+- Still not LiDAR: you measure W×L; AI places features **relative to walls**.
+
 ## 1.0.0-beta.1+9 (2026-07-13)
 
 ### Precision scan — video walkthrough + multi-pass mapping
