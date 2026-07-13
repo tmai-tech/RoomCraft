@@ -140,12 +140,17 @@ jobs:
             exit 0
           fi
 
-          # Prefer workflow input, then secret, then hard default "testers"
+          # Prefer workflow input, then secret alias, then hard default "testers".
+          # Note: FIREBASE_TESTER_GROUPS must be the *alias* (e.g. testers), never a
+          # numeric group id — Firebase API 404s on bad aliases and testers never see the build.
           GROUPS="${INPUT_GROUPS:-}"
+          GROUPS="$(echo -n "${GROUPS}" | tr -d '[:space:]')"
           if [ -z "${GROUPS}" ]; then
-            GROUPS="${FIREBASE_TESTER_GROUPS:-}"
+            GROUPS="$(echo -n "${FIREBASE_TESTER_GROUPS:-}" | tr -d '[:space:]')"
           fi
-          if [ -z "${GROUPS}" ] || [ "${GROUPS}" = "1001" ]; then
+          # Reject empty, pure numeric ids (e.g. 1001), and placeholder values
+          if [ -z "${GROUPS}" ] || echo "${GROUPS}" | grep -Eq '^[0-9]+$'; then
+            echo "::warning::FIREBASE_TESTER_GROUPS='${GROUPS:-empty}' is invalid; using alias 'testers'"
             GROUPS="testers"
           fi
 
