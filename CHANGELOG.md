@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+11 (2026-07-13)
+
+### Precision — designer field measure (tape) as primary path
+- **Research**: competitors (magicplan, RoomPlan, Houzz/Twindo) use AR/LiDAR/laser — photos alone cannot place doors/furniture accurately. See `docs/Scan-Precision-Research.md`.
+- **Field measure mode (default)**: enter W×L, then per wall **from left corner (facing wall) + opening width** for doors/windows/balconies; furniture with center-from-left + depth + size.
+- Optional **photo + AI suggest** fills tape fields — always verify with tape.
+- **Fixed facing-wall coordinates** (south/east were mapped as plan-CCW, which scrambled left→right vs how you face the wall).
+- Vision prefers **feet along wall** + standard opening width priors (door ~2.5–3.5 ft).
+- **Review**: add/edit/delete openings with tape distances; plan confidence higher for tape path.
+
 ## 1.0.0-beta.1+10 (2026-07-13)
 
 ### Precision redesign — wall-by-wall (how designers & magicplan-class apps work)

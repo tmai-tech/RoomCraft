@@ -267,30 +267,34 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
     double roomL,
   ) =>
       '''
-This photo is ${wall.shortLabel} of a rectangular room.
+This photo is ${wall.shortLabel} of a rectangular room (interior designer field survey).
 Room size: ${roomW.toStringAsFixed(1)} ft (width) × ${roomL.toStringAsFixed(1)} ft (length).
-THIS wall is ${wallLenFt.toStringAsFixed(1)} ft long.
+THIS wall is EXACTLY ${wallLenFt.toStringAsFixed(1)} ft long (authoritative).
 
-You are facing THIS wall. Left side of the image = t=0, right side = t=1 along the wall.
+You are facing THIS wall from inside the room.
+- Left side of the image = LEFT as you face the wall = t=0 / from_left_ft=0
+- Right side of the image = RIGHT as you face the wall = t=1 / from_left_ft=${wallLenFt.toStringAsFixed(1)}
 
+Prefer FEET along the wall (more accurate than pure fractions):
 Return ONLY JSON:
 {
   "openings": [
-    {"type":"door","t0":0.2,"t1":0.45,"confidence":0.9,"evidence":"door left-center"}
+    {"type":"door","from_left_ft":2.5,"width_ft":3.0,"confidence":0.9,"evidence":"single door near left"}
   ],
   "furniture": [
-    {"type":"SOFA","t":0.5,"depth_ft":1.5,"w_ft":7,"l_ft":3,"confidence":0.9,"evidence":"sofa against wall"}
+    {"type":"SOFA","from_left_ft":5.0,"depth_ft":3.0,"w_ft":7,"l_ft":3,"confidence":0.9,"evidence":"sofa centered on wall"}
   ]
 }
 
-Rules:
-1. openings type: door | window | balcony only. t0 < t1, both 0–1.
-2. Only openings ON this wall. Empty [] if none visible.
-3. furniture only against THIS wall (not far wall / center unless clearly against it).
-4. t = center fraction left→right. depth_ft = how far the piece sticks into the room from the wall (usually 1–4 ft).
+Rules (critical for plan accuracy):
+1. openings type: door | window | balcony only. from_left_ft = left edge of opening from LEFT corner while facing wall.
+2. width_ft must be realistic: door 2.5–3.5 ft typical, window 2–6 ft, balcony/sliding 4–10 ft. Never a whole-wall door.
+3. Only openings ON this wall (door frame / glass / sliding track clearly on THIS wall). Empty [] if none visible.
+4. furniture only against THIS wall. from_left_ft = center of piece from left corner. depth_ft = how far it sticks into room (bed ~6–7, sofa ~3, nightstand ~1.5).
 5. Types: BED,WARDROBE,SOFA,TABLE,CHAIR,TV_UNIT,BOOKSHELF,NIGHTSTAND
-6. Never invent. confidence < 0.75 → omit.
-7. If photo is not clearly this wall, return empty arrays.
+6. Never invent. confidence < 0.75 → omit. If unsure about position, omit rather than guess.
+7. Balcony = large glazed door / outdoor opening (not a normal window).
+8. If photo is not clearly this wall, return empty arrays.
 ''';
 
   static ({List<WallOpeningHint> openings, List<WallFurnitureHint> furniture, List<String> notes})
@@ -305,9 +309,26 @@ Rules:
         if (item is! Map) continue;
         final m = Map<String, dynamic>.from(item);
         final conf = _num(m['confidence']) ?? 0.8;
-        if (conf < 0.7) continue;
+        if (conf < 0.68) continue;
         final type = _stroke(m['type']?.toString());
         if (type == null) continue;
+
+        // Prefer feet-based (designer method); fall back to fractions.
+        final fromLeft = _num(m['from_left_ft']);
+        final widthFt = _num(m['width_ft']);
+        if (fromLeft != null && widthFt != null) {
+          openings.add(WallOpeningHint.fromLeft(
+            wall: wall,
+            type: type,
+            fromLeftFt: fromLeft,
+            widthFt: widthFt,
+            wallLengthFt: wallLen,
+            confidence: conf,
+            evidence: m['evidence']?.toString() ?? 'vision feet',
+          ));
+          continue;
+        }
+
         var t0 = (_num(m['t0']) ?? 0).clamp(0.0, 1.0);
         var t1 = (_num(m['t1']) ?? 0).clamp(0.0, 1.0);
         if (t1 < t0) {
@@ -315,17 +336,22 @@ Rules:
           t0 = t1;
           t1 = tmp;
         }
-        if (t1 - t0 < 0.03) {
-          // min ~opening width fraction
-          t1 = (t0 + 0.08).clamp(0.0, 1.0);
+        // Convert fraction span → feet then re-clamp with priors
+        var span = (t1 - t0) * wallLen;
+        if (span < 1.5) {
+          span = OpeningPriors.defaultWidth(type);
         }
-        openings.add(WallOpeningHint(
+        span = OpeningPriors.clampWidth(type, span, wallLen);
+        final mid = (t0 + t1) / 2;
+        final fromL = (mid * wallLen - span / 2).clamp(0.0, wallLen - span);
+        openings.add(WallOpeningHint.fromLeft(
           wall: wall,
           type: type,
-          t0: t0,
-          t1: t1,
+          fromLeftFt: fromL,
+          widthFt: span,
+          wallLengthFt: wallLen,
           confidence: conf,
-          evidence: m['evidence']?.toString() ?? '',
+          evidence: m['evidence']?.toString() ?? 'vision frac',
         ));
       }
     }
@@ -339,16 +365,34 @@ Rules:
         if (conf < 0.72) continue;
         final type = _type(m['type']?.toString());
         if (type == null) continue;
-        furniture.add(WallFurnitureHint(
-          type: type,
-          wall: wall,
-          t: (_num(m['t']) ?? 0.5).clamp(0.05, 0.95),
-          depthFt: (_num(m['depth_ft']) ?? 1.5).clamp(0.5, 8),
-          widthFt: (_num(m['w_ft']) ?? 3).clamp(0.5, 12),
-          lengthFt: (_num(m['l_ft']) ?? 2).clamp(0.5, 12),
-          confidence: conf,
-          evidence: m['evidence']?.toString() ?? '',
-        ));
+        final fromLeft = _num(m['from_left_ft']);
+        final wFt = (_num(m['w_ft']) ?? 3).clamp(0.5, 12).toDouble();
+        final lFt = (_num(m['l_ft']) ?? 2).clamp(0.5, 12).toDouble();
+        final depth = (_num(m['depth_ft']) ?? 1.5).clamp(0.5, 8).toDouble();
+        if (fromLeft != null) {
+          furniture.add(WallFurnitureHint.fromLeft(
+            type: type,
+            wall: wall,
+            fromLeftFt: fromLeft,
+            depthFt: depth,
+            widthFt: wFt,
+            lengthFt: lFt,
+            wallLengthFt: wallLen,
+            confidence: conf,
+            evidence: m['evidence']?.toString() ?? '',
+          ));
+        } else {
+          furniture.add(WallFurnitureHint(
+            type: type,
+            wall: wall,
+            t: (_num(m['t']) ?? 0.5).clamp(0.05, 0.95),
+            depthFt: depth,
+            widthFt: wFt,
+            lengthFt: lFt,
+            confidence: conf,
+            evidence: m['evidence']?.toString() ?? '',
+          ));
+        }
       }
     }
 
