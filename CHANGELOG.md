@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+6 (2026-07-13)
+
+### Scan furniture as-is + spacious arrange
+- **Scan keeps furniture from photos**: vision prompt lists all visible pieces; sizes/positions preserved (center-based); less aggressive drop rules.
+- **Richer type aliases**: desk→table, couch→sofa, dresser→wardrobe, etc.
+- **Arrange → Suggest more spacious layout**: re-places *your* scanned furniture (same pieces) along walls with open walkways — does not invent new items.
+- Room presets (bedroom/living/office) are secondary and explicitly replace pieces.
+- Warns before scan if free vision key is missing (frame-only outcome).
+
 ## 1.0.0-beta.1+5 (2026-07-13)
 
 ### Phase 0 — beta trust

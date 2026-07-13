@@ -557,19 +557,63 @@ class RoomNotifier extends Notifier<RoomState> {
     );
   }
 
-  /// Auto-arrange furniture for [type]. Replaces furniture list.
+  /// Auto-arrange furniture.
+  ///
+  /// Default / [reflowExisting]: keep scanned pieces, suggest a more spacious
+  /// layout. Preset [type] only used when the room is empty.
   void autoArrange({RoomLayoutType? type, bool reflowExisting = false}) {
     final layoutType = type ?? state.layoutType;
     _pushHistory();
+    // Prefer spacious reflow of what is already on the plan.
+    final seed = reflowExisting || state.room.furniture.isNotEmpty;
     final items = AutoArrange.arrange(
       room: state.room,
       pixelsPerFoot: state.pixelsPerFoot,
       type: layoutType,
-      seedFromExisting: reflowExisting,
+      seedFromExisting: seed,
     );
     state = state.copyWith(
       room: state.room.copyWith(furniture: items, updatedAt: DateTime.now()),
       layoutType: layoutType,
+      clearSelected: true,
+      isDraggingFurniture: false,
+      currentTool: ToolMode.select,
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
+  }
+
+  /// Explicit spacious reflow of current furniture only (no presets).
+  void suggestSpaciousLayout() {
+    if (state.room.furniture.isEmpty) return;
+    _pushHistory();
+    final items = AutoArrange.arrangeSpacious(
+      room: state.room,
+      pixelsPerFoot: state.pixelsPerFoot,
+    );
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: items, updatedAt: DateTime.now()),
+      clearSelected: true,
+      isDraggingFurniture: false,
+      currentTool: ToolMode.select,
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
+  }
+
+  /// Replace plan furniture with a room-type preset (bedroom / living / office).
+  void applyPresetLayout(RoomLayoutType type) {
+    _pushHistory();
+    final emptyRoom = state.room.copyWith(furniture: []);
+    final items = AutoArrange.arrange(
+      room: emptyRoom,
+      pixelsPerFoot: state.pixelsPerFoot,
+      type: type,
+      seedFromExisting: false,
+    );
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: items, updatedAt: DateTime.now()),
+      layoutType: type,
       clearSelected: true,
       isDraggingFurniture: false,
       currentTool: ToolMode.select,

@@ -101,9 +101,11 @@ class FreeVisionScanner {
         {
           'role': 'system',
           'content':
-              'You are a careful floor-plan assistant. Only report furniture '
-              'you can see in the photos. Never invent a bed, sofa, or other '
-              'item that is not visible. Return JSON only. '
+              'You are a careful floor-plan assistant. List EVERY furniture '
+              'piece clearly visible in the photos (beds, sofas, tables, '
+              'chairs, wardrobes, TVs, bookshelves, nightstands, desks). '
+              'Place each on a top-down plan at realistic positions. '
+              'Do not invent items that are not visible. Return JSON only. '
               'Room size is fixed by the user and must not change.',
         },
         {
@@ -192,12 +194,12 @@ class FreeVisionScanner {
   }
 
   static String _prompt(double w, double l) => '''
-Analyze these room photos for a TOP-DOWN floor plan.
+Analyze these room photos and build a TOP-DOWN floor plan with furniture as placed.
 
 ROOM SIZE IS FIXED (do not change):
 - roomWidth = $w feet
 - roomLength = $l feet
-Origin is the near-left corner of the floor rectangle.
+Origin (0,0) = one corner of the room; +x along width, +y along length.
 
 Return ONLY JSON:
 {
@@ -210,20 +212,23 @@ Return ONLY JSON:
     {"type": "wall", "start": {"x": 0, "y": $l}, "end": {"x": 0, "y": 0}}
   ],
   "furniture": [
-    {"type": "SOFA", "pos": {"x": 2, "y": 3}, "dim": {"w": 7, "l": 3}, "rot": 0}
+    {"type": "SOFA", "pos": {"x": 3.5, "y": 2.0}, "dim": {"w": 7, "l": 3}, "rot": 0}
   ]
 }
 
 Rules:
-- Coordinates in feet, origin at a room corner.
 - ALWAYS keep roomWidth=$w and roomLength=$l.
-- Include door/window segments on the walls only if you see them.
-- furniture[]: ONLY items clearly visible in the photos.
-- If the room looks empty or you are unsure, return "furniture": [].
-- NEVER invent a BED, SOFA, or other piece that is not visible.
-- Furniture type MUST be one of: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
-- dim.w and dim.l are footprint width/length in feet; rot is degrees.
-- Place furniture inside the $w × $l rectangle with realistic sizes.
+- List ALL furniture you can see: bed, sofa/couch, table/desk, chairs, wardrobe/cabinet/dresser, TV/TV stand, bookshelf/shelf, nightstand.
+- Map to types: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
+  (desk→TABLE, couch→SOFA, dresser/cabinet→WARDROBE, tv stand→TV_UNIT, shelf→BOOKSHELF)
+- "pos" is the CENTER of each piece in feet (not corner).
+- "dim.w" / "dim.l" = footprint width/depth in feet (realistic sizes).
+- "rot" = degrees clockwise (0 / 90 / 180 / 270 preferred).
+- Place pieces where they appear relative to walls (left/right/far wall).
+- Include door/window wall segments only if visible.
+- Do NOT invent furniture that is not in the photos.
+- If truly empty, return "furniture": [].
+- Prefer more real items over an empty list when furniture is visible.
 ''';
 
   static Map<String, dynamic> _extractJsonMap(String text) {

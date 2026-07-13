@@ -181,6 +181,48 @@ void main() {
     expect(Collision.obbOverlap(c, d, pxf, padding: 0), isTrue);
   });
 
+  test('spacious arrange keeps existing pieces (types and sizes)', () {
+    final room = RoomModel(
+      id: 'r',
+      name: 'T',
+      widthInFeet: 14,
+      lengthInFeet: 12,
+      furniture: const [
+        FurnitureItem(
+          id: 'sofa1',
+          type: FurnitureType.sofa,
+          position: Offset(80, 80),
+          widthInFeet: 6,
+          lengthInFeet: 3,
+        ),
+        FurnitureItem(
+          id: 'table1',
+          type: FurnitureType.table,
+          position: Offset(100, 100),
+          widthInFeet: 3.5,
+          lengthInFeet: 2,
+        ),
+        FurnitureItem(
+          id: 'chair1',
+          type: FurnitureType.chair,
+          position: Offset(120, 90),
+          widthInFeet: 1.8,
+          lengthInFeet: 1.8,
+        ),
+      ],
+    );
+    final placed = AutoArrange.arrangeSpacious(room: room, pixelsPerFoot: pxf);
+    expect(placed.length, 3);
+    expect(placed.map((f) => f.id).toSet(), {'sofa1', 'table1', 'chair1'});
+    expect(placed.map((f) => f.type).toSet(), {
+      FurnitureType.sofa,
+      FurnitureType.table,
+      FurnitureType.chair,
+    });
+    // No pairwise overlap
+    expect(Collision.overlappingIds(placed, pxf, padding: 0), isEmpty);
+  });
+
   test('hit-test false for AABB side when item rotated out', () {
     const item = FurnitureItem(
       id: 't',

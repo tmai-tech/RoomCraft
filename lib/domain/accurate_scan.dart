@@ -161,43 +161,72 @@ class AccurateScan {
       if (!raw.included) continue;
 
       final catalog = FurnitureCatalog.entryFor(raw.type);
-      // Prefer catalog footprint so sizes match editor catalog (correctness).
-      final fw = catalog.defaultWidthFt;
-      final fl = catalog.defaultLengthFt;
+      // Keep scanned sizes when realistic; fall back to catalog defaults.
+      var fw = raw.widthFt;
+      var fl = raw.lengthFt;
+      if (fw < 0.5 || fl < 0.5 || fw > roomW || fl > roomL) {
+        fw = catalog.defaultWidthFt;
+        fl = catalog.defaultLengthFt;
+      } else {
+        // Soft clamp extreme AI sizes toward catalog (±50%)
+        final cw = catalog.defaultWidthFt;
+        final cl = catalog.defaultLengthFt;
+        if (fw > cw * 2.5 || fl > cl * 2.5 || fw < cw * 0.35 || fl < cl * 0.35) {
+          fw = cw;
+          fl = cl;
+        }
+      }
 
       // Snap rotation to 45° (matches editor).
       final rotDeg = (raw.rotationRad * 180 / math.pi);
       final snappedDeg = (rotDeg / 45).round() * 45.0;
       final rot = snappedDeg * math.pi / 180;
 
-      // Axis-aligned footprint bounds (conservative for rotated items).
+      // Axis-aligned footprint (center-based position from vision).
       final cosA = math.cos(rot).abs();
       final sinA = math.sin(rot).abs();
       final occW = fw * cosA + fl * sinA;
       final occL = fw * sinA + fl * cosA;
 
-      if (occW > roomW - 0.2 || occL > roomL - 0.2) {
-        dropped++;
-        continue; // piece does not fit this room
+      if (occW > roomW - 0.15 || occL > roomL - 0.15) {
+        // Scale down slightly to keep the piece rather than drop it
+        final scale = math.min(
+          (roomW - 0.3) / occW,
+          (roomL - 0.3) / occL,
+        ).clamp(0.4, 1.0);
+        fw *= scale;
+        fl *= scale;
       }
 
-      // Position is treated as top-left of unrotated item in scan JSON.
-      var x = raw.posFt.dx;
-      var y = raw.posFt.dy;
-      x = x.clamp(0.0, math.max(0.0, roomW - occW));
-      y = y.clamp(0.0, math.max(0.0, roomL - occL));
+      final occW2 = fw * cosA + fl * sinA;
+      final occL2 = fw * sinA + fl * cosA;
+      if (occW2 > roomW - 0.1 || occL2 > roomL - 0.1) {
+        dropped++;
+        continue;
+      }
+
+      // pos is CENTER of the piece in feet (matches editor / painters).
+      var cx = raw.posFt.dx;
+      var cy = raw.posFt.dy;
+      // If model returned near-corner (0,0) with large piece, treat as top-left
+      if (cx < occW2 * 0.15 && cy < occL2 * 0.15 && raw.posFt.dx < 1.0) {
+        cx = raw.posFt.dx + occW2 / 2;
+        cy = raw.posFt.dy + occL2 / 2;
+      }
+      cx = cx.clamp(occW2 / 2, math.max(occW2 / 2, roomW - occW2 / 2));
+      cy = cy.clamp(occL2 / 2, math.max(occL2 / 2, roomL - occL2 / 2));
 
       final candidate = ScanFurnitureHint(
         type: raw.type,
-        posFt: Offset(x, y),
+        posFt: Offset(cx, cy),
         widthFt: fw,
         lengthFt: fl,
         rotationRad: rot,
         included: true,
       );
 
-      // Drop heavy overlaps with already accepted pieces.
-      if (_heavilyOverlaps(candidate, cleaned, roomW, roomL)) {
+      // Soft overlap: only drop near-duplicates
+      if (_heavilyOverlaps(candidate, cleaned)) {
         dropped++;
         continue;
       }
@@ -211,6 +240,11 @@ class AccurateScan {
     }
     if (cleaned.isEmpty && input.isNotEmpty) {
       notes.add('No furniture kept after accuracy check — add from catalog');
+    } else if (cleaned.isNotEmpty) {
+      notes.add(
+        'Placed ${cleaned.length} piece(s) from scan as-is. '
+        'Use Arrange to try a more spacious layout.',
+      );
     }
 
     return cleaned;
@@ -219,26 +253,30 @@ class AccurateScan {
   static bool _heavilyOverlaps(
     ScanFurnitureHint a,
     List<ScanFurnitureHint> others,
-    double _,
-    double __,
   ) {
-    final ra = _aabb(a);
+    final ra = _centerAabb(a);
     for (final b in others) {
-      final rb = _aabb(b);
+      final rb = _centerAabb(b);
       final inter = ra.intersect(rb);
       if (inter.isEmpty) continue;
       final area = inter.width * inter.height;
       final areaA = ra.width * ra.height;
-      if (areaA > 0 && area / areaA > 0.35) return true;
+      // Only drop near-duplicates (was 35% — too aggressive for tight rooms)
+      if (areaA > 0 && area / areaA > 0.55) return true;
     }
     return false;
   }
 
-  static Rect _aabb(ScanFurnitureHint f) {
+  /// AABB from center-based furniture position.
+  static Rect _centerAabb(ScanFurnitureHint f) {
     final cosA = math.cos(f.rotationRad).abs();
     final sinA = math.sin(f.rotationRad).abs();
     final occW = f.widthFt * cosA + f.lengthFt * sinA;
     final occL = f.widthFt * sinA + f.lengthFt * cosA;
-    return Rect.fromLTWH(f.posFt.dx, f.posFt.dy, occW, occL);
+    return Rect.fromCenter(
+      center: f.posFt,
+      width: occW,
+      height: occL,
+    );
   }
 }

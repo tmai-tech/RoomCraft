@@ -51,10 +51,39 @@ void main() {
     final catalog = FurnitureCatalog.entryFor(FurnitureType.sofa);
     expect(sofa.widthFt, catalog.defaultWidthFt);
     expect(sofa.lengthFt, catalog.defaultLengthFt);
-    expect(sofa.posFt.dx, greaterThanOrEqualTo(0));
-    expect(sofa.posFt.dy, greaterThanOrEqualTo(0));
-    expect(sofa.posFt.dx + sofa.widthFt, lessThanOrEqualTo(12.01));
-    expect(sofa.posFt.dy + sofa.lengthFt, lessThanOrEqualTo(14.01));
+    // Position is center of the piece — must stay fully inside room
+    expect(sofa.posFt.dx - sofa.widthFt / 2, greaterThanOrEqualTo(-0.01));
+    expect(sofa.posFt.dy - sofa.lengthFt / 2, greaterThanOrEqualTo(-0.01));
+    expect(sofa.posFt.dx + sofa.widthFt / 2, lessThanOrEqualTo(12.01));
+    expect(sofa.posFt.dy + sofa.lengthFt / 2, lessThanOrEqualTo(14.01));
+  });
+
+  test('realistic scanned sizes and positions are kept as-is', () {
+    final result = AccurateScan.enforce(
+      widthFt: 12,
+      lengthFt: 12,
+      furniture: const [
+        ScanFurnitureHint(
+          type: FurnitureType.sofa,
+          posFt: Offset(4, 3),
+          widthFt: 6.5,
+          lengthFt: 3.2,
+          rotationRad: 0,
+        ),
+        ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(8, 7),
+          widthFt: 3.0,
+          lengthFt: 2.0,
+        ),
+      ],
+    );
+    expect(result.furniture.length, 2);
+    final sofa = result.furniture.firstWhere((f) => f.type == FurnitureType.sofa);
+    expect(sofa.widthFt, closeTo(6.5, 0.01));
+    expect(sofa.lengthFt, closeTo(3.2, 0.01));
+    expect(sofa.posFt.dx, closeTo(4, 0.5));
+    expect(sofa.posFt.dy, closeTo(3, 0.5));
   });
 
   test('openings project onto outer walls', () {

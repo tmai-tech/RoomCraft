@@ -174,6 +174,43 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       }
     }
 
+    // Free accurate path: warn if furniture vision is offline (would get frame only).
+    if (_scanMode == 'free' && _freeVisionReady != true) {
+      if (!mounted) return;
+      final cont = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Furniture detection offline'),
+          content: const Text(
+            'This build has no free vision key, so scan will only draw the room '
+            'frame (exact size). To place furniture from photos:\n\n'
+            '• Add a free Groq key in Settings (console.groq.com), or\n'
+            '• Ask maintainers to set ROOMCRAFT_GROQ_API_KEY on CI builds.\n\n'
+            'You can still scan the frame and add pieces from the catalog.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Open Settings'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Scan room frame only'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if (cont == false) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        );
+        await _refreshVisionStatus();
+        return;
+      }
+      if (cont != true) return;
+    }
+
     setState(() => _isLoading = true);
     final mode = _scanMode;
     await AnalyticsService.instance.scanStart(mode: mode);
@@ -194,7 +231,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   roomLengthFt: size.$2,
                 )
               : await _aiService.scanRoomAccurateFree(
-                  // Free accurate — no user key required
+                  // Free accurate — furniture from photos when vision key present
                   _images,
                   layoutType: RoomLayoutType.empty,
                   roomWidthFt: size.$1,
@@ -286,8 +323,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     final tip = _guideTips[_guideStep.clamp(0, _guideTips.length - 1)];
     final unit = ref.watch(roomProvider).unitSystem;
     final visionHint = _freeVisionReady == true
-        ? 'Furniture assist on (bundled/free key) · size still exact'
-        : 'Measured sketch: exact size always · add furniture from catalog if none detected';
+        ? 'Will detect furniture from photos and place it as-is on the plan'
+        : 'No free vision key on this build — room frame only unless you add a Groq/Gemini key in Settings';
 
     return Scaffold(
       appBar: AppBar(
@@ -388,8 +425,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    'Measured layout sketch (not LiDAR/CAD). '
-                    '10 × 10 stays 10 × 10 — free scan needs no API key.',
+                    'Enter exact size (10×10 stays 10×10). Free scan places furniture '
+                    'from your photos when vision is available. Arrange later to open up space.',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ),

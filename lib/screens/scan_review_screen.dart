@@ -201,15 +201,28 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                     color: Colors.amber.shade50,
                     child: const ListTile(
                       leading: Icon(Icons.chair_outlined),
-                      title: Text('No furniture on this plan'),
+                      title: Text('No furniture detected from photos'),
                       subtitle: Text(
-                        'Room size is still exact. Free vision may be offline '
-                        'on this build, or the photo had no clear pieces. '
-                        'Add items from the catalog after you open the editor.',
+                        'Room frame is exact. Furniture scan needs free vision '
+                        '(bundled key or Settings → Groq/Gemini). '
+                        'Or add pieces from the catalog in the editor, then use '
+                        'Arrange → Suggest more spacious layout.',
                       ),
                     ),
                   )
                 else
+                  Card(
+                    color: Colors.teal.shade50,
+                    child: ListTile(
+                      leading: Icon(Icons.check_circle_outline, color: Colors.teal.shade700),
+                      title: Text('${_result.furniture.where((f) => f.included).length} pieces from scan'),
+                      subtitle: const Text(
+                        'Placed as detected. In the editor, use Arrange → '
+                        'Suggest more spacious layout to open walkways without changing what you own.',
+                      ),
+                    ),
+                  ),
+                if (_result.furniture.isNotEmpty)
                   ...List.generate(_result.furniture.length, (i) {
                     final f = _result.furniture[i];
                     final entry = FurnitureCatalog.entryFor(f.type);

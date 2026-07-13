@@ -341,6 +341,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     RoomNotifier notifier,
     RoomState state,
   ) {
+    final hasFurniture = state.room.furniture.isNotEmpty;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -351,13 +352,56 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Auto-arrange', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                'Arrange for space',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 4),
-              const Text(
-                'Places furniture with wall alignment and collision avoidance.',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
+              Text(
+                hasFurniture
+                    ? 'Keep your scanned furniture — suggest a more open layout '
+                        '(along walls, clear walkways, less crowding).'
+                    : 'No furniture on the plan yet. Scan with photos so furniture '
+                        'is detected, or add from catalog, then arrange.',
+                style: const TextStyle(color: Colors.grey, fontSize: 13),
               ),
               const SizedBox(height: 12),
+              if (hasFurniture)
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.teal.shade50,
+                    child: Icon(Icons.auto_awesome, color: Colors.teal.shade700),
+                  ),
+                  title: const Text('Suggest more spacious layout'),
+                  subtitle: Text(
+                    'Re-place ${state.room.furniture.length} existing piece(s) — '
+                    'same furniture, better spacing',
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    notifier.suggestSpaciousLayout();
+                    AnalyticsService.instance.autoArrange(type: 'spacious');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Suggested a more spacious layout for your furniture',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              if (hasFurniture) const Divider(),
+              Text(
+                hasFurniture
+                    ? 'Or replace with a room preset'
+                    : 'Room presets (empty plan)',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 4),
               for (final type in [
                 RoomLayoutType.bedroom,
                 RoomLayoutType.living,
@@ -367,32 +411,23 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   leading: const Icon(Icons.auto_awesome_mosaic),
                   title: Text(AutoArrange.label(type)),
                   subtitle: Text(
-                    type == RoomLayoutType.bedroom
-                        ? 'Bed, wardrobe, nightstands'
-                        : type == RoomLayoutType.living
-                            ? 'Sofa, table, TV, chairs'
-                            : 'Desk, chair, bookshelf',
+                    hasFurniture
+                        ? 'Replaces current pieces with a ${AutoArrange.label(type).toLowerCase()} set'
+                        : type == RoomLayoutType.bedroom
+                            ? 'Bed, wardrobe, nightstands'
+                            : type == RoomLayoutType.living
+                                ? 'Sofa, table, TV, chairs'
+                                : 'Desk, chair, bookshelf',
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
-                    notifier.autoArrange(type: type);
+                    notifier.applyPresetLayout(type);
                     AnalyticsService.instance.autoArrange(type: type.name);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Arranged as ${AutoArrange.label(type)}'),
+                        content: Text('Applied ${AutoArrange.label(type)}'),
                       ),
                     );
-                  },
-                ),
-              if (state.room.furniture.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.reorder),
-                  title: const Text('Re-flow current furniture'),
-                  subtitle: const Text('Keep items, find better positions'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    notifier.autoArrange(reflowExisting: true);
-                    AnalyticsService.instance.autoArrange(type: 'reflow');
                   },
                 ),
             ],

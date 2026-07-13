@@ -5,7 +5,7 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 5;
+  static const int buildNumber = 6;
   static const bool isBeta = true;
 
   /// Feedback — opens mail client on device.
