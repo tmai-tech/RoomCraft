@@ -121,16 +121,56 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    'Room ${LengthFormat.formatFeet(_result.roomWidthFt, unit)}'
-                    ' × ${LengthFormat.formatFeet(_result.roomLengthFt, unit)}'
-                    ' · ${_result.walls.length} walls · $includedCount furniture',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+                Text(
+                  'Room ${LengthFormat.formatFeet(_result.roomWidthFt, unit)}'
+                  ' × ${LengthFormat.formatFeet(_result.roomLengthFt, unit)}'
+                  ' · ${_result.walls.length} segments · $includedCount furniture',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
+                if (_result.accuracyScore != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        'Scan confidence',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: _result.accuracyScore!.clamp(0.0, 1.0),
+                          backgroundColor: Colors.grey.shade200,
+                          color: _result.accuracyScore! >= 0.7
+                              ? Colors.teal
+                              : _result.accuracyScore! >= 0.5
+                                  ? Colors.orange
+                                  : Colors.redAccent,
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${(_result.accuracyScore! * 100).round()}%',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Heuristic only — more wall photos/video raises confidence. '
+                    'Edit openings & furniture in the editor for final accuracy.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ],
               ],
             ),
           ),

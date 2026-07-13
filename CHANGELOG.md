@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+9 (2026-07-13)
+
+### Precision scan — video walkthrough + multi-pass mapping
+- **Record / pick room video** (up to ~90s) → extracts diverse sharp keyframes.
+- **Multi-pass vision**: architecture (doors/windows on walls) then furniture.
+- **No invented openings** on precision path (add Door/Window tools if missing).
+- **Scan confidence** bar on review (heuristic; more frames help).
+- Still: user width×length is source of truth (not LiDAR). Walk every wall for best results.
+
 ## 1.0.0-beta.1+8 (2026-07-13)
 
 ### Phase 1 — table stakes (partial)

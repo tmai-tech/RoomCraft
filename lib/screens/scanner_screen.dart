@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../config/app_config.dart';
 import '../domain/layout/auto_arrange.dart';
+import '../domain/scan_keyframes.dart';
 import '../domain/units.dart';
 import '../providers/room_provider.dart';
 import '../services/ai_scanner_service.dart';
@@ -15,7 +16,7 @@ import 'blueprint_screen.dart';
 import 'scan_review_screen.dart';
 import 'settings_screen.dart';
 
-/// Guided multi-photo capture → free accurate plan (no user API key required).
+/// Guided multi-photo / video walkthrough → precision free plan.
 class ScannerScreen extends ConsumerStatefulWidget {
   const ScannerScreen({super.key});
 
@@ -24,7 +25,7 @@ class ScannerScreen extends ConsumerStatefulWidget {
 }
 
 class _ScannerScreenState extends ConsumerState<ScannerScreen> {
-  static const _maxPhotos = 4;
+  static const _maxPhotos = 8;
 
   final List<File> _images = [];
   final Map<File, String?> _validationResults = {};
@@ -36,17 +37,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   final _lengthController = TextEditingController(text: '10');
 
   bool _isLoading = false;
+  String _loadingDetail = '';
   /// free (default, no key) | offline_only | gemini
   String _scanMode = 'free';
   RoomLayoutType _layoutType = RoomLayoutType.empty;
   int _guideStep = 0;
   bool? _freeVisionReady;
+  bool _fromVideo = false;
 
   static const _guideTips = [
-    'Photo 1: Stand in a corner — show two walls meeting the floor.',
-    'Photo 2: Opposite side of the room for full width/length.',
-    'Photo 3 (optional): Include door or window openings.',
-    'Photo 4 (optional): Capture large furniture for free AI detection.',
+    'Best: Record a slow 360° video at eye level (10–30s), or add 4–8 photos.',
+    'Corner shots: show two walls meeting the floor + any door/window on that wall.',
+    'Openings: stand square to each door and window so edges are clear.',
+    'Furniture: include full footprint (legs/base) — avoid only partial views.',
+    'Details: film moulding, niches, built-ins if you want them on the plan.',
+    'Lighting: walk slowly; pause at each wall — blurry frames are dropped.',
+    'Measure first: enter exact width × length — that stays the plan size.',
+    'Review: uncheck wrong items; edit openings in the blueprint after.',
   ];
 
   @override
@@ -72,21 +79,22 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   Future<void> _pickImage(ImageSource source) async {
     if (_images.length >= _maxPhotos) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Maximum 4 photos')),
+        const SnackBar(content: Text('Maximum $_maxPhotos photos / frames')),
       );
       return;
     }
     try {
       final pickedFile = await _picker.pickImage(
         source: source,
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 85,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 90,
       );
       if (pickedFile == null) return;
       final file = File(pickedFile.path);
       setState(() {
         _images.add(file);
+        _fromVideo = false;
         _guideStep = (_images.length).clamp(0, _guideTips.length - 1);
       });
 
@@ -97,6 +105,70 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not pick image: $e')),
+        );
+      }
+    }
+  }
+
+  /// Record or pick a walkthrough video → extract diverse keyframes.
+  Future<void> _pickVideo({required bool fromCamera}) async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _loadingDetail = 'Opening video…';
+      });
+      final picked = await _picker.pickVideo(
+        source: fromCamera ? ImageSource.camera : ImageSource.gallery,
+        maxDuration: const Duration(seconds: 90),
+      );
+      if (picked == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _loadingDetail = 'Extracting keyframes from walkthrough…');
+
+      final video = File(picked.path);
+      final frames = await ScanKeyframes.fromVideo(
+        video,
+        maxFrames: _maxPhotos,
+        intervalMs: 1000,
+      );
+      final best = await ScanKeyframes.pickSharpest(frames, maxKeep: _maxPhotos);
+
+      if (!mounted) return;
+      setState(() {
+        _images
+          ..clear()
+          ..addAll(best);
+        _validationResults.clear();
+        _fromVideo = true;
+        _guideStep = 0;
+        _isLoading = false;
+        _loadingDetail = '';
+      });
+      for (final f in best) {
+        _aiService.validateImage(f).then((reason) {
+          if (mounted) setState(() => _validationResults[f] = reason);
+        });
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Extracted ${best.length} clear frames from video — ready to scan',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _loadingDetail = '';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Video failed: $e')),
         );
       }
     }
@@ -211,9 +283,16 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       if (cont != true) return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadingDetail = _fromVideo || _images.length >= 3
+          ? 'Precision multi-pass scan (architecture + furniture)…'
+          : 'Analyzing room frames…';
+    });
     final mode = _scanMode;
-    await AnalyticsService.instance.scanStart(mode: mode);
+    await AnalyticsService.instance.scanStart(
+      mode: _fromVideo ? '${mode}_video' : mode,
+    );
     try {
       final result = mode == 'offline_only'
           ? await _aiService.scanRoomAccurateFree(
@@ -231,7 +310,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   roomLengthFt: size.$2,
                 )
               : await _aiService.scanRoomAccurateFree(
-                  // Free accurate — furniture from photos when vision key present
                   _images,
                   layoutType: RoomLayoutType.empty,
                   roomWidthFt: size.$1,
@@ -296,25 +374,28 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
   String get _loadingLabel {
+    if (_loadingDetail.isNotEmpty) return _loadingDetail;
     switch (_scanMode) {
       case 'gemini':
         return 'Gemini analyzing…';
       case 'offline_only':
         return 'Building exact-size plan…';
       default:
-        return 'Free accurate scan…';
+        return 'Precision room scan…';
     }
   }
 
   String get _generateLabel {
-    if (_images.isEmpty) return 'Add photos to continue';
+    if (_images.isEmpty) return 'Add photos or record a walkthrough';
     switch (_scanMode) {
       case 'gemini':
         return 'Generate with Gemini';
       case 'offline_only':
         return 'Generate exact plan (offline)';
       default:
-        return 'Generate free accurate plan';
+        return _fromVideo || _images.length >= 3
+            ? 'Run precision scan (${_images.length} frames)'
+            : 'Generate free accurate plan';
     }
   }
 
@@ -323,8 +404,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     final tip = _guideTips[_guideStep.clamp(0, _guideTips.length - 1)];
     final unit = ref.watch(roomProvider).unitSystem;
     final visionHint = _freeVisionReady == true
-        ? 'Will detect furniture from photos and place it as-is on the plan'
-        : 'No free vision key on this build — room frame only unless you add a Groq/Gemini key in Settings';
+        ? (_fromVideo
+            ? 'Video walkthrough · multi-pass precision scan ready'
+            : 'Photos or video · multi-pass maps openings + furniture')
+        : 'No free vision key — room frame only (add Groq in Settings or CI)';
 
     return Scaffold(
       appBar: AppBar(
@@ -350,9 +433,15 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   const SizedBox(height: 20),
                   Text(_loadingLabel),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Room size stays exact — never warped by the photo',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  const SizedBox(height: 8),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      'Multi-pass: architecture (doors/windows) then furniture. '
+                      'Room size stays exact — never warped by the photo.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                   ),
                 ],
               ),
@@ -425,8 +514,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    'Enter exact size (10×10 stays 10×10). Free scan places furniture '
-                    'from your photos when vision is available. Arrange later to open up space.',
+                    'Enter exact size first (source of truth). Prefer a slow video walkthrough '
+                    'or 4–8 photos of every wall for best accuracy. Not LiDAR — interior layout sketch.',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ),
@@ -595,26 +684,50 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _images.length >= _maxPhotos
-                              ? null
-                              : () => _pickImage(ImageSource.camera),
-                          icon: const Icon(Icons.camera_alt),
-                          label: const Text('Camera'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.tonalIcon(
+                              onPressed: () => _pickVideo(fromCamera: true),
+                              icon: const Icon(Icons.videocam),
+                              label: const Text('Record video'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _pickVideo(fromCamera: false),
+                              icon: const Icon(Icons.video_library),
+                              label: const Text('Video file'),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _images.length >= _maxPhotos
-                              ? null
-                              : () => _pickImage(ImageSource.gallery),
-                          icon: const Icon(Icons.photo_library),
-                          label: const Text('Gallery'),
-                        ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _images.length >= _maxPhotos
+                                  ? null
+                                  : () => _pickImage(ImageSource.camera),
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Photo'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _images.length >= _maxPhotos
+                                  ? null
+                                  : () => _pickImage(ImageSource.gallery),
+                              icon: const Icon(Icons.photo_library),
+                              label: const Text('Gallery'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

@@ -53,6 +53,8 @@ class ScanResult {
   final List<ScanWallSegment> walls;
   final List<ScanFurnitureHint> furniture;
   final List<String> warnings;
+  /// Heuristic 0–1 quality estimate (not CAD precision).
+  final double? accuracyScore;
 
   const ScanResult({
     required this.roomWidthFt,
@@ -60,6 +62,7 @@ class ScanResult {
     required this.walls,
     required this.furniture,
     this.warnings = const [],
+    this.accuracyScore,
   });
 
   ScanResult copyWith({
@@ -68,6 +71,7 @@ class ScanResult {
     List<ScanWallSegment>? walls,
     List<ScanFurnitureHint>? furniture,
     List<String>? warnings,
+    double? accuracyScore,
   }) {
     return ScanResult(
       roomWidthFt: roomWidthFt ?? this.roomWidthFt,
@@ -75,6 +79,7 @@ class ScanResult {
       walls: walls ?? this.walls,
       furniture: furniture ?? this.furniture,
       warnings: warnings ?? this.warnings,
+      accuracyScore: accuracyScore ?? this.accuracyScore,
     );
   }
 }

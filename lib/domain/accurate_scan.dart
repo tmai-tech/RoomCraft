@@ -15,6 +15,10 @@ class AccurateScan {
   AccurateScan._();
 
   /// Force [widthFt] × [lengthFt] geometry and sanitize furniture/openings.
+  ///
+  /// [inventDefaultOpenings]: when true and vision found no doors/windows,
+  /// add a placeholder door+window (legacy offline path). Precision scans
+  /// should pass false so we never invent openings.
   static ScanResult enforce({
     required double widthFt,
     required double lengthFt,
@@ -22,6 +26,8 @@ class AccurateScan {
     List<ScanFurnitureHint> furniture = const [],
     List<String> warnings = const [],
     String? sourceLabel,
+    bool inventDefaultOpenings = true,
+    double? accuracyScore,
   }) {
     final w = widthFt <= 0 ? 10.0 : widthFt;
     final l = lengthFt <= 0 ? 10.0 : lengthFt;
@@ -45,10 +51,20 @@ class AccurateScan {
       l,
     );
 
-    // Default door + window only when AI / vision gave none.
-    final openingsFinal = doorsWindows.isEmpty
-        ? _defaultOpenings(w, l)
-        : doorsWindows;
+    final List<ScanWallSegment> openingsFinal;
+    if (doorsWindows.isEmpty && inventDefaultOpenings) {
+      openingsFinal = _defaultOpenings(w, l);
+      notes.add(
+        'No openings detected — placeholder door/window added (edit in blueprint)',
+      );
+    } else if (doorsWindows.isEmpty) {
+      openingsFinal = const [];
+      notes.add(
+        'No doors/windows confidently detected — add them with Door/Window tools',
+      );
+    } else {
+      openingsFinal = doorsWindows;
+    }
 
     final cleanFurniture = _sanitizeFurniture(furniture, w, l, notes);
 
@@ -58,6 +74,7 @@ class AccurateScan {
       walls: [...outline, ...openingsFinal],
       furniture: cleanFurniture,
       warnings: notes,
+      accuracyScore: accuracyScore,
     );
   }
 

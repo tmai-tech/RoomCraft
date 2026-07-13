@@ -78,24 +78,32 @@ class ScanParser {
     }
 
     final walls = <ScanWallSegment>[];
-    final wallsRaw = raw['walls'];
-    if (wallsRaw is List) {
-      for (final item in wallsRaw) {
-        if (item is! Map) continue;
-        final map = Map<String, dynamic>.from(item);
-        final type = _parseStrokeType(map['type']?.toString());
-        final start = _parsePoint(map['start']);
-        final end = _parsePoint(map['end']);
-        if (start == null || end == null) {
-          warnings.add('Skipped a wall segment with invalid points');
-          continue;
-        }
-        if ((end - start).distance < 0.1) {
-          warnings.add('Skipped near-zero length wall segment');
-          continue;
-        }
-        walls.add(ScanWallSegment(type: type, startFt: start, endFt: end));
+    // Accept both "walls" and "openings" (precision architecture pass).
+    final wallsRaw = <dynamic>[
+      if (raw['walls'] is List) ...raw['walls'] as List,
+      if (raw['openings'] is List) ...raw['openings'] as List,
+    ];
+    for (final item in wallsRaw) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      // Drop low-confidence openings when model provides score
+      final confRaw = map['confidence'] ?? map['conf'];
+      if (confRaw is num && confRaw.toDouble() < 0.72) {
+        warnings.add('Skipped low-confidence opening (${map['type']})');
+        continue;
       }
+      final type = _parseStrokeType(map['type']?.toString());
+      final start = _parsePoint(map['start']);
+      final end = _parsePoint(map['end']);
+      if (start == null || end == null) {
+        warnings.add('Skipped a wall segment with invalid points');
+        continue;
+      }
+      if ((end - start).distance < 0.1) {
+        warnings.add('Skipped near-zero length wall segment');
+        continue;
+      }
+      walls.add(ScanWallSegment(type: type, startFt: start, endFt: end));
     }
 
     if (walls.isEmpty) {
