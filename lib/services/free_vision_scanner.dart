@@ -10,19 +10,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/scan_parser.dart';
+import '../domain/furniture_vision_filter.dart';
 import '../models/scan_result.dart';
 import 'secure_key_store.dart';
 
 /// Free multimodal scan via Groq (Llama 4 Scout vision).
 ///
+/// Strict policy: **only** furniture clearly visible in photos.
+/// Prefer empty `furniture: []` over guessing a typical bedroom/living set.
+///
 /// Key resolution (first non-empty wins):
 /// 1. Explicit [apiKey] argument
 /// 2. User key in secure storage (optional Settings)
 /// 3. App-bundled [AppConfig.bundledGroqApiKey] from `--dart-define`
-///
-/// Room size always comes from user dimensions; AI may only propose furniture
-/// and openings. Output is always run through [AccurateScan.enforce].
 class FreeVisionScanner {
+  /// Drop model guesses below this confidence (0–1).
+  static const double minConfidence = 0.72;
+
   static SecureKeyStore _store([SharedPreferences? prefs]) =>
       SecureKeyStore(prefs: prefs);
 
@@ -34,7 +38,6 @@ class FreeVisionScanner {
     await _store(prefsOverride).saveGroqKey(key);
   }
 
-  /// Resolve key without requiring the user to open Settings.
   static Future<String?> resolveApiKey({
     String? apiKey,
     SharedPreferences? prefsOverride,
@@ -78,7 +81,6 @@ class FreeVisionScanner {
       },
     ];
 
-    // Cap images for free-tier latency / payload size.
     final limited = images.take(3).toList();
     for (final image in limited) {
       final prepared = await _prepareImageDataUrl(image);
@@ -101,12 +103,16 @@ class FreeVisionScanner {
         {
           'role': 'system',
           'content':
-              'You are a careful floor-plan assistant. List EVERY furniture '
-              'piece clearly visible in the photos (beds, sofas, tables, '
-              'chairs, wardrobes, TVs, bookshelves, nightstands, desks). '
-              'Place each on a top-down plan at realistic positions. '
-              'Do not invent items that are not visible. Return JSON only. '
-              'Room size is fixed by the user and must not change.',
+              'You are a strict visual inspector for floor plans. '
+              'Your job is to report ONLY furniture that is clearly visible '
+              'in the provided photos. '
+              'If a bed, sofa, TV, bookshelf, or other piece is NOT clearly '
+              'in the images, you MUST NOT list it. '
+              'Empty rooms and sparse rooms are normal — return '
+              '"furniture": [] when unsure. '
+              'Never invent a typical bedroom or living-room set. '
+              'Never copy example JSON furniture. '
+              'Return JSON only. Room size is fixed by the user.',
         },
         {
           'role': 'user',
@@ -153,21 +159,43 @@ class FreeVisionScanner {
     jsonMap['roomWidth'] = roomWidthFt;
     jsonMap['roomLength'] = roomLengthFt;
 
-    final parsed = ScanParser.parse(jsonMap);
+    // Confidence filter before parse (raw list)
+    final filtered = _filterByConfidence(jsonMap);
+    final dropped = filtered.dropped;
+    final parsed = ScanParser.parse(filtered.map);
 
-    // Dimensionally correct plan — never trust AI for room size.
+    final extraWarnings = <String>[
+      if (dropped > 0)
+        'Dropped $dropped low-confidence guess(es) — only clear items kept',
+      if (parsed.furniture.isEmpty)
+        'No furniture clearly visible in photos — empty plan (add from catalog if needed)',
+    ];
+
     return AccurateScan.enforce(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
       openings: parsed.walls,
       furniture: parsed.furniture,
-      warnings: parsed.warnings,
+      warnings: [...parsed.warnings, ...extraWarnings],
       sourceLabel:
-          'Free AI furniture (Groq Llama 4 Scout) — no user key required when app key is set',
+          'Free AI furniture (strict — only clearly visible items)',
     );
   }
 
-  /// Resize / re-encode for smaller free-tier payloads.
+  /// Keep only high-confidence items; strip example/hallucination-prone junk.
+  static ({Map<String, dynamic> map, int dropped}) _filterByConfidence(
+    Map<String, dynamic> jsonMap,
+  ) {
+    final raw = jsonMap['furniture'];
+    final result = FurnitureVisionFilter.filter(
+      raw is List ? raw : null,
+      minConfidence: minConfidence,
+    );
+    final out = Map<String, dynamic>.from(jsonMap);
+    out['furniture'] = result.kept;
+    return (map: out, dropped: result.dropped);
+  }
+
   static Future<String?> _prepareImageDataUrl(File image) async {
     try {
       final bytes = await image.readAsBytes();
@@ -180,13 +208,14 @@ class FreeVisionScanner {
       }
 
       var frame = decoded;
-      const maxSide = 768;
+      // Slightly higher res for better object recognition
+      const maxSide = 1024;
       if (frame.width > maxSide || frame.height > maxSide) {
         frame = frame.width >= frame.height
             ? img.copyResize(frame, width: maxSide)
             : img.copyResize(frame, height: maxSide);
       }
-      final jpg = Uint8List.fromList(img.encodeJpg(frame, quality: 75));
+      final jpg = Uint8List.fromList(img.encodeJpg(frame, quality: 82));
       return 'data:image/jpeg;base64,${base64Encode(jpg)}';
     } catch (_) {
       return null;
@@ -194,14 +223,15 @@ class FreeVisionScanner {
   }
 
   static String _prompt(double w, double l) => '''
-Analyze these room photos and build a TOP-DOWN floor plan with furniture as placed.
+Look at the attached room photo(s). Build a top-down plan with ONLY what you
+can actually see.
 
-ROOM SIZE IS FIXED (do not change):
+ROOM SIZE IS FIXED (never change):
 - roomWidth = $w feet
 - roomLength = $l feet
-Origin (0,0) = one corner of the room; +x along width, +y along length.
+Origin (0,0) = one corner; +x along width; +y along length.
 
-Return ONLY JSON:
+Return ONLY this JSON shape (use empty furniture if nothing is clear):
 {
   "roomWidth": $w,
   "roomLength": $l,
@@ -211,24 +241,32 @@ Return ONLY JSON:
     {"type": "wall", "start": {"x": $w, "y": $l}, "end": {"x": 0, "y": $l}},
     {"type": "wall", "start": {"x": 0, "y": $l}, "end": {"x": 0, "y": 0}}
   ],
-  "furniture": [
-    {"type": "SOFA", "pos": {"x": 3.5, "y": 2.0}, "dim": {"w": 7, "l": 3}, "rot": 0}
-  ]
+  "furniture": []
 }
 
-Rules:
-- ALWAYS keep roomWidth=$w and roomLength=$l.
-- List ALL furniture you can see: bed, sofa/couch, table/desk, chairs, wardrobe/cabinet/dresser, TV/TV stand, bookshelf/shelf, nightstand.
-- Map to types: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
-  (desk→TABLE, couch→SOFA, dresser/cabinet→WARDROBE, tv stand→TV_UNIT, shelf→BOOKSHELF)
-- "pos" is the CENTER of each piece in feet (not corner).
-- "dim.w" / "dim.l" = footprint width/depth in feet (realistic sizes).
-- "rot" = degrees clockwise (0 / 90 / 180 / 270 preferred).
-- Place pieces where they appear relative to walls (left/right/far wall).
-- Include door/window wall segments only if visible.
-- Do NOT invent furniture that is not in the photos.
-- If truly empty, return "furniture": [].
-- Prefer more real items over an empty list when furniture is visible.
+Furniture object fields when an item IS clearly visible:
+{
+  "type": "TABLE",
+  "pos": {"x": 4.0, "y": 5.0},
+  "dim": {"w": 3.0, "l": 2.0},
+  "rot": 0,
+  "confidence": 0.9,
+  "evidence": "brown wooden table in center of photo"
+}
+
+STRICT RULES:
+1. Default to "furniture": []. Empty is correct when the room has no clear furniture.
+2. Do NOT invent BED, SOFA, TV_UNIT, BOOKSHELF, WARDROBE, CHAIR, or NIGHTSTAND
+   just because rooms often have them.
+3. Include an item ONLY if you can point to it in the photo (describe in "evidence").
+4. confidence is 0.0–1.0. Use >= 0.85 only when the object is obvious.
+   If confidence would be under 0.75, OMIT the item entirely.
+5. Allowed types only: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
+   (desk→TABLE, couch→SOFA, dresser→WARDROBE, tv stand→TV_UNIT, shelf→BOOKSHELF)
+6. "pos" = CENTER of the piece in feet. "rot" = degrees (prefer 0/90/180/270).
+7. Doors/windows on walls only if you see them; optional.
+8. NEVER copy sample furniture from prompts or training data.
+9. If photos are blurry, dark, or partial — return empty furniture.
 ''';
 
   static Map<String, dynamic> _extractJsonMap(String text) {

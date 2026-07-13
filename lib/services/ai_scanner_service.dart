@@ -302,33 +302,35 @@ class AIScannerService {
       imageParts.add(DataPart(mimeType, bytes));
     }
 
-    final prompt = '''You are an expert architectural assistant.
+    final prompt = '''You are a strict visual inspector for floor plans.
 ROOM SIZE IS FIXED (do not change):
 - roomWidth = $roomWidthFt feet
 - roomLength = $roomLengthFt feet
 
-Analyze these room photos and estimate a TOP-DOWN floor plan layout.
-Include walls, doors, windows, balconies AND only furniture visible in photos.
+Look at the photos. Return a top-down plan. Default furniture to EMPTY.
+Only list furniture that is CLEARLY visible. Do not invent a typical bedroom/living set.
 
-Return ONLY JSON (no markdown):
+Return ONLY JSON (no markdown). Prefer empty furniture:
 {
   "roomWidth": $roomWidthFt,
   "roomLength": $roomLengthFt,
   "walls": [
     {"type": "wall", "start": {"x": 0, "y": 0}, "end": {"x": $roomWidthFt, "y": 0}},
-    {"type": "door", "start": {"x": 5, "y": 0}, "end": {"x": 8, "y": 0}}
+    {"type": "wall", "start": {"x": $roomWidthFt, "y": 0}, "end": {"x": $roomWidthFt, "y": $roomLengthFt}},
+    {"type": "wall", "start": {"x": $roomWidthFt, "y": $roomLengthFt}, "end": {"x": 0, "y": $roomLengthFt}},
+    {"type": "wall", "start": {"x": 0, "y": $roomLengthFt}, "end": {"x": 0, "y": 0}}
   ],
-  "furniture": [
-    {"type": "BED", "pos": {"x": 2, "y": 2}, "dim": {"w": 5, "l": 6.5}, "rot": 0}
-  ]
+  "furniture": []
 }
+If an item is clearly visible, add objects like:
+{"type": "TABLE", "pos": {"x": 4, "y": 5}, "dim": {"w": 3, "l": 2}, "rot": 0, "confidence": 0.9, "evidence": "table visible center"}
 Rules:
-- Coordinates in feet, origin at a corner of the room.
 - ALWAYS keep roomWidth=$roomWidthFt and roomLength=$roomLengthFt.
-- Furniture type MUST be one of: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
-- Only include furniture you can see. If unsure, use empty furniture array.
-- NEVER invent a bed or sofa that is not in the photo.
-- rot is rotation in degrees.
+- Types only: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND.
+- NEVER invent BED/SOFA/TV/BOOKSHELF that is not in the photo.
+- If unsure or blurry, furniture must be [].
+- confidence 0-1; omit items under 0.75.
+- pos is CENTER in feet; rot in degrees.
 ''';
 
     String? lastError;

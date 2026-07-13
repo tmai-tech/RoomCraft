@@ -198,15 +198,15 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                 const SizedBox(height: 4),
                 if (_result.furniture.isEmpty)
                   Card(
-                    color: Colors.amber.shade50,
+                    color: Colors.blue.shade50,
                     child: const ListTile(
                       leading: Icon(Icons.chair_outlined),
-                      title: Text('No furniture detected from photos'),
+                      title: Text('No furniture on this plan'),
                       subtitle: Text(
-                        'Room frame is exact. Furniture scan needs free vision '
-                        '(bundled key or Settings → Groq/Gemini). '
-                        'Or add pieces from the catalog in the editor, then use '
-                        'Arrange → Suggest more spacious layout.',
+                        'Strict scan: only pieces clearly visible in photos are kept. '
+                        'Empty is correct if the room had no clear furniture, or vision '
+                        'was unsure (we avoid inventing beds/sofas). '
+                        'Add real pieces from the catalog, then use Arrange for spacing.',
                       ),
                     ),
                   )
@@ -215,10 +215,13 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                     color: Colors.teal.shade50,
                     child: ListTile(
                       leading: Icon(Icons.check_circle_outline, color: Colors.teal.shade700),
-                      title: Text('${_result.furniture.where((f) => f.included).length} pieces from scan'),
+                      title: Text(
+                        '${_result.furniture.where((f) => f.included).length} piece(s) from photos',
+                      ),
                       subtitle: const Text(
-                        'Placed as detected. In the editor, use Arrange → '
-                        'Suggest more spacious layout to open walkways without changing what you own.',
+                        'Only high-confidence visible items. Uncheck anything wrong, '
+                        'then open the editor. Arrange → Suggest more spacious layout '
+                        'reflows these same pieces (does not invent new ones).',
                       ),
                     ),
                   ),

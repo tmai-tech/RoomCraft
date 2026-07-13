@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+7 (2026-07-13)
+
+### Fix — stop inventing furniture on scan
+- **Strict vision prompts**: default to empty furniture; never invent bed/sofa/TV/bookshelf.
+- **Confidence + evidence filter**: drop low-confidence guesses; require clear visibility.
+- JSON examples no longer show sample SOFA/BED (which models were copying).
+- Review UI explains empty plan can be correct.
+
 ## 1.0.0-beta.1+6 (2026-07-13)
 
 ### Scan furniture as-is + spacious arrange
