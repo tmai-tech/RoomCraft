@@ -201,13 +201,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   roomLengthFt: size.$2,
                   tryVision: true,
                 );
-      if (!mounted) return;
       final included = result.furniture.where((f) => f.included).length;
       await AnalyticsService.instance.scanSuccess(
         mode: mode,
         furnitureCount: included,
         emptyFurniture: included == 0,
       );
+      if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ScanReviewScreen(initial: result),

@@ -48,7 +48,6 @@ app.*.map.json
 *.keystore
 
 # Firebase / Google services (commit only if team chooses; prefer CI secrets for keys)
-android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 **/service-account*.json
 **/firebase-service-account.json

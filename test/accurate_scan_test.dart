@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_craft/catalog/furniture_catalog.dart';
 import 'package:room_craft/domain/accurate_scan.dart';
@@ -11,10 +10,10 @@ void main() {
     final result = AccurateScan.enforce(
       widthFt: 10,
       lengthFt: 10,
-      furniture: [
+      furniture: const [
         ScanFurnitureHint(
           type: FurnitureType.bed,
-          posFt: const Offset(50, 50), // way outside — must clamp in
+          posFt: Offset(50, 50), // way outside — must clamp in
           widthFt: 99,
           lengthFt: 99,
         ),

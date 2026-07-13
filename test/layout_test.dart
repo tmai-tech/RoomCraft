@@ -130,13 +130,13 @@ void main() {
       rotationAngle: 1.57079632679, // 90°
     );
     // Along long axis after 90° (world Y), well inside half-width 60px
-    final onLongAxis = Offset(100, 100 + 2.5 * pxf); // +50px
+    const onLongAxis = Offset(100, 100 + 2.5 * pxf); // +50px
     expect(
       FurnitureBounds.containsPoint(item, onLongAxis, pxf, padPx: 0),
       isTrue,
     );
     // Along world X past half-depth 20px
-    final outside = Offset(100 + 2 * pxf, 100); // +40px
+    const outside = Offset(100 + 2 * pxf, 100); // +40px
     expect(
       FurnitureBounds.containsPoint(item, outside, pxf, padPx: 0),
       isFalse,
@@ -190,9 +190,9 @@ void main() {
       lengthInFeet: 1,
       rotationAngle: 1.57079632679, // 90° — thin strip vertical
     );
-    final side = Offset(200 + 1.8 * pxf, 200);
+    const side = Offset(200 + 1.8 * pxf, 200);
     expect(FurnitureBounds.containsPoint(item, side, pxf, padPx: 0), isFalse);
-    final along = Offset(200, 200 + 1.5 * pxf);
+    const along = Offset(200, 200 + 1.5 * pxf);
     expect(FurnitureBounds.containsPoint(item, along, pxf, padPx: 0), isTrue);
   });
 }
