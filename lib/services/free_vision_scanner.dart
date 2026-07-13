@@ -11,27 +11,27 @@ import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/scan_parser.dart';
 import '../models/scan_result.dart';
+import 'secure_key_store.dart';
 
 /// Free multimodal scan via Groq (Llama 4 Scout vision).
 ///
 /// Key resolution (first non-empty wins):
 /// 1. Explicit [apiKey] argument
-/// 2. User key in SharedPreferences (optional Settings)
+/// 2. User key in secure storage (optional Settings)
 /// 3. App-bundled [AppConfig.bundledGroqApiKey] from `--dart-define`
 ///
 /// Room size always comes from user dimensions; AI may only propose furniture
 /// and openings. Output is always run through [AccurateScan.enforce].
 class FreeVisionScanner {
+  static SecureKeyStore _store([SharedPreferences? prefs]) =>
+      SecureKeyStore(prefs: prefs);
+
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
-    final prefs = prefsOverride ?? await SharedPreferences.getInstance();
-    final key = prefs.getString(AppConfig.groqApiKeyPrefKey)?.trim();
-    if (key != null && key.isNotEmpty) return key;
-    return null;
+    return _store(prefsOverride).loadGroqKey();
   }
 
   static Future<void> saveApiKey(String key, [SharedPreferences? prefsOverride]) async {
-    final prefs = prefsOverride ?? await SharedPreferences.getInstance();
-    await prefs.setString(AppConfig.groqApiKeyPrefKey, key.trim());
+    await _store(prefsOverride).saveGroqKey(key);
   }
 
   /// Resolve key without requiring the user to open Settings.

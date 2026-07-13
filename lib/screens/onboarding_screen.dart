@@ -20,19 +20,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.camera_alt_outlined,
       title: 'Scan your room',
       body:
-          'Take 1–4 photos. RoomCraft builds a top-down blueprint with walls and furniture.',
+          'Enter exact width × length, then take 1–4 photos. RoomCraft builds a measured top-down layout sketch — not LiDAR or CAD. Size always matches your measurements.',
     ),
     (
       icon: Icons.dashboard_customize_outlined,
       title: 'Arrange furniture',
       body:
-          'Drag, rotate, and snap pieces. Auto-arrange places a bedroom or living layout for you.',
+          'Drag, rotate, and snap pieces. Collision and layout score help clear walkways. Auto-arrange suggests a bedroom, living, or office layout.',
     ),
     (
       icon: Icons.ios_share,
       title: 'Export & share',
       body:
-          'Save plans on this device and export a PNG to send to family or contractors.',
+          'Save plans on this device and export a PNG for family or contractors. Feedback helps us improve accuracy every build.',
     ),
   ];
 

@@ -7,6 +7,7 @@ import '../domain/units.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import '../providers/room_provider.dart';
+import '../services/analytics_service.dart';
 import '../services/storage_service.dart';
 import 'blueprint_screen.dart';
 
@@ -47,6 +48,7 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
           converted.furniture,
         );
     await StorageService().saveRoom(ref.read(roomProvider).room);
+    await AnalyticsService.instance.openEditorFromScan();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const BlueprintScreen()),
@@ -88,21 +90,23 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
       ),
       body: Column(
         children: [
-          if (_result.warnings.isNotEmpty)
-            MaterialBanner(
-              content: Text(
-                _result.warnings.take(3).join(' · '),
-                style: const TextStyle(fontSize: 12),
-              ),
-              leading: const Icon(Icons.info_outline),
-              actions: [
-                TextButton(
-                  onPressed: () =>
-                      ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
-                  child: const Text('OK'),
-                ),
-              ],
+          MaterialBanner(
+            content: Text(
+              _result.warnings.isNotEmpty
+                  ? _result.warnings.take(3).join(' · ')
+                  : 'Measured layout sketch — walls form a rectangle from your '
+                      'width × length (not LiDAR). Edit freely in the next step.',
+              style: const TextStyle(fontSize: 12),
             ),
+            leading: const Icon(Icons.info_outline),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
           Expanded(
             flex: 3,
             child: Container(
@@ -193,8 +197,18 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                 Text('Furniture', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
                 if (_result.furniture.isEmpty)
-                  const Text('No furniture detected — you can add items in the editor.',
-                      style: TextStyle(color: Colors.grey))
+                  Card(
+                    color: Colors.amber.shade50,
+                    child: const ListTile(
+                      leading: Icon(Icons.chair_outlined),
+                      title: Text('No furniture on this plan'),
+                      subtitle: Text(
+                        'Room size is still exact. Free vision may be offline '
+                        'on this build, or the photo had no clear pieces. '
+                        'Add items from the catalog after you open the editor.',
+                      ),
+                    ),
+                  )
                 else
                   ...List.generate(_result.furniture.length, (i) {
                     final f = _result.furniture[i];

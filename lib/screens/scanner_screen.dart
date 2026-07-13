@@ -9,6 +9,7 @@ import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../providers/room_provider.dart';
 import '../services/ai_scanner_service.dart';
+import '../services/analytics_service.dart';
 import '../services/free_vision_scanner.dart';
 import 'blueprint_screen.dart';
 import 'scan_review_screen.dart';
@@ -174,8 +175,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     }
 
     setState(() => _isLoading = true);
+    final mode = _scanMode;
+    await AnalyticsService.instance.scanStart(mode: mode);
     try {
-      final result = _scanMode == 'offline_only'
+      final result = mode == 'offline_only'
           ? await _aiService.scanRoomAccurateFree(
               _images,
               layoutType: _layoutType,
@@ -183,7 +186,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               roomLengthFt: size.$2,
               tryVision: false,
             )
-          : _scanMode == 'gemini'
+          : mode == 'gemini'
               ? await _aiService.scanRoom(
                   _images,
                   preferGemini: true,
@@ -199,12 +202,22 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   tryVision: true,
                 );
       if (!mounted) return;
+      final included = result.furniture.where((f) => f.included).length;
+      await AnalyticsService.instance.scanSuccess(
+        mode: mode,
+        furnitureCount: included,
+        emptyFurniture: included == 0,
+      );
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ScanReviewScreen(initial: result),
         ),
       );
     } catch (e) {
+      await AnalyticsService.instance.scanFail(
+        mode: mode,
+        reason: e.toString(),
+      );
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -273,8 +286,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     final tip = _guideTips[_guideStep.clamp(0, _guideTips.length - 1)];
     final unit = ref.watch(roomProvider).unitSystem;
     final visionHint = _freeVisionReady == true
-        ? 'Furniture assist available (no key paste needed)'
-        : 'Exact room size always — furniture from catalog if vision offline';
+        ? 'Furniture assist on (bundled/free key) · size still exact'
+        : 'Measured sketch: exact size always · add furniture from catalog if none detected';
 
     return Scaffold(
       appBar: AppBar(
@@ -375,7 +388,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    '10 × 10 stays 10 × 10 — free scan needs no API key',
+                    'Measured layout sketch (not LiDAR/CAD). '
+                    '10 × 10 stays 10 × 10 — free scan needs no API key.',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ),

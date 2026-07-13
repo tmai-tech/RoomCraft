@@ -358,15 +358,13 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 
   bool _hitTestFurniture(FurnitureItem item, Offset position) {
-    // Approximate axis-aligned hit test (rotation ignored for MVP simplicity).
-    final itemWidth = item.widthInFeet * state.pixelsPerFoot;
-    final itemLength = item.lengthInFeet * state.pixelsPerFoot;
-    final rect = Rect.fromCenter(
-      center: item.position,
-      width: itemWidth,
-      height: itemLength,
+    // True OBB hit-test (accounts for rotation).
+    return FurnitureBounds.containsPoint(
+      item,
+      position,
+      state.pixelsPerFoot,
+      padPx: 8,
     );
-    return rect.inflate(8).contains(position);
   }
 
   void updateFurniturePosition(Offset delta) {

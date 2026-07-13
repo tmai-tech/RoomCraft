@@ -3,6 +3,7 @@ import 'dart:ui';
 import '../../models/furniture_item.dart';
 import '../../models/room_model.dart';
 import '../../models/stroke_model.dart';
+import 'collision.dart';
 import 'furniture_bounds.dart';
 
 /// Clearance rules (feet) for layout tips and soft keep-outs.
@@ -46,18 +47,8 @@ class Clearances {
       pixelsPerFoot,
     );
 
-    // Overlaps
-    final ids = <String>{};
-    for (var i = 0; i < room.furniture.length; i++) {
-      final ri = FurnitureBounds.itemRect(room.furniture[i], pixelsPerFoot);
-      for (var j = i + 1; j < room.furniture.length; j++) {
-        final rj = FurnitureBounds.itemRect(room.furniture[j], pixelsPerFoot);
-        if (ri.overlaps(rj.inflate(2))) {
-          ids.add(room.furniture[i].id);
-          ids.add(room.furniture[j].id);
-        }
-      }
-    }
+    // Overlaps (true OBB)
+    final ids = Collision.overlappingIds(room.furniture, pixelsPerFoot);
     if (ids.isNotEmpty) {
       tips.add(LayoutTip(
         '${ids.length} items overlap — move or use Auto-arrange',

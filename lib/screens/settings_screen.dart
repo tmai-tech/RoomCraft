@@ -83,9 +83,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: Icon(Icons.check_circle_outline, color: Colors.green),
               title: Text('Free accurate scan — no key needed'),
               subtitle: Text(
-                'Enter exact width × length. The plan always uses those '
-                'measurements. Furniture assist uses an app free key when '
-                'available, otherwise an empty correct plan (add from catalog).',
+                'Measured layout sketch (not LiDAR/CAD). Enter exact width × length — '
+                'the plan always uses those measurements. Furniture assist uses a '
+                'bundled free key when available; otherwise an empty correct plan '
+                '(add pieces from the catalog). Optional keys below are stored securely on device.',
               ),
             ),
           ),

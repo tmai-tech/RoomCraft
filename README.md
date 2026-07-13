@@ -35,7 +35,8 @@ Personal keys in Settings are optional advanced overrides.
 
 | Doc | Description |
 |-----|-------------|
-| [MVP plan](docs/MVP-Implementation-Plan.md) | Phases 0–5 |
+| [Market study & phase plan](docs/Market-Study-and-Phase-Plan.md) | Competitors, gaps, Phases 0–4 |
+| [MVP plan](docs/MVP-Implementation-Plan.md) | Original Phases 0–5 (closed beta) |
 | [Beta checklist](docs/BETA_CHECKLIST.md) | Tester ops |
 | [Known issues](docs/KNOWN_ISSUES.md) | Beta limits |
 | [Changelog](CHANGELOG.md) | Release notes |

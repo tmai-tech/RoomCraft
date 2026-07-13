@@ -6,6 +6,7 @@ import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
 import '../providers/room_provider.dart';
+import '../services/analytics_service.dart';
 import '../services/export_service.dart';
 import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
@@ -94,6 +95,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                     pixelsPerFoot: roomState.pixelsPerFoot,
                     unitSystem: roomState.unitSystem,
                   );
+                  await AnalyticsService.instance.exportPng();
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -374,6 +376,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   onTap: () {
                     Navigator.pop(ctx);
                     notifier.autoArrange(type: type);
+                    AnalyticsService.instance.autoArrange(type: type.name);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Arranged as ${AutoArrange.label(type)}'),
@@ -389,6 +392,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   onTap: () {
                     Navigator.pop(ctx);
                     notifier.autoArrange(reflowExisting: true);
+                    AnalyticsService.instance.autoArrange(type: 'reflow');
                   },
                 ),
             ],

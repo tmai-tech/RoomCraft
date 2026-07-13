@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+5 (2026-07-13)
+
+### Phase 0 — beta trust
+- **OBB collision & hit-test**: rotated furniture selects and collides correctly (SAT), not AABB-only.
+- **Secure API keys**: Groq/Gemini keys in platform secure storage (migrated from SharedPreferences).
+- **Analytics funnel**: `scan_start`, `scan_success`, `scan_fail`, `auto_arrange`, `export`, `open_editor_from_scan` (Firebase Analytics when available).
+- **Honest scan copy**: onboarding, scanner, and review explain measured layout sketch (not LiDAR/CAD).
+- **Empty furniture UX**: clear card when vision is offline; warnings when no free vision key on build.
+
 ## 1.0.0-beta.1+4 (2026-07-12)
 
 ### Added — free accurate scan (no user API key)

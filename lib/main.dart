@@ -4,10 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config/app_config.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'services/analytics_service.dart';
 import 'services/prefs_service.dart';
+import 'services/secure_key_store.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Best-effort: analytics + key migration must never block launch.
+  try {
+    await SecureKeyStore().migrateFromPrefsIfNeeded();
+  } catch (_) {}
+  try {
+    await AnalyticsService.instance.init();
+  } catch (_) {}
   runApp(const ProviderScope(child: RoomCraftApp()));
 }
 

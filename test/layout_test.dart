@@ -118,4 +118,81 @@ void main() {
       isTrue,
     );
   });
+
+  test('OBB hit-test respects rotation', () {
+    // 6×2 ft sofa at 90°: half-width 3ft→60px along world Y; half-depth 1ft→20px along world X
+    const item = FurnitureItem(
+      id: 'r',
+      type: FurnitureType.sofa,
+      position: Offset(100, 100),
+      widthInFeet: 6,
+      lengthInFeet: 2,
+      rotationAngle: 1.57079632679, // 90°
+    );
+    // Along long axis after 90° (world Y), well inside half-width 60px
+    final onLongAxis = Offset(100, 100 + 2.5 * pxf); // +50px
+    expect(
+      FurnitureBounds.containsPoint(item, onLongAxis, pxf, padPx: 0),
+      isTrue,
+    );
+    // Along world X past half-depth 20px
+    final outside = Offset(100 + 2 * pxf, 100); // +40px
+    expect(
+      FurnitureBounds.containsPoint(item, outside, pxf, padPx: 0),
+      isFalse,
+    );
+  });
+
+  test('separated items do not OBB-collide; same center does', () {
+    const a = FurnitureItem(
+      id: 'a',
+      type: FurnitureType.table,
+      position: Offset(100, 100),
+      widthInFeet: 4,
+      lengthInFeet: 1,
+      rotationAngle: 0,
+    );
+    const b = FurnitureItem(
+      id: 'b',
+      type: FurnitureType.table,
+      position: Offset(100, 160),
+      widthInFeet: 4,
+      lengthInFeet: 1,
+      rotationAngle: 0,
+    );
+    expect(Collision.obbOverlap(a, b, pxf, padding: 0), isFalse);
+
+    const c = FurnitureItem(
+      id: 'c',
+      type: FurnitureType.sofa,
+      position: Offset(100, 100),
+      widthInFeet: 3,
+      lengthInFeet: 3,
+      rotationAngle: 0.785398, // 45°
+    );
+    const d = FurnitureItem(
+      id: 'd',
+      type: FurnitureType.chair,
+      position: Offset(100, 100),
+      widthInFeet: 2,
+      lengthInFeet: 2,
+      rotationAngle: 0,
+    );
+    expect(Collision.obbOverlap(c, d, pxf, padding: 0), isTrue);
+  });
+
+  test('hit-test false for AABB side when item rotated out', () {
+    const item = FurnitureItem(
+      id: 't',
+      type: FurnitureType.table,
+      position: Offset(200, 200),
+      widthInFeet: 4,
+      lengthInFeet: 1,
+      rotationAngle: 1.57079632679, // 90° — thin strip vertical
+    );
+    final side = Offset(200 + 1.8 * pxf, 200);
+    expect(FurnitureBounds.containsPoint(item, side, pxf, padPx: 0), isFalse);
+    final along = Offset(200, 200 + 1.5 * pxf);
+    expect(FurnitureBounds.containsPoint(item, along, pxf, padPx: 0), isTrue);
+  });
 }

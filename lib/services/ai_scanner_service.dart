@@ -12,32 +12,27 @@ import '../domain/local_room_scanner.dart';
 import '../domain/scan_parser.dart';
 import '../models/scan_result.dart';
 import 'free_vision_scanner.dart';
+import 'secure_key_store.dart';
 
 /// Room scanning with free accurate default (no user API key required).
 ///
 /// Accuracy contract:
 /// - Room width × length always come from user measurements.
-/// - Walls are a clean rectangle at that size.
+/// - Walls are a clean rectangle at that size (measured layout sketch, not LiDAR).
 /// - Optional free vision only proposes furniture / openings; never resizes room.
 class AIScannerService {
+  static SecureKeyStore _store([SharedPreferences? prefs]) =>
+      SecureKeyStore(prefs: prefs);
+
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
-    final prefs = prefsOverride ?? await SharedPreferences.getInstance();
-    final modern = prefs.getString(AppConfig.apiKeyPrefKey)?.trim();
-    if (modern != null && modern.isNotEmpty) return modern;
-    final legacy = prefs.getString(AppConfig.apiKeyLegacyPrefKey)?.trim();
-    if (legacy != null && legacy.isNotEmpty) {
-      await prefs.setString(AppConfig.apiKeyPrefKey, legacy);
-      return legacy;
-    }
-    return null;
+    return _store(prefsOverride).loadGeminiKey();
   }
 
   static Future<void> saveApiKey(String key, [SharedPreferences? prefsOverride]) async {
-    final prefs = prefsOverride ?? await SharedPreferences.getInstance();
-    await prefs.setString(AppConfig.apiKeyPrefKey, key.trim());
+    await _store(prefsOverride).saveGeminiKey(key);
   }
 
-  /// Gemini key: user prefs, then bundled dart-define.
+  /// Gemini key: secure user key, then bundled dart-define.
   static Future<String?> resolveGeminiApiKey([
     SharedPreferences? prefsOverride,
   ]) async {
@@ -187,13 +182,23 @@ class AIScannerService {
     }
 
     // 3) Offline accurate — always works, zero keys
-    return scanRoomFree(
+    final offline = await scanRoomFree(
       images,
       wallMeasurements: wallMeasurements,
       layoutType: layoutType,
       roomWidthFt: w,
       roomLengthFt: l,
     );
+    if (offline.furniture.isEmpty && tryVision) {
+      return offline.copyWith(
+        warnings: [
+          ...offline.warnings,
+          'No free vision key on this build — furniture list empty. '
+              'Room size is still exact; add pieces from the catalog.',
+        ],
+      );
+    }
+    return offline;
   }
 
   /// Scan photos.
