@@ -1,11 +1,18 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Each user may only read/write their own backed-up rooms.
     match /users/{userId}/rooms/{roomId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-    // Deny everything else by default.
+    // Beta feedback reports (create only; no public read)
+    match /feedback/{reportId} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['id', 'category', 'message', 'appVersion'])
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() < 8000;
+      allow read, update, delete: if false;
+    }
     match /{document=**} {
       allow read, write: if false;
     }

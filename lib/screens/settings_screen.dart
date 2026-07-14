@@ -8,6 +8,7 @@ import '../services/free_vision_scanner.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/prefs_service.dart';
 import '../services/training_export_service.dart';
+import 'feedback_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -326,9 +327,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.feedback_outlined, color: Colors.blue),
             title: const Text('Send feedback'),
-            subtitle: const Text('Email the beta team'),
-            trailing: const Icon(Icons.open_in_new, size: 16),
-            onTap: _sendFeedback,
+            subtitle: const Text('Report bugs with screenshots'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+              );
+            },
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -375,18 +380,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _sendFeedback() async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: AppConfig.feedbackEmail,
-      queryParameters: {
-        'subject': AppConfig.feedbackSubject,
-        'body': 'App version: ${AppConfig.versionLabel}\n\n',
-      },
-    );
-    await _openUri(uri);
   }
 
   Future<void> _openUrl(String url) async {

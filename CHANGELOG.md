@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+20 (2026-07-14)
+
+### Feedback form with screenshots
+- Settings → **Send feedback**: category, description, up to 5 screenshots (gallery/camera).
+- Saves report locally and to Firestore `feedback/{id}`; Storage when bucket is enabled.
+- **Share screenshots** via system sheet (email) so the team can diagnose crashes.
+- Script: `scripts/list-feedback.mjs` to list reports for review.
+
 ## 1.0.0-beta.1+19 (2026-07-14)
 
 ### Fix AR crash on “Measure 4 walls”
