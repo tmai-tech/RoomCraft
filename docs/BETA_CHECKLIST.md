@@ -7,9 +7,11 @@
 - [x] Firebase App Distribution wired + green CI distribute
 - [x] Tester group `testers` exists
 - [x] Stable CI keystore SHA for Google Sign-In (see PLAY_AND_SIGNING.md)
-- [ ] Add **CI SHA-1** in Firebase Android app settings
-- [ ] Enable Authentication → Google; re-download `google-services.json`
-- [ ] Set `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID` secret; create Firestore + deploy rules
+- [x] Add **CI + local SHA-1/256** in Firebase Android app (Management API 2026-07-14)
+- [x] Create Firestore DB + deploy rules
+- [ ] Enable Authentication → Get started → Google (Owner console — creates oauth_client)
+- [ ] Re-download `google-services.json` via `./scripts/refresh-google-services.sh` and commit
+- [ ] Set `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID` secret; rebuild APK
 - [ ] Add tester emails in [Firebase console](https://console.firebase.google.com/project/roomcraft-e1312/appdistribution)
 - [ ] Confirm latest successful **Build APK** + distribute run
 - [ ] Share install invite / release link with testers

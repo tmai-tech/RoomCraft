@@ -11,14 +11,29 @@ Firebase App Distribution debug APKs must use a **stable keystore** — otherwis
 
 ## Fingerprints (RoomCraft)
 
-| Cert | Use | SHA-1 |
-|------|-----|--------|
-| **CI / upload keystore** | All Firebase App Distribution APKs (after +12) | `B7:EF:A7:F5:C3:E6:E7:5E:9A:21:EF:4C:5C:F0:62:2F:11:A2:4B:09` |
-| **Local Android debug** (this machine) | `flutter run` on a dev machine | `F3:8D:E3:8E:3A:FD:DD:BD:7D:84:9A:69:A2:06:09:14:A1:B1:A1:EF` |
+| Cert | Use | SHA-1 | Status |
+|------|-----|--------|--------|
+| **CI / upload keystore** | All Firebase App Distribution APKs (after +12) | `B7:EF:A7:F5:C3:E6:E7:5E:9A:21:EF:4C:5C:F0:62:2F:11:A2:4B:09` | **Registered** 2026-07-14 via Management API |
+| **Local Android debug** (this machine) | `flutter run` on a dev machine | `F3:8D:E3:8E:3A:FD:DD:BD:7D:84:9A:69:A2:06:09:14:A1:B1:A1:EF` | **Registered** 2026-07-14 |
 
-CI SHA-256 (optional, add both):  
+CI SHA-256 (also registered):  
 `B5:A3:58:DC:2A:BD:6F:98:03:18:66:F6:B9:17:4C:C9:6E:FD:93:36:8C:B8:C6:6C:CA:C0:6D:1B:E9:BD:64:2A`
 
+Local debug SHA-256 (also registered):  
+`FE:F6:6F:47:6B:93:23:E4:00:E4:36:9E:21:2E:7A:BD:1F:5A:BD:E6:F4:CB:35:A5:48:17:5E:FC:CB:E3:78:88`
+
+Verify in Console: [Project settings → Android app](https://console.firebase.google.com/project/roomcraft-e1312/settings/general) should list both fingerprints.
+
+### Infra applied programmatically (2026-07-14)
+
+| Item | Status |
+|------|--------|
+| SHA-1 / SHA-256 on Android app | Done (4 certs) |
+| Firestore `(default)` DB (`nam5`) | Created |
+| Firestore security rules (`users/{uid}/rooms/*`) | Deployed |
+| Web app (Auth helper) | Created |
+| Firebase **Authentication** product | **Not started** — needs Owner click (see below) |
+| `google-services.json` `oauth_client` | Still empty until Auth Google provider is enabled |
 ### Recompute fingerprints
 
 ```bash
@@ -33,64 +48,56 @@ keytool -list -v -alias androiddebugkey \
   -storepass android -keypass android
 ```
 
-## Console steps (you — ~10 minutes)
+## Console steps remaining (you — ~3 minutes)
 
-### 1. Add SHA fingerprints
+SHAs, Firestore DB, and rules are already done. **One Owner-only step remains:** Firebase Auth was never initialized on this project (`CONFIGURATION_NOT_FOUND` / `firebase-core: disabled`). That cannot be finished with a service account alone.
 
-1. Open [Firebase Project settings → Your apps](https://console.firebase.google.com/project/roomcraft-e1312/settings/general)
-2. Select Android app `com.logicrequire.room_craft`
-3. **Add fingerprint** — paste **both** SHA-1 values above (CI + any local debug you use)
-4. Save
+### 1. Start Authentication + enable Google
 
-### 2. Enable Google Sign-In
+1. Open [Authentication](https://console.firebase.google.com/project/roomcraft-e1312/authentication)
+2. Click **Get started** (first-time only)
+3. **Sign-in method** → **Google** → Enable → support email → Save
 
-1. [Authentication → Sign-in method](https://console.firebase.google.com/project/roomcraft-e1312/authentication/providers)
-2. Enable **Google** → set support email → Save
+This creates the Web + Android OAuth clients and fills `oauth_client` in `google-services.json`.
 
-### 3. Re-download `google-services.json`
-
-1. Same Project settings → Your apps → Download `google-services.json`
-2. Replace `android/app/google-services.json` (commit it — needed for CI)
-3. Confirm `oauth_client` is **no longer empty**
-
-### 4. Web client ID for `idToken`
-
-Find the OAuth client with `"client_type": 3` (Web client) in the new JSON:
-
-```json
-"client_id": "XXXX.apps.googleusercontent.com"
-```
-
-Set GitHub secret (and local dart-define):
+### 2. Refresh `google-services.json` + web client secret
 
 ```bash
+# From repo root (uses service account if GOOGLE_APPLICATION_CREDENTIALS is set)
+./scripts/refresh-google-services.sh
+# or:
+export GOOGLE_APPLICATION_CREDENTIALS=.secrets/roomcraft-e1312-firebase-adminsdk-*.json
+npx firebase-tools apps:sdkconfig ANDROID 1:768748224321:android:2ef77f7bc86ecb080fabc0 \
+  --project roomcraft-e1312 --out android/app/google-services.json
+```
+
+Confirm `oauth_client` is **no longer empty**. Then set:
+
+```bash
+# client_type 3 entry from the new JSON
 gh secret set ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID --repo tmai-tech/RoomCraft \
   --body 'XXXX.apps.googleusercontent.com'
 ```
 
 CI already passes this as `--dart-define=ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID=...`.
 
-### 5. Firestore
+Commit the updated JSON and re-run **Build APK**.
 
-1. [Create Firestore database](https://console.firebase.google.com/project/roomcraft-e1312/firestore) (production mode is fine if you deploy rules)
-2. Deploy rules from this repo:
+### 3. Firestore
+
+Already created (`nam5`) with rules deployed. Re-deploy if you edit rules:
 
 ```bash
-firebase login
-firebase use roomcraft-e1312
-firebase deploy --only firestore:rules
+firebase deploy --only firestore:rules --project roomcraft-e1312
 ```
 
-Rules file: `firestore.rules` — users may only read/write `users/{uid}/rooms/{roomId}`.
+### 4. Verify on device
 
-### 6. Verify on device
-
-1. Install latest App Distribution build
+1. Install latest App Distribution build (after JSON + secret + rebuild)
 2. Settings → **Sign in with Google**
 3. Backup / restore a plan
 
 If Sign-In fails, the snackbar message names the missing piece (SHA vs idToken vs Auth).
-
 ## GitHub secrets (signing)
 
 | Secret | Purpose |
