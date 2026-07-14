@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+17 (2026-07-14)
+
+### Accuracy upgrades
+- **Geometry refine**: standard door/window widths, snap furniture to walls, separate overlaps, better confidence.
+- **AR diagonal check**: after wall measures, tap opposite corners to correct scale drift.
+- **Review → Refine size with AR**: re-lock any photo plan to AR 4-wall measure without rescanning furniture layout from scratch.
+
 ## 1.0.0-beta.1+16 (2026-07-14)
 
 ### AR 4-wall chain + training export

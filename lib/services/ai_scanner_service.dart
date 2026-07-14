@@ -10,6 +10,7 @@ import '../domain/accurate_scan.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/local_room_scanner.dart';
 import '../domain/scan_parser.dart';
+import '../domain/scan_refine.dart';
 import '../models/scan_result.dart';
 import 'free_vision_scanner.dart';
 import 'secure_key_store.dart';
@@ -160,14 +161,14 @@ class AIScannerService {
       if (geminiKey != null && geminiKey.isNotEmpty) {
         try {
           final gemini = await _scanWithGemini(images, geminiKey, w, l);
-          return AccurateScan.enforce(
+          return ScanRefine.refine(AccurateScan.enforce(
             widthFt: w,
             lengthFt: l,
             openings: gemini.walls,
             furniture: gemini.furniture,
             warnings: gemini.warnings,
             sourceLabel: 'Free Gemini furniture assist — room size locked',
-          );
+          ));
         } catch (e) {
           final free = await scanRoomFree(
             images,

@@ -8,7 +8,9 @@ import '../domain/wall_relative_scan.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import '../providers/room_provider.dart';
+import '../domain/scan_refine.dart';
 import '../services/analytics_service.dart';
+import '../services/ar_measure_service.dart';
 import '../services/storage_service.dart';
 import '../services/training_export_service.dart';
 import 'blueprint_screen.dart';
@@ -34,6 +36,43 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   void initState() {
     super.initState();
     _result = widget.initial;
+  }
+
+  Future<void> _refineWithAr() async {
+    if (!ArMeasureService.isPlatformSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('AR refine needs an ARCore Android device')),
+      );
+      return;
+    }
+    try {
+      final m = await ArMeasureService.measureRoom(mode: 'chain');
+      if (!mounted) return;
+      setState(() {
+        _result = ScanRefine.lockSize(
+          _result,
+          widthFt: m.widthFt,
+          lengthFt: m.lengthFt,
+          reason:
+              'Size re-locked from AR 4-wall measure (${m.widthFt.toStringAsFixed(1)}×${m.lengthFt.toStringAsFixed(1)} ft)',
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Plan rescaled to AR ${m.widthFt.toStringAsFixed(1)} × ${m.lengthFt.toStringAsFixed(1)} ft',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      if (!msg.contains('CANCELLED') && !msg.contains('cancelled')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('AR refine: $msg')),
+        );
+      }
+    }
   }
 
   Future<void> _sendFeedback(String rating) async {
@@ -757,7 +796,14 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  if (ArMeasureService.isPlatformSupported)
+                    OutlinedButton.icon(
+                      onPressed: _refineWithAr,
+                      icon: const Icon(Icons.view_in_ar),
+                      label: const Text('Refine size with AR (higher accuracy)'),
+                    ),
+                  const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: _openEditor,
                     icon: const Icon(Icons.edit),

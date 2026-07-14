@@ -97,7 +97,15 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun labels(): List<String> =
         if (chainMode) wallLabelsChain else wallLabelsQuick
 
+    private var diagonalMeters: Double? = null
+    private var measuringDiagonal = false
+
     private fun onFloorTap(hit: HitResult) {
+        // Diagonal refine phase (after walls)
+        if (measuringDiagonal) {
+            onDiagonalTap(hit)
+            return
+        }
         if (wallMeters.size >= totalWalls) return
 
         val anchor = hit.createAnchor()
@@ -139,8 +147,77 @@ class ArMeasureActivity : AppCompatActivity() {
                 ),
                 Toast.LENGTH_SHORT,
             ).show()
+            if (wallMeters.size >= totalWalls) {
+                // Optional accuracy boost: measure room diagonal
+                measuringDiagonal = true
+                Toast.makeText(
+                    this,
+                    "Now tap opposite corners (diagonal) to verify scale",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
             updateUi()
         }
+    }
+
+    private fun onDiagonalTap(hit: HitResult) {
+        val anchor = hit.createAnchor()
+        val anchorNode = AnchorNode(anchor).apply {
+            setParent(arFragment.arSceneView.scene)
+        }
+        anchors.add(anchorNode)
+        addMarker(anchorNode, 0)
+        val world = anchorNode.worldPosition
+        tapsInSegment++
+        if (tapsInSegment == 1) {
+            segmentStart = world
+            liveDistance.text = "Diagonal corner 1 — tap opposite corner"
+        } else {
+            val start = segmentStart ?: world
+            val dist = distance(start, world).toDouble()
+            diagonalMeters = dist
+            tapsInSegment = 0
+            segmentStart = null
+            measuringDiagonal = false
+            applyDiagonalScale(dist)
+            updateUi()
+        }
+    }
+
+    /** If measured diagonal disagrees with √(w²+l²), rescale W×L toward truth. */
+    private fun applyDiagonalScale(diagM: Double) {
+        val w = resolvedWidthM() ?: return
+        val l = resolvedLengthM() ?: return
+        val expected = sqrt(w * w + l * l)
+        if (expected < 0.5 || diagM < 0.5) return
+        val ratio = diagM / expected
+        if (abs(ratio - 1.0) < 0.04) {
+            Toast.makeText(this, "Diagonal checks out (±4%)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (ratio < 0.7 || ratio > 1.35) {
+            Toast.makeText(
+                this,
+                "Diagonal looks off — keeping wall measures (try again if unsure)",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        // Soft blend: pull size toward diagonal-consistent scale
+        val blend = 0.65 // trust diagonal moderately
+        val scale = 1.0 + (ratio - 1.0) * blend
+        // Scale stored wall meters
+        for (i in wallMeters.indices) {
+            wallMeters[i] = wallMeters[i] * scale
+        }
+        Toast.makeText(
+            this,
+            String.format(
+                "Scale refined from diagonal (×%.2f) — improves accuracy",
+                scale,
+            ),
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     private fun removeLastAnchor() {
@@ -177,6 +254,19 @@ class ArMeasureActivity : AppCompatActivity() {
     }
 
     private fun undoLast() {
+        if (measuringDiagonal && tapsInSegment > 0) {
+            repeat(tapsInSegment) { removeLastAnchor() }
+            tapsInSegment = 0
+            segmentStart = null
+            updateUi()
+            return
+        }
+        if (measuringDiagonal && diagonalMeters != null) {
+            diagonalMeters = null
+            measuringDiagonal = true
+            updateUi()
+            return
+        }
         // Undo current in-progress segment taps, or last completed wall
         if (tapsInSegment > 0) {
             repeat(tapsInSegment) { removeLastAnchor() }
@@ -220,10 +310,16 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun updateUi() {
         val n = wallMeters.size
         val labels = labels()
-        if (n >= totalWalls) {
+        if (measuringDiagonal) {
+            stepTitle.text = "Accuracy check — diagonal"
+            stepHint.text =
+                "Tap two OPPOSITE corners of the room (across the floor). " +
+                    "This catches scale errors. Or tap Use measurements to skip."
+            btnDone.isEnabled = resolvedWidthM() != null && resolvedLengthM() != null
+        } else if (n >= totalWalls) {
             stepTitle.text = "Done — measurements ready"
             stepHint.text = if (chainMode) {
-                "Opposite walls were averaged for a more stable rectangle. Tap Use measurements."
+                "Opposite walls averaged. Optional: diagonal was requested for scale check."
             } else {
                 "Tap Use measurements to build your plan."
             }

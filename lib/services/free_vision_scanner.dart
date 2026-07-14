@@ -13,6 +13,7 @@ import '../domain/auto_scale.dart';
 import '../domain/furniture_vision_filter.dart';
 import '../domain/scan_keyframes.dart';
 import '../domain/scan_parser.dart';
+import '../domain/scan_refine.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'secure_key_store.dart';
@@ -274,10 +275,11 @@ class FreeVisionScanner {
       '(more wall coverage + clear doors improve scale)',
     );
 
-    return result.copyWith(
+    // Geometry refine: standard door widths, wall-snap furniture, de-overlap
+    return ScanRefine.refine(result.copyWith(
       warnings: warnings,
       accuracyScore: accuracy,
-    );
+    ));
   }
 
   static double? _asDouble(dynamic v) {
@@ -375,7 +377,7 @@ class FreeVisionScanner {
       '(more walkaround frames improve openings/furniture placement)',
     );
 
-    return AccurateScan.enforce(
+    final raw = AccurateScan.enforce(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
       openings: parsed.walls,
@@ -386,6 +388,7 @@ class FreeVisionScanner {
       inventDefaultOpenings: false,
       accuracyScore: accuracy,
     );
+    return ScanRefine.refine(raw);
   }
 
   Future<ScanResult> _singlePassScan({
@@ -406,7 +409,7 @@ class FreeVisionScanner {
     jsonMap['roomLength'] = roomLengthFt;
     final filtered = _filterFurnitureMap(jsonMap);
     final parsed = ScanParser.parse(filtered.map);
-    return AccurateScan.enforce(
+    return ScanRefine.refine(AccurateScan.enforce(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
       openings: parsed.walls,
@@ -414,7 +417,7 @@ class FreeVisionScanner {
       warnings: parsed.warnings,
       sourceLabel: 'Free AI scan — size locked',
       inventDefaultOpenings: false,
-    );
+    ));
   }
 
   Future<Map<String, dynamic>> _callVision({

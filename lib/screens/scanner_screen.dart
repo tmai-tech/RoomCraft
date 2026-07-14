@@ -8,6 +8,7 @@ import '../catalog/furniture_catalog.dart';
 import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/layout/auto_arrange.dart';
+import '../domain/scan_refine.dart';
 import '../domain/scan_keyframes.dart';
 import '../domain/units.dart';
 import '../domain/wall_relative_scan.dart';
@@ -548,7 +549,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             autoScale: false,
             layoutType: RoomLayoutType.empty,
           );
-          result = raw.copyWith(
+          result = ScanRefine.refine(raw.copyWith(
             warnings: [
               ...raw.warnings,
               'Room size from ARCore floor measure '
@@ -556,12 +557,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             ],
             accuracyScore:
                 ((raw.accuracyScore ?? 0.72) + 0.12).clamp(0.55, 0.95),
-          );
+          ));
         } else {
           // AR size only — exact rectangle; add furniture from catalog or photos later
           final chain = _arMeasure?.isChain == true;
           final oppErr = _arMeasure?.oppositeWallError ?? 0;
-          result = AccurateScan.enforce(
+          result = ScanRefine.refine(AccurateScan.enforce(
             widthFt: w,
             lengthFt: l,
             openings: const [],
@@ -582,10 +583,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             accuracyScore: chain
                 ? (oppErr > 0.12 ? 0.82 : 0.92)
                 : 0.88,
-          );
+          ));
         }
       } else if (mode == 'field_measure') {
-        result = _composeFieldMeasure(resolvedSize!.$1, resolvedSize.$2);
+        result = ScanRefine.refine(
+          _composeFieldMeasure(resolvedSize!.$1, resolvedSize.$2),
+        );
       } else if (mode == 'wall_walk') {
         if (_freeVisionReady == true) {
           result = await WallRelativeVision.scanWallByWall(

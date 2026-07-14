@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'package:mime/mime.dart';
 
 import '../config/app_config.dart';
+import '../domain/scan_refine.dart';
 import '../domain/wall_relative_scan.dart';
 import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
@@ -249,7 +250,7 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       ...freeOnly.where((f) => !wallTypes.contains(f.type)),
     ];
 
-    return WallRelativeComposer.compose(
+    return ScanRefine.refine(WallRelativeComposer.compose(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
       openings: openings,
@@ -257,7 +258,7 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       warnings: notes,
       wallPhotos: wallPhotos.length,
       overviewPhotos: overviewPhotos.length,
-    );
+    ));
   }
 
   static String _wallPrompt(
