@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+19 (2026-07-14)
+
+### Fix AR crash on “Measure 4 walls”
+- **Removed Sceneform** (root cause of native crash when opening AR measure).
+- Pure **ARCore** session + camera feed + center reticle + **Mark corner** button.
+- Same 4-wall chain / quick / diagonal refine flow, without fragile 3D scene graph.
+
 ## 1.0.0-beta.1+18 (2026-07-14)
 
 ### Crash fixes (AR)

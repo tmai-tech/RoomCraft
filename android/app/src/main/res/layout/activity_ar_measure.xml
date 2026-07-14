@@ -1,21 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:background="#000000">
 
-    <FrameLayout
-        android:id="@+id/ar_container"
+    <android.opengl.GLSurfaceView
+        android:id="@+id/ar_surface"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_height="match_parent" />
+
+    <!-- Center reticle -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="+"
+        android:textColor="#80FFFFFF"
+        android:textSize="48sp"
+        android:textStyle="bold"
+        android:shadowColor="#000000"
+        android:shadowRadius="4" />
 
     <LinearLayout
-        android:id="@+id/panel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
         android:orientation="vertical"
         android:padding="16dp"
         android:background="#E6121212">
@@ -24,7 +33,7 @@
             android:id="@+id/step_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Step 1 — Room width"
+            android:text="Step 1"
             android:textColor="#FFFFFF"
             android:textSize="18sp"
             android:textStyle="bold" />
@@ -34,7 +43,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Point at the floor. Tap two corners of the same wall."
+            android:text="Point + at a floor corner, then Mark."
             android:textColor="#BDBDBD"
             android:textSize="13sp" />
 
@@ -53,14 +62,19 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text=""
             android:textColor="#EEEEEE"
             android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btn_mark"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Mark corner 1" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:orientation="horizontal">
 
             <Button
@@ -86,4 +100,4 @@
             android:layout_height="wrap_content"
             android:text="Cancel" />
     </LinearLayout>
-</LinearLayout>
+</FrameLayout>

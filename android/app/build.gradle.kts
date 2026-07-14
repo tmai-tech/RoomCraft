@@ -47,7 +47,6 @@ android {
 
     defaultConfig {
         applicationId = "com.logicrequire.room_craft"
-        // ARCore requires 24+
         minSdk = maxOf(24, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -68,6 +67,13 @@ android {
             }
         }
     }
+
+    packaging {
+        jniLibs {
+            // Avoid native lib merge crashes on some devices
+            useLegacyPackaging = true
+        }
+    }
 }
 
 flutter {
@@ -75,10 +81,8 @@ flutter {
 }
 
 dependencies {
-    // ARCore + Sceneform (maintained fork) for guided room measure
+    // Pure ARCore only — Sceneform removed (caused crashes on Measure)
     implementation("com.google.ar:core:1.45.0")
-    implementation("com.gorisse.thomas.sceneform:sceneform:1.23.0")
-    implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("com.google.android.material:material:1.12.0")
 }

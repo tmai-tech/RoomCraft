@@ -859,9 +859,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   const SizedBox(height: 4),
                   Text(
                     _arChainMode
-                        ? 'Walk clockwise. For each wall A→D: tap both floor corners. '
+                        ? 'Walk clockwise A→D. Point the + reticle at each floor corner and tap Mark. '
                             'Opposite walls are averaged for a stable rectangle.'
-                        : 'Tap two ends of width, then two ends of length on the floor grid.',
+                        : 'Point + at width corners (Mark twice), then length corners. No Sceneform — pure ARCore.',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                   ),
                   SwitchListTile(
