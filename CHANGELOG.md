@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+15 (2026-07-14)
+
+### ARCore guided measure (consumer accuracy)
+- **AR measure mode (default)**: tap floor corners for width × length using ARCore plane hit-testing.
+- Optional photos/video afterward for furniture AI placement; size stays locked to AR.
+- Graceful fallback when device lacks ARCore → Easy photo/video.
+- Native `ArMeasureActivity` + MethodChannel `com.logicrequire.room_craft/ar_measure`.
+- minSdk 24 (ARCore). Sceneform maintained fork for plane UX.
+
 ## 1.0.0-beta.1+14 (2026-07-14)
 
 ### Consumer Easy Scan (no measurements required)

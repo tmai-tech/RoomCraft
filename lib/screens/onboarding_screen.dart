@@ -20,7 +20,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.camera_alt_outlined,
       title: 'Scan your room',
       body:
-          'Film a walkaround video or upload photos — no tape needed. AI estimates your room and furniture. Optional: lock size if you know it. Not LiDAR/CAD — tweak in Review if needed.',
+          'Best: AR measure — tap floor corners for real-world size (no tape). Or film a walkaround for AI layout. Not LiDAR/CAD — tweak in Review if needed.',
     ),
     (
       icon: Icons.dashboard_customize_outlined,

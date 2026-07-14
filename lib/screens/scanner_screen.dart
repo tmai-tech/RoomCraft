@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../catalog/furniture_catalog.dart';
 import '../config/app_config.dart';
+import '../domain/accurate_scan.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/scan_keyframes.dart';
 import '../domain/units.dart';
@@ -16,6 +17,7 @@ import '../models/stroke_model.dart';
 import '../providers/room_provider.dart';
 import '../services/ai_scanner_service.dart';
 import '../services/analytics_service.dart';
+import '../services/ar_measure_service.dart';
 import '../services/free_vision_scanner.dart';
 import '../services/wall_relative_vision.dart';
 import 'blueprint_screen.dart';
@@ -84,12 +86,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   final _widthController = TextEditingController(text: '12');
   final _lengthController = TextEditingController(text: '14');
 
-  /// easy_scan (default for everyone) | field_measure | wall_walk |
-  /// free_frames | offline_only | gemini
-  String _scanMode = 'easy_scan';
+  /// ar_guided | easy_scan | field_measure | wall_walk | free_frames | offline_only | gemini
+  String _scanMode = 'ar_guided';
 
   /// When false (easy scan default), size is estimated from photos.
   bool _knowRoomSize = false;
+
+  ArAvailability? _arStatus;
+  ArRoomMeasure? _arMeasure;
 
   final Map<WallSide, File> _wallPhotos = {};
   final Map<WallSide, List<_OpeningDraft>> _wallOpenings = {
@@ -108,6 +112,51 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   void initState() {
     super.initState();
     _refreshVisionStatus();
+    _refreshArStatus();
+  }
+
+  Future<void> _refreshArStatus() async {
+    final s = await ArMeasureService.isAvailable();
+    if (mounted) setState(() => _arStatus = s);
+  }
+
+  Future<void> _runArMeasure() async {
+    setState(() {
+      _isLoading = true;
+      _loadingDetail = 'Starting AR measure…';
+    });
+    try {
+      final m = await ArMeasureService.measureRoom();
+      if (!mounted) return;
+      setState(() {
+        _arMeasure = m;
+        _widthController.text = m.widthFt.toStringAsFixed(1);
+        _lengthController.text = m.lengthFt.toStringAsFixed(1);
+        _knowRoomSize = true;
+        _isLoading = false;
+        _loadingDetail = '';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'AR measured ${m.widthFt.toStringAsFixed(1)} × '
+            '${m.lengthFt.toStringAsFixed(1)} ft — add photos for furniture (optional)',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadingDetail = '';
+      });
+      final msg = e.toString().replaceFirst('PlatformException', '');
+      if (!msg.contains('CANCELLED') && !msg.contains('cancelled')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('AR measure: $msg')),
+        );
+      }
+    }
   }
 
   @override
@@ -380,6 +429,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   Future<void> _process() async {
     final needsExactSize =
+        _scanMode == 'ar_guided' ||
         _scanMode == 'field_measure' ||
         _scanMode == 'wall_walk' ||
         _scanMode == 'offline_only' ||
@@ -388,7 +438,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         (_scanMode == 'gemini' && _knowRoomSize);
 
     final size = _parseRoomSize();
-    if (needsExactSize && size == null) {
+    if (_scanMode == 'ar_guided' && _arMeasure == null && size == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tap “Measure with AR” first')),
+      );
+      return;
+    }
+    if (needsExactSize && size == null && _arMeasure == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter room width × length first')),
       );
@@ -397,6 +453,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
     if (_scanMode == 'field_measure') {
       // No photo required — tape numbers are truth
+    } else if (_scanMode == 'ar_guided') {
+      // Size from AR; photos optional for furniture
     } else if (_scanMode == 'wall_walk') {
       if (_wallPhotos.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -450,9 +508,15 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       if (cont != true) return;
     }
 
+    final resolvedSize = size ??
+        (_arMeasure != null
+            ? (_arMeasure!.widthFt, _arMeasure!.lengthFt)
+            : null);
+
     setState(() {
       _isLoading = true;
       _loadingDetail = switch (_scanMode) {
+        'ar_guided' => 'Building plan from AR measurements…',
         'easy_scan' => 'Mapping your room from photos/video…',
         'field_measure' => 'Building plan from tape measurements…',
         'wall_walk' => 'Analyzing each wall (designer method)…',
@@ -464,22 +528,62 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     await AnalyticsService.instance.scanStart(mode: mode);
 
     try {
-      late final ScanResult result;
-      if (mode == 'field_measure') {
-        result = _composeFieldMeasure(size!.$1, size.$2);
+      late ScanResult result;
+      if (mode == 'ar_guided') {
+        final w = resolvedSize!.$1;
+        final l = resolvedSize.$2;
+        final frames = _freeFrames;
+        if (frames.isNotEmpty && _freeVisionReady == true) {
+          final raw = await _aiService.scanRoomAccurateFree(
+            frames,
+            roomWidthFt: w,
+            roomLengthFt: l,
+            tryVision: true,
+            autoScale: false,
+            layoutType: RoomLayoutType.empty,
+          );
+          result = raw.copyWith(
+            warnings: [
+              ...raw.warnings,
+              'Room size from ARCore floor measure '
+                  '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
+            ],
+            accuracyScore:
+                ((raw.accuracyScore ?? 0.72) + 0.12).clamp(0.55, 0.95),
+          );
+        } else {
+          // AR size only — exact rectangle; add furniture from catalog or photos later
+          result = AccurateScan.enforce(
+            widthFt: w,
+            lengthFt: l,
+            openings: const [],
+            furniture: const [],
+            warnings: [
+              'Room size from ARCore floor measure '
+                  '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
+              if (frames.isEmpty)
+                'No photos yet — add openings/furniture in Review or re-scan with photos',
+            ],
+            sourceLabel: 'ARCore guided measure',
+            inventDefaultOpenings: false,
+            accuracyScore: 0.88,
+          );
+        }
+      } else if (mode == 'field_measure') {
+        result = _composeFieldMeasure(resolvedSize!.$1, resolvedSize.$2);
       } else if (mode == 'wall_walk') {
         if (_freeVisionReady == true) {
           result = await WallRelativeVision.scanWallByWall(
             wallPhotos: Map<WallSide, File>.from(_wallPhotos),
-            roomWidthFt: size!.$1,
-            roomLengthFt: size.$2,
+            roomWidthFt: resolvedSize!.$1,
+            roomLengthFt: resolvedSize.$2,
             overviewPhotos: List<File>.from(_overviewPhotos),
           );
         } else {
           result = await _aiService.scanRoomAccurateFree(
             _wallPhotos.values.toList(),
-            roomWidthFt: size!.$1,
-            roomLengthFt: size.$2,
+            roomWidthFt: resolvedSize!.$1,
+            roomLengthFt: resolvedSize.$2,
             tryVision: false,
             layoutType: RoomLayoutType.empty,
           );
@@ -488,24 +592,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         result = await _aiService.scanRoomAccurateFree(
           _freeFrames.isEmpty ? _wallPhotos.values.toList() : _freeFrames,
           layoutType: _layoutType,
-          roomWidthFt: size!.$1,
-          roomLengthFt: size.$2,
+          roomWidthFt: resolvedSize!.$1,
+          roomLengthFt: resolvedSize.$2,
           tryVision: false,
         );
       } else if (mode == 'gemini') {
         result = await _aiService.scanRoom(
           _freeFrames,
           preferGemini: true,
-          roomWidthFt: size?.$1,
-          roomLengthFt: size?.$2,
+          roomWidthFt: resolvedSize?.$1,
+          roomLengthFt: resolvedSize?.$2,
         );
       } else if (mode == 'easy_scan') {
-        // Everyday users: photos/video only; auto-scale unless they know size.
         result = await _aiService.scanRoomAccurateFree(
           _freeFrames,
           layoutType: RoomLayoutType.empty,
-          roomWidthFt: _knowRoomSize ? size?.$1 : null,
-          roomLengthFt: _knowRoomSize ? size?.$2 : null,
+          roomWidthFt: _knowRoomSize ? resolvedSize?.$1 : null,
+          roomLengthFt: _knowRoomSize ? resolvedSize?.$2 : null,
           tryVision: true,
           autoScale: !_knowRoomSize,
         );
@@ -513,10 +616,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         result = await _aiService.scanRoomAccurateFree(
           _freeFrames,
           layoutType: RoomLayoutType.empty,
-          roomWidthFt: size?.$1,
-          roomLengthFt: size?.$2,
+          roomWidthFt: resolvedSize?.$1,
+          roomLengthFt: resolvedSize?.$2,
           tryVision: true,
-          autoScale: size == null,
+          autoScale: resolvedSize == null,
         );
       }
 
@@ -605,15 +708,18 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
                 Card(
-                  color: Colors.indigo.shade50,
-                  child: const ListTile(
-                    leading: Icon(Icons.videocam_outlined),
-                    title: Text('Just film your room'),
+                  color: Colors.teal.shade50,
+                  child: ListTile(
+                    leading: const Icon(Icons.view_in_ar),
+                    title: const Text('Best accuracy without a tape'),
                     subtitle: Text(
-                      'For most people: record a slow walkaround video (or photos of each wall). '
-                      'No tape measure needed — AI estimates size from doors & furniture, '
-                      'then you fine-tune in Review. For survey-grade accuracy use '
-                      'Field measure (advanced).',
+                      _arStatus == null
+                          ? 'Checking ARCore…'
+                          : _arStatus!.supported
+                              ? 'AR guided measure uses the phone camera + floor tracking '
+                                  '(same class of tech as magicplan). Then optionally add photos for furniture.'
+                              : 'AR not available on this device — use Easy photo/video instead. '
+                                  '${_arStatus!.message}',
                     ),
                   ),
                 ),
@@ -624,8 +730,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     border: const OutlineInputBorder(),
                     isDense: true,
                     helperText: _freeVisionReady == true
-                        ? 'AI mapping ready'
-                        : 'AI offline — use Field measure or add a vision key',
+                        ? 'AI furniture mapping ready'
+                        : 'AI offline — AR size still works; furniture from catalog',
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -633,8 +739,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       value: _scanMode,
                       items: const [
                         DropdownMenuItem(
+                          value: 'ar_guided',
+                          child: Text('AR measure — best phone accuracy'),
+                        ),
+                        DropdownMenuItem(
                           value: 'easy_scan',
-                          child: Text('Easy — photos / video (recommended)'),
+                          child: Text('Easy — photos / video only'),
                         ),
                         DropdownMenuItem(
                           value: 'field_measure',
@@ -663,7 +773,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     ),
                   ),
                 ),
-                if (_scanMode != 'easy_scan' || _knowRoomSize) ...[
+                if (_scanMode != 'easy_scan' && _scanMode != 'ar_guided' ||
+                    (_scanMode == 'easy_scan' && _knowRoomSize) ||
+                    (_scanMode == 'ar_guided' && _arMeasure != null)) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -701,7 +813,105 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                if (_scanMode == 'easy_scan') ...[
+                if (_scanMode == 'ar_guided') ...[
+                  Text(
+                    '1. Measure the room with AR',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Walk until a floor grid appears. Tap two ends of one wall (width), '
+                    'then two ends of the adjacent wall (length). No tape needed.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: (_arStatus?.supported == true && !_isLoading)
+                        ? _runArMeasure
+                        : null,
+                    icon: const Icon(Icons.view_in_ar),
+                    label: Text(
+                      _arMeasure == null
+                          ? 'Measure with AR'
+                          : 'Re-measure with AR',
+                    ),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                  if (_arStatus != null && !_arStatus!.supported) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _arStatus!.message,
+                      style: TextStyle(color: Colors.orange.shade900, fontSize: 12),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _scanMode = 'easy_scan'),
+                      child: const Text('Switch to Easy photo/video'),
+                    ),
+                  ],
+                  if (_arMeasure != null) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      color: Colors.teal.shade50,
+                      child: ListTile(
+                        leading: const Icon(Icons.check_circle, color: Colors.teal),
+                        title: Text(
+                          '${_arMeasure!.widthFt.toStringAsFixed(1)} × '
+                          '${_arMeasure!.lengthFt.toStringAsFixed(1)} ft',
+                        ),
+                        subtitle: const Text('From ARCore floor hit-testing'),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Text(
+                    '2. Optional — photos for furniture',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Add a walkaround video or photos so AI can place sofas, beds, etc. '
+                    'Skip if you only need the empty room plan.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () => _addVideoToFreeFrames(fromCamera: true),
+                        icon: const Icon(Icons.videocam),
+                        label: const Text('Record video'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _addFreeFrame(camera: true),
+                        icon: const Icon(Icons.camera_alt),
+                        label: const Text('Photo'),
+                      ),
+                    ],
+                  ),
+                  if (_freeFrames.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('Frames: ${_freeFrames.length}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 72,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _freeFrames.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, i) => ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(_freeFrames[i],
+                              width: 72, height: 72, fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  ],
+                ] else if (_scanMode == 'easy_scan') ...[
                   Text(
                     '1. Film every wall (slow walkaround)',
                     style: Theme.of(context).textTheme.titleMedium,
@@ -954,6 +1164,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   onPressed: _process,
                   child: Text(
                     switch (_scanMode) {
+                      'ar_guided' => _arMeasure == null
+                          ? 'Measure with AR first'
+                          : 'Build plan from AR',
+                      'easy_scan' => 'Generate plan from photos',
                       'field_measure' => 'Build plan from measurements',
                       'wall_walk' => 'Build plan from walls ($wallsDone/4)',
                       _ => 'Generate plan',

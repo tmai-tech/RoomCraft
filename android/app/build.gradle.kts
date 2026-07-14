@@ -1,17 +1,12 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
 }
 
 import java.util.Properties
 
-// Shared upload/CI keystore (android/key.properties). Used for:
-// - release builds
-// - debug APKs when present so Firebase App Distribution + Google Sign-In
-//   share a stable SHA-1 (not the ephemeral CI debug.keystore).
 val keystorePropertiesFile = rootProject.projectDir.resolve("key.properties")
 val keystoreProperties = Properties()
 val hasUploadKeystore = keystorePropertiesFile.exists()
@@ -22,7 +17,6 @@ if (hasUploadKeystore) {
 fun resolveStoreFile(path: String): java.io.File {
     val f = file(path)
     if (f.isFile) return f
-    // Paths in key.properties are relative to android/
     return rootProject.file(path)
 }
 
@@ -53,7 +47,8 @@ android {
 
     defaultConfig {
         applicationId = "com.logicrequire.room_craft"
-        minSdk = flutter.minSdkVersion
+        // ARCore requires 24+
+        minSdk = maxOf(24, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -61,7 +56,6 @@ android {
 
     buildTypes {
         getByName("debug") {
-            // Prefer stable upload key so distributed debug APKs keep one SHA-1.
             if (hasUploadKeystore) {
                 signingConfig = signingConfigs.getByName("upload")
             }
@@ -78,4 +72,13 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // ARCore + Sceneform (maintained fork) for guided room measure
+    implementation("com.google.ar:core:1.45.0")
+    implementation("com.gorisse.thomas.sceneform:sceneform:1.23.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 }

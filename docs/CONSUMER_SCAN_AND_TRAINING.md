@@ -78,3 +78,17 @@ Options (pick one stack):
 - `lib/domain/auto_scale.dart` — door/furniture scale  
 - `lib/screens/scan_review_screen.dart` — feedback  
 - `docs/Scan-Precision-Research.md` — why tape still wins for pros  
+
+## ARCore guided measure (+15)
+
+**Default scan mode on Android** when ARCore is available.
+
+1. User opens **AR measure**
+2. Phone tracks the floor plane (white grid)
+3. Tap two ends of **width**, then two ends of **length**
+4. Optional: add photos/video for furniture
+5. Plan size is locked to AR meters→feet (higher confidence than photo priors)
+
+Native code: `ArMeasureActivity.kt`, channel `com.logicrequire.room_craft/ar_measure`.
+
+Next AR upgrades: wall-by-wall multi-segment chain, door hit-tests, continuous depth mesh.
