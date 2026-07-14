@@ -2,6 +2,12 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+22 (2026-07-14)
+
+### Fixes from user feedback (report 7be5dbfd-09b)
+- **Left/top edge drawable**: room outline is inset from the canvas origin so Wall/Door/Window tools can hit the left edge; openings magnet-snap to the room perimeter.
+- **Less random scans**: furniture always wall-snapped (no floating freeform XY); catalog footprints preferred; openings capped (≤2 doors / 4 windows / 1 balcony); furniture capped at 8; vision confidence raised to 0.80.
+
 ## 1.0.0-beta.1+21 (2026-07-14)
 
 ### Fixes from user feedback (report 94510d3e-bd8)

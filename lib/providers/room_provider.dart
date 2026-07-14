@@ -233,7 +233,13 @@ class RoomNotifier extends Notifier<RoomState> {
     if (state.currentTool == ToolMode.window) type = StrokeType.window;
     if (state.currentTool == ToolMode.balcony) type = StrokeType.balcony;
 
-    final snapped = _snapToGrid(position);
+    var snapped = _snapToGrid(position);
+    // Openings prefer the room perimeter so left/top edges are easy to hit.
+    if (type == StrokeType.door ||
+        type == StrokeType.window ||
+        type == StrokeType.wall) {
+      snapped = _snapToRoomEdge(snapped, thresholdPx: state.pixelsPerFoot * 0.6);
+    }
 
     state = state.copyWith(
       currentStroke: StrokeModel(
@@ -249,9 +255,17 @@ class RoomNotifier extends Notifier<RoomState> {
     final start = state.currentStroke!.points.first;
     final gridSnapped = _snapToGrid(position);
     // Walls/doors/windows stay orthogonal; balcony can be free diagonal.
-    final snapped = state.currentTool == ToolMode.balcony
+    var snapped = state.currentTool == ToolMode.balcony
         ? gridSnapped
         : _orthogonalSnap(start, gridSnapped);
+
+    final t = state.currentStroke!.type;
+    if (t == StrokeType.door || t == StrokeType.window) {
+      // Keep both ends on the same perimeter wall once started near an edge.
+      snapped = _projectOpeningOntoWall(start, snapped);
+    } else if (t == StrokeType.wall) {
+      snapped = _snapToRoomEdge(snapped, thresholdPx: state.pixelsPerFoot * 0.45);
+    }
 
     final updatedPoints = List<Offset>.from(state.currentStroke!.points);
     if (updatedPoints.length == 1) {
@@ -711,6 +725,60 @@ class RoomNotifier extends Notifier<RoomState> {
       return Offset(end.dx, start.dy);
     }
     return Offset(start.dx, end.dy);
+  }
+
+  Rect get _roomPx => FurnitureBounds.roomRect(
+        state.room.widthInFeet,
+        state.room.lengthInFeet,
+        state.pixelsPerFoot,
+      );
+
+  /// Snap [pos] onto the nearest room perimeter when close enough.
+  /// Makes left/top edges drawable instead of fighting free space outside.
+  Offset _snapToRoomEdge(Offset pos, {required double thresholdPx}) {
+    final r = _roomPx;
+    final dL = (pos.dx - r.left).abs();
+    final dR = (pos.dx - r.right).abs();
+    final dT = (pos.dy - r.top).abs();
+    final dB = (pos.dy - r.bottom).abs();
+    final minD = [dL, dR, dT, dB].reduce((a, b) => a < b ? a : b);
+    if (minD > thresholdPx) return pos;
+
+    if (minD == dL) {
+      return Offset(r.left, pos.dy.clamp(r.top, r.bottom));
+    }
+    if (minD == dR) {
+      return Offset(r.right, pos.dy.clamp(r.top, r.bottom));
+    }
+    if (minD == dT) {
+      return Offset(pos.dx.clamp(r.left, r.right), r.top);
+    }
+    return Offset(pos.dx.clamp(r.left, r.right), r.bottom);
+  }
+
+  /// Keep door/window strokes coplanar with the wall they started on.
+  Offset _projectOpeningOntoWall(Offset start, Offset end) {
+    final r = _roomPx;
+    final thr = state.pixelsPerFoot * 0.75;
+    final onLeft = (start.dx - r.left).abs() <= thr;
+    final onRight = (start.dx - r.right).abs() <= thr;
+    final onTop = (start.dy - r.top).abs() <= thr;
+    final onBottom = (start.dy - r.bottom).abs() <= thr;
+
+    if (onLeft) {
+      return Offset(r.left, end.dy.clamp(r.top, r.bottom));
+    }
+    if (onRight) {
+      return Offset(r.right, end.dy.clamp(r.top, r.bottom));
+    }
+    if (onTop) {
+      return Offset(end.dx.clamp(r.left, r.right), r.top);
+    }
+    if (onBottom) {
+      return Offset(end.dx.clamp(r.left, r.right), r.bottom);
+    }
+    // Not near a wall yet — still magnet the end so openings don't float inside.
+    return _snapToRoomEdge(end, thresholdPx: thr);
   }
 }
 

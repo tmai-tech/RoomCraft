@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/app_config.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
@@ -22,6 +23,12 @@ class BlueprintScreen extends ConsumerStatefulWidget {
 class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
   final TransformationController _transformController = TransformationController();
   final PrefsService _prefs = PrefsService();
+
+  static const Offset _canvasOrigin =
+      Offset(AppConfig.canvasOriginPx, AppConfig.canvasOriginPx);
+
+  /// Convert GestureDetector local coords → room model coords (origin at room TL).
+  Offset _toModel(Offset local) => local - _canvasOrigin;
 
   @override
   void initState() {
@@ -156,15 +163,17 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onPanStart: (details) {
+                        final model = _toModel(details.localPosition);
                         if (roomState.isDrawTool) {
-                          roomNotifier.startStroke(details.localPosition);
+                          roomNotifier.startStroke(model);
                         } else if (roomState.currentTool == ToolMode.select) {
-                          roomNotifier.selectFurnitureAt(details.localPosition);
+                          roomNotifier.selectFurnitureAt(model);
                         }
                       },
                       onPanUpdate: (details) {
                         if (roomState.isDrawTool) {
-                          roomNotifier.updateStroke(details.localPosition);
+                          roomNotifier
+                              .updateStroke(_toModel(details.localPosition));
                         } else if (roomState.currentTool == ToolMode.select &&
                             roomState.hasSelection) {
                           roomNotifier.updateFurniturePosition(details.delta);
@@ -184,6 +193,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                           currentStroke: roomState.currentStroke,
                           pixelsPerFoot: roomState.pixelsPerFoot,
                           unitSystem: roomState.unitSystem,
+                          origin: _canvasOrigin,
                         ),
                         foregroundPainter: FurniturePainter(
                           furniture: roomState.room.furniture,
@@ -192,6 +202,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                           pixelsPerFoot: roomState.pixelsPerFoot,
                           unitSystem: roomState.unitSystem,
                           collisionIds: roomState.collisionIds,
+                          origin: _canvasOrigin,
                         ),
                       ),
                     ),
@@ -526,11 +537,12 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             ? 'Multi-select — tap to add/remove · drag moves all · wall snap on release'
             : 'Select — drag · wall/edge snap · amber handle rotates 45°';
       case ToolMode.wall:
-        text = 'Wall — drag; snaps horizontal/vertical';
+        text =
+            'Wall — drag H/V; room inset from edges so left/top walls are drawable';
       case ToolMode.door:
-        text = 'Door — drag along wall line';
+        text = 'Door — drag along a room edge (snaps to nearest wall)';
       case ToolMode.window:
-        text = 'Window — drag along wall line';
+        text = 'Window — drag along a room edge (snaps to nearest wall)';
       case ToolMode.balcony:
         text = 'Balcony — free diagonal allowed (grid snap only)';
       case ToolMode.erase:

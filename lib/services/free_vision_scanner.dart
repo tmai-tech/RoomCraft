@@ -26,7 +26,7 @@ import 'secure_key_store.dart';
 /// **Locked mode** (default when size given): multi-frame interior-designer
 /// pass; user room size remains authoritative.
 class FreeVisionScanner {
-  static const double minConfidence = 0.72;
+  static const double minConfidence = 0.80;
 
   static SecureKeyStore _store([SharedPreferences? prefs]) =>
       SecureKeyStore(prefs: prefs);
@@ -565,11 +565,14 @@ Coordinate system:
 STRICT rules:
 1. furniture default []. Never invent bed/sofa/TV/bookshelf not clearly visible.
 2. openings: door | window | balcony only. Empty [] if unsure.
-3. confidence >= 0.75 required or omit item.
+   Max 2 doors, 4 windows, 1 balcony. Each ON an outer wall only.
+3. confidence >= 0.80 required or omit item. Prefer fewer correct items.
 4. sizeConfidence 0–1 honesty about room size estimate.
 5. Prefer a clean rectangular room unless photos clearly show L-shape (still use outer bounds).
 6. If only one wall is visible, still estimate full room but lower sizeConfidence.
 7. Types for furniture: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND
+8. Place large furniture against walls (not floating in room center).
+9. Never invent balcony unless outdoor railing is clearly visible.
 ''';
 
   static Future<String?> _prepareImageDataUrl(File image) async {

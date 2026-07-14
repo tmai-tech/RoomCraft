@@ -26,8 +26,10 @@ class ScanRefine {
 
     final notes = <String>[...input.warnings];
     var openings = _refineOpenings(input.walls, w, l, notes);
+    openings = _capOpenings(openings, notes);
     var furniture = _refineFurniture(input.furniture, w, l, notes);
     furniture = _nudgeOverlaps(furniture, notes);
+    furniture = _capFurniture(furniture, notes);
 
     final score = _score(
       widthFt: w,
@@ -202,9 +204,13 @@ class ScanRefine {
       final catalog = FurnitureCatalog.entryFor(raw.type);
       var fw = raw.widthFt;
       var fl = raw.lengthFt;
-      if (fw < 0.8 || fl < 0.8) {
-        fw = catalog.defaultWidthFt;
-        fl = catalog.defaultLengthFt;
+      // Prefer catalog footprints — free vision invents random sizes.
+      final cw = catalog.defaultWidthFt;
+      final cl = catalog.defaultLengthFt;
+      if (fw < 0.8 || fl < 0.8 || fw > cw * 1.8 || fl > cl * 1.8 ||
+          fw < cw * 0.45 || fl < cl * 0.45) {
+        fw = cw;
+        fl = cl;
       }
 
       var pos = raw.posFt;
@@ -214,22 +220,42 @@ class ScanRefine {
       final dW = pos.dx;
       final dE = w - pos.dx;
       final minD = [dS, dN, dW, dE].reduce(math.min);
+      // Depth against wall uses the smaller footprint axis.
       final halfDeep = math.min(fw, fl) / 2;
+      final halfAlong = math.max(fw, fl) / 2;
 
-      // Snap against wall if roughly near it (typical placement)
-      const near = 2.2; // ft
-      if (minD < near) {
-        if (minD == dS) {
-          pos = Offset(pos.dx, halfDeep + 0.15);
-        } else if (minD == dN) {
-          pos = Offset(pos.dx, l - halfDeep - 0.15);
-        } else if (minD == dW) {
-          pos = Offset(halfDeep + 0.15, pos.dy);
-        } else {
-          pos = Offset(w - halfDeep - 0.15, pos.dy);
-        }
-        wallSnaps++;
+      // Always pin to nearest wall — floating freeform XY is the main
+      // source of "random" scan layouts for consumer photo mode.
+      const near = 4.5; // ft — almost whole room for typical bedrooms
+      late Offset snappedPos;
+      late double rot;
+      if (minD == dS || (minD >= near && dS <= dN && dS <= dW && dS <= dE)) {
+        snappedPos = Offset(
+          pos.dx.clamp(halfAlong + 0.1, w - halfAlong - 0.1),
+          halfDeep + 0.15,
+        );
+        rot = 0;
+      } else if (minD == dN) {
+        snappedPos = Offset(
+          pos.dx.clamp(halfAlong + 0.1, w - halfAlong - 0.1),
+          l - halfDeep - 0.15,
+        );
+        rot = math.pi;
+      } else if (minD == dW) {
+        snappedPos = Offset(
+          halfDeep + 0.15,
+          pos.dy.clamp(halfAlong + 0.1, l - halfAlong - 0.1),
+        );
+        rot = math.pi / 2;
+      } else {
+        snappedPos = Offset(
+          w - halfDeep - 0.15,
+          pos.dy.clamp(halfAlong + 0.1, l - halfAlong - 0.1),
+        );
+        rot = -math.pi / 2;
       }
+      wallSnaps++;
+      pos = snappedPos;
 
       // Keep fully inside
       final hx = fw / 2;
@@ -238,13 +264,6 @@ class ScanRefine {
         pos.dx.clamp(hx + 0.05, w - hx - 0.05),
         pos.dy.clamp(hy + 0.05, l - hy - 0.05),
       );
-
-      // Rotation snap 90° for wall-aligned pieces when near wall
-      var rot = raw.rotationRad;
-      if (minD < near) {
-        final deg = (rot * 180 / math.pi);
-        rot = ((deg / 90).round() * 90) * math.pi / 180;
-      }
 
       out.add(ScanFurnitureHint(
         type: raw.type,
@@ -260,6 +279,66 @@ class ScanRefine {
       notes.add('Snapped $wallSnaps piece(s) to nearest wall (layout refine)');
     }
     return out;
+  }
+
+  /// Prefer doors > windows > balconies; drop excess / near-duplicates.
+  static List<ScanWallSegment> _capOpenings(
+    List<ScanWallSegment> openings,
+    List<String> notes,
+  ) {
+    if (openings.isEmpty) return openings;
+
+    int rank(StrokeType t) {
+      switch (t) {
+        case StrokeType.door:
+          return 0;
+        case StrokeType.window:
+          return 1;
+        case StrokeType.balcony:
+          return 2;
+        default:
+          return 3;
+      }
+    }
+
+    final sorted = List<ScanWallSegment>.from(openings)
+      ..sort((a, b) {
+        final r = rank(a.type).compareTo(rank(b.type));
+        if (r != 0) return r;
+        return b.lengthFt.compareTo(a.lengthFt);
+      });
+
+    final doors = sorted.where((o) => o.type == StrokeType.door).take(2);
+    final windows = sorted.where((o) => o.type == StrokeType.window).take(4);
+    final balconies = sorted.where((o) => o.type == StrokeType.balcony).take(1);
+    final kept = [...doors, ...windows, ...balconies];
+    if (kept.length < openings.length) {
+      notes.add(
+        'Kept ${kept.length} of ${openings.length} openings '
+        '(dropped extra guesses for a cleaner plan)',
+      );
+    }
+    return kept;
+  }
+
+  static List<ScanFurnitureHint> _capFurniture(
+    List<ScanFurnitureHint> items,
+    List<String> notes,
+  ) {
+    if (items.length <= 8) return items;
+    // Prefer larger / more central pieces as "primary" furniture.
+    final sorted = List<ScanFurnitureHint>.from(items)
+      ..sort((a, b) {
+        final aa = a.widthFt * a.lengthFt;
+        final bb = b.widthFt * b.lengthFt;
+        return bb.compareTo(aa);
+      });
+    final kept = sorted.take(8).toList();
+    notes.add(
+      'Kept ${kept.length} of ${items.length} furniture items '
+      '(largest pieces first — edit the rest in the editor)',
+    );
+    return kept;
   }
 
   static List<ScanFurnitureHint> _nudgeOverlaps(

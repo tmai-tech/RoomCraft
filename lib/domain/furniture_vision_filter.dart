@@ -1,6 +1,7 @@
 /// Filters raw vision JSON furniture lists to reduce model hallucination.
 class FurnitureVisionFilter {
-  static const double minConfidence = 0.72;
+  /// Raised from 0.72 — free vision was inventing random freeform pieces.
+  static const double minConfidence = 0.80;
 
   /// Returns kept furniture maps and count dropped.
   static ({List<Map<String, dynamic>> kept, int dropped}) filter(

@@ -11,17 +11,23 @@ class BlueprintPainter extends CustomPainter {
   final StrokeModel? currentStroke;
   final double pixelsPerFoot;
   final UnitSystem unitSystem;
+  /// Model-space (0,0) is drawn at this canvas offset so left/top walls
+  /// are not stuck to the InteractiveViewer edge.
+  final Offset origin;
 
   BlueprintPainter({
     required this.room,
     this.currentStroke,
     required this.pixelsPerFoot,
     this.unitSystem = UnitSystem.feet,
+    this.origin = Offset.zero,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     _drawGrid(canvas, size);
+    canvas.save();
+    canvas.translate(origin.dx, origin.dy);
     _drawRoomOutline(canvas);
 
     for (final stroke in room.strokes) {
@@ -33,6 +39,7 @@ class BlueprintPainter extends CustomPainter {
       _drawStroke(canvas, currentStroke!);
       _drawMeasurements(canvas, currentStroke!);
     }
+    canvas.restore();
   }
 
   void _drawRoomOutline(Canvas canvas) {
@@ -77,12 +84,23 @@ class BlueprintPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
 
-    for (double i = 0; i <= size.width; i += pixelsPerFoot) {
-      final isMajor = (i / pixelsPerFoot).round() % 5 == 0;
+    // Align major lines with room model origin so the left wall sits on a grid line.
+    final ox = origin.dx;
+    final oy = origin.dy;
+    for (double i = ox; i <= size.width; i += pixelsPerFoot) {
+      final isMajor = ((i - ox) / pixelsPerFoot).round() % 5 == 0;
       canvas.drawLine(Offset(i, 0), Offset(i, size.height), isMajor ? major : paint);
     }
-    for (double i = 0; i <= size.height; i += pixelsPerFoot) {
-      final isMajor = (i / pixelsPerFoot).round() % 5 == 0;
+    for (double i = ox - pixelsPerFoot; i >= 0; i -= pixelsPerFoot) {
+      final isMajor = ((ox - i) / pixelsPerFoot).round() % 5 == 0;
+      canvas.drawLine(Offset(i, 0), Offset(i, size.height), isMajor ? major : paint);
+    }
+    for (double i = oy; i <= size.height; i += pixelsPerFoot) {
+      final isMajor = ((i - oy) / pixelsPerFoot).round() % 5 == 0;
+      canvas.drawLine(Offset(0, i), Offset(size.width, i), isMajor ? major : paint);
+    }
+    for (double i = oy - pixelsPerFoot; i >= 0; i -= pixelsPerFoot) {
+      final isMajor = ((oy - i) / pixelsPerFoot).round() % 5 == 0;
       canvas.drawLine(Offset(0, i), Offset(size.width, i), isMajor ? major : paint);
     }
   }

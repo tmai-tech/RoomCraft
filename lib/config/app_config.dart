@@ -5,7 +5,7 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 21;
+  static const int buildNumber = 22;
   static const bool isBeta = true;
 
   /// Firebase Google Sign-In Web client ID (oauth_client client_type 3).
@@ -76,6 +76,10 @@ class AppConfig {
   static const double defaultPixelsPerFoot = 20.0;
   static const double defaultRoomWidthFt = 10.0;
   static const double defaultRoomLengthFt = 10.0;
+
+  /// Pixel inset so the room outline is not glued to the canvas top-left.
+  /// Lets users draw the left/top walls without fighting the screen edge.
+  static const double canvasOriginPx = 56.0;
 
   /// Furniture rotate snap (degrees).
   static const double rotateSnapDegrees = 45.0;

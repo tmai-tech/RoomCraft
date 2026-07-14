@@ -12,6 +12,8 @@ class FurniturePainter extends CustomPainter {
   final UnitSystem unitSystem;
   final Set<String> collisionIds;
   final bool showRotateHandle;
+  /// Matches [BlueprintPainter.origin] — model (0,0) is at this offset.
+  final Offset origin;
 
   FurniturePainter({
     required this.furniture,
@@ -21,6 +23,7 @@ class FurniturePainter extends CustomPainter {
     this.unitSystem = UnitSystem.feet,
     this.collisionIds = const {},
     this.showRotateHandle = true,
+    this.origin = Offset.zero,
   });
 
   bool _isSelected(String id) =>
@@ -28,6 +31,8 @@ class FurniturePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.translate(origin.dx, origin.dy);
     for (final item in furniture) {
       _drawFurnitureItem(
         canvas,
@@ -37,6 +42,7 @@ class FurniturePainter extends CustomPainter {
         primary: item.id == selectedId,
       );
     }
+    canvas.restore();
   }
 
   void _drawFurnitureItem(

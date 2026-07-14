@@ -268,19 +268,18 @@ class WallRelativeComposer {
 
     final furn = <ScanFurnitureHint>[];
     for (final f in furniture) {
-      if (f.confidence < 0.65 && !fromTapeMeasure) {
+      // Freeform XY is noisy; require higher confidence than wall-anchored.
+      final minConf = f.freePlace
+          ? (fromTapeMeasure ? 0.75 : 0.82)
+          : (fromTapeMeasure ? 0.55 : 0.70);
+      if (f.confidence < minConf) {
         notes.add('Skipped low-confidence ${f.type.name}');
         continue;
       }
       late Offset center;
       late double rot;
-      if (f.freePlace && f.freeXFt != null && f.freeYFt != null) {
-        center = Offset(
-          f.freeXFt!.clamp(0.5, w - 0.5),
-          f.freeYFt!.clamp(0.5, l - 0.5),
-        );
-        rot = f.rotDeg * math.pi / 180;
-      } else if (f.wall != null) {
+      if (f.wall != null) {
+        // Prefer wall-anchored placement over freeform XY.
         center = _furnitureCenterFacing(
           f.wall!,
           f.t,
@@ -291,6 +290,12 @@ class WallRelativeComposer {
           l,
         );
         rot = _wallFacingRotation(f.wall!);
+      } else if (f.freePlace && f.freeXFt != null && f.freeYFt != null) {
+        center = Offset(
+          f.freeXFt!.clamp(0.5, w - 0.5),
+          f.freeYFt!.clamp(0.5, l - 0.5),
+        );
+        rot = f.rotDeg * math.pi / 180;
       } else {
         continue;
       }
