@@ -3,11 +3,12 @@ package com.logicrequire.room_craft
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.MotionEvent
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.button.MaterialButton
+import android.widget.Button
 import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
 import com.google.ar.core.TrackingState
@@ -23,31 +24,27 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Guided AR room measure.
- *
- * Modes (intent EXTRA_MODE):
- *  - "quick" (default): width then length (2 segments)
- *  - "chain": walk all 4 walls A→B→C→D (more accurate, designer-style)
- *
- * Uses ARCore plane hit-testing on the floor.
+ * Guided AR room measure — crash-hardened.
+ * Failures finish the activity with EXTRA_ERROR instead of killing the process.
  */
 class ArMeasureActivity : AppCompatActivity() {
 
-    private lateinit var arFragment: ArFragment
+    private var arFragment: ArFragment? = null
     private lateinit var stepTitle: TextView
     private lateinit var stepHint: TextView
     private lateinit var liveDistance: TextView
     private lateinit var measuredSummary: TextView
-    private lateinit var btnDone: MaterialButton
-    private lateinit var btnUndo: MaterialButton
+    private lateinit var btnDone: Button
+    private lateinit var btnUndo: Button
 
     private val anchors = mutableListOf<AnchorNode>()
-    /** Completed wall lengths in meters, order A,B,C,D (or W,L for quick). */
     private val wallMeters = mutableListOf<Double>()
 
     private var chainMode = false
     private var tapsInSegment = 0
     private var segmentStart: Vector3? = null
+    private var diagonalMeters: Double? = null
+    private var measuringDiagonal = false
 
     private val wallLabelsQuick = listOf("Width (Wall A)", "Length (Wall B)")
     private val wallLabelsChain = listOf(
@@ -62,46 +59,69 @@ class ArMeasureActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_ar_measure)
+        try {
+            setContentView(R.layout.activity_ar_measure)
 
-        chainMode = intent.getStringExtra(EXTRA_MODE) == MODE_CHAIN
+            chainMode = intent.getStringExtra(EXTRA_MODE) == MODE_CHAIN
 
-        stepTitle = findViewById(R.id.step_title)
-        stepHint = findViewById(R.id.step_hint)
-        liveDistance = findViewById(R.id.live_distance)
-        measuredSummary = findViewById(R.id.measured_summary)
-        btnDone = findViewById(R.id.btn_done)
-        btnUndo = findViewById(R.id.btn_undo)
-        findViewById<MaterialButton>(R.id.btn_cancel).setOnClickListener {
-            setResult(Activity.RESULT_CANCELED)
-            finish()
+            stepTitle = findViewById(R.id.step_title)
+            stepHint = findViewById(R.id.step_hint)
+            liveDistance = findViewById(R.id.live_distance)
+            measuredSummary = findViewById(R.id.measured_summary)
+            btnDone = findViewById(R.id.btn_done)
+            btnUndo = findViewById(R.id.btn_undo)
+
+            findViewById<Button>(R.id.btn_cancel).setOnClickListener {
+                setResult(Activity.RESULT_CANCELED)
+                finish()
+            }
+            btnUndo.setOnClickListener { safeUndo() }
+            btnDone.setOnClickListener { finishWithResult() }
+
+            // Add fragment programmatically so load failures can be caught
+            val frag = ArFragment()
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.ar_container, frag)
+                .commitNowAllowingStateLoss()
+            arFragment = frag
+            frag.setOnTapArPlaneListener(
+                BaseArFragment.OnTapArPlaneListener { hitResult: HitResult, plane: Plane, _: MotionEvent ->
+                    try {
+                        if (plane.type != Plane.Type.HORIZONTAL_UPWARD_FACING) {
+                            Toast.makeText(this, "Tap the floor plane", Toast.LENGTH_SHORT).show()
+                            return@OnTapArPlaneListener
+                        }
+                        if (plane.trackingState != TrackingState.TRACKING) return@OnTapArPlaneListener
+                        onFloorTap(hitResult)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "tap failed", e)
+                        Toast.makeText(this, "Tap failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                },
+            )
+
+            updateUi()
+        } catch (e: Exception) {
+            Log.e(TAG, "onCreate failed", e)
+            failAndFinish(e.message ?: "AR measure failed to start")
         }
-        btnUndo.setOnClickListener { undoLast() }
-        btnDone.setOnClickListener { finishWithResult() }
+    }
 
-        arFragment = supportFragmentManager.findFragmentById(R.id.ar_fragment) as ArFragment
-        arFragment.setOnTapArPlaneListener(
-            BaseArFragment.OnTapArPlaneListener { hitResult: HitResult, plane: Plane, _: MotionEvent ->
-                if (plane.type != Plane.Type.HORIZONTAL_UPWARD_FACING) {
-                    Toast.makeText(this, "Tap the floor plane", Toast.LENGTH_SHORT).show()
-                    return@OnTapArPlaneListener
-                }
-                if (plane.trackingState != TrackingState.TRACKING) return@OnTapArPlaneListener
-                onFloorTap(hitResult)
-            },
-        )
-
-        updateUi()
+    private fun failAndFinish(message: String) {
+        try {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+        }
+        val data = Intent().putExtra(EXTRA_ERROR, message)
+        setResult(Activity.RESULT_CANCELED, data)
+        finish()
     }
 
     private fun labels(): List<String> =
         if (chainMode) wallLabelsChain else wallLabelsQuick
 
-    private var diagonalMeters: Double? = null
-    private var measuringDiagonal = false
-
     private fun onFloorTap(hit: HitResult) {
-        // Diagonal refine phase (after walls)
+        val frag = arFragment ?: return
         if (measuringDiagonal) {
             onDiagonalTap(hit)
             return
@@ -110,7 +130,7 @@ class ArMeasureActivity : AppCompatActivity() {
 
         val anchor = hit.createAnchor()
         val anchorNode = AnchorNode(anchor).apply {
-            setParent(arFragment.arSceneView.scene)
+            setParent(frag.arSceneView.scene)
         }
         anchors.add(anchorNode)
         addMarker(anchorNode, wallMeters.size)
@@ -126,7 +146,6 @@ class ArMeasureActivity : AppCompatActivity() {
             val dist = distance(start, world).toDouble()
             if (dist < 0.4) {
                 Toast.makeText(this, "Segment too short — retake this wall", Toast.LENGTH_SHORT).show()
-                // Remove last two anchors for this failed segment
                 removeLastAnchor()
                 removeLastAnchor()
                 tapsInSegment = 0
@@ -139,20 +158,14 @@ class ArMeasureActivity : AppCompatActivity() {
             val label = labels().getOrElse(wallMeters.size - 1) { "Wall" }
             Toast.makeText(
                 this,
-                String.format(
-                    "%s: %.2f m (%.1f ft)",
-                    label,
-                    dist,
-                    dist * M_TO_FT,
-                ),
+                String.format("%s: %.2f m (%.1f ft)", label, dist, dist * M_TO_FT),
                 Toast.LENGTH_SHORT,
             ).show()
             if (wallMeters.size >= totalWalls) {
-                // Optional accuracy boost: measure room diagonal
                 measuringDiagonal = true
                 Toast.makeText(
                     this,
-                    "Now tap opposite corners (diagonal) to verify scale",
+                    "Optional: tap opposite corners (diagonal) to verify scale",
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -161,9 +174,10 @@ class ArMeasureActivity : AppCompatActivity() {
     }
 
     private fun onDiagonalTap(hit: HitResult) {
+        val frag = arFragment ?: return
         val anchor = hit.createAnchor()
         val anchorNode = AnchorNode(anchor).apply {
-            setParent(arFragment.arSceneView.scene)
+            setParent(frag.arSceneView.scene)
         }
         anchors.add(anchorNode)
         addMarker(anchorNode, 0)
@@ -184,7 +198,6 @@ class ArMeasureActivity : AppCompatActivity() {
         }
     }
 
-    /** If measured diagonal disagrees with √(w²+l²), rescale W×L toward truth. */
     private fun applyDiagonalScale(diagM: Double) {
         val w = resolvedWidthM() ?: return
         val l = resolvedLengthM() ?: return
@@ -198,24 +211,19 @@ class ArMeasureActivity : AppCompatActivity() {
         if (ratio < 0.7 || ratio > 1.35) {
             Toast.makeText(
                 this,
-                "Diagonal looks off — keeping wall measures (try again if unsure)",
+                "Diagonal looks off — keeping wall measures",
                 Toast.LENGTH_LONG,
             ).show()
             return
         }
-        // Soft blend: pull size toward diagonal-consistent scale
-        val blend = 0.65 // trust diagonal moderately
+        val blend = 0.65
         val scale = 1.0 + (ratio - 1.0) * blend
-        // Scale stored wall meters
         for (i in wallMeters.indices) {
             wallMeters[i] = wallMeters[i] * scale
         }
         Toast.makeText(
             this,
-            String.format(
-                "Scale refined from diagonal (×%.2f) — improves accuracy",
-                scale,
-            ),
+            String.format("Scale refined from diagonal (×%.2f)", scale),
             Toast.LENGTH_LONG,
         ).show()
     }
@@ -223,27 +231,42 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun removeLastAnchor() {
         if (anchors.isEmpty()) return
         val last = anchors.removeAt(anchors.lastIndex)
-        last.anchor?.detach()
-        last.setParent(null)
+        try {
+            last.anchor?.detach()
+            last.setParent(null)
+        } catch (e: Exception) {
+            Log.w(TAG, "detach anchor", e)
+        }
     }
 
     private fun addMarker(parent: AnchorNode, wallIndex: Int) {
-        // Alternate colors per wall for readability
-        val colors = listOf(
-            Color(0.0f, 0.75f, 0.65f),
-            Color(0.3f, 0.55f, 0.95f),
-            Color(0.95f, 0.65f, 0.15f),
-            Color(0.75f, 0.4f, 0.9f),
-        )
-        val c = colors[wallIndex % colors.size]
-        MaterialFactory.makeOpaqueWithColor(this, c)
-            .thenAccept { material ->
-                val sphere = ShapeFactory.makeSphere(0.03f, Vector3.zero(), material)
-                Node().apply {
-                    setParent(parent)
-                    renderable = sphere
+        try {
+            val colors = listOf(
+                Color(0.0f, 0.75f, 0.65f),
+                Color(0.3f, 0.55f, 0.95f),
+                Color(0.95f, 0.65f, 0.15f),
+                Color(0.75f, 0.4f, 0.9f),
+            )
+            val c = colors[wallIndex % colors.size]
+            MaterialFactory.makeOpaqueWithColor(this, c)
+                .thenAccept { material ->
+                    try {
+                        val sphere = ShapeFactory.makeSphere(0.03f, Vector3.zero(), material)
+                        Node().apply {
+                            setParent(parent)
+                            renderable = sphere
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "marker render", e)
+                    }
                 }
-            }
+                .exceptionally { e ->
+                    Log.w(TAG, "marker material", e)
+                    null
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "addMarker", e)
+        }
     }
 
     private fun distance(a: Vector3, b: Vector3): Float {
@@ -251,6 +274,14 @@ class ArMeasureActivity : AppCompatActivity() {
         val dy = a.y - b.y
         val dz = a.z - b.z
         return sqrt(dx * dx + dy * dy + dz * dz)
+    }
+
+    private fun safeUndo() {
+        try {
+            undoLast()
+        } catch (e: Exception) {
+            Log.e(TAG, "undo", e)
+        }
     }
 
     private fun undoLast() {
@@ -267,16 +298,16 @@ class ArMeasureActivity : AppCompatActivity() {
             updateUi()
             return
         }
-        // Undo current in-progress segment taps, or last completed wall
         if (tapsInSegment > 0) {
             repeat(tapsInSegment) { removeLastAnchor() }
             tapsInSegment = 0
             segmentStart = null
         } else if (wallMeters.isNotEmpty()) {
             wallMeters.removeAt(wallMeters.lastIndex)
-            // Each completed wall used 2 anchors
             removeLastAnchor()
             removeLastAnchor()
+            measuringDiagonal = false
+            diagonalMeters = null
         }
         updateUi()
         liveDistance.text = "—"
@@ -285,7 +316,6 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun resolvedWidthM(): Double? {
         if (wallMeters.isEmpty()) return null
         return if (chainMode && wallMeters.size >= 3) {
-            // Avg opposite width walls A & C
             val a = wallMeters[0]
             val c = if (wallMeters.size >= 3) wallMeters[2] else a
             (a + c) / 2.0
@@ -297,41 +327,27 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun resolvedLengthM(): Double? {
         if (wallMeters.size < 2) return null
         return if (chainMode && wallMeters.size >= 4) {
-            val b = wallMeters[1]
-            val d = wallMeters[3]
-            (b + d) / 2.0
-        } else if (chainMode && wallMeters.size >= 2) {
-            wallMeters[1]
+            (wallMeters[1] + wallMeters[3]) / 2.0
         } else {
             wallMeters.getOrNull(1)
         }
     }
 
     private fun updateUi() {
+        if (!::stepTitle.isInitialized) return
         val n = wallMeters.size
         val labels = labels()
         if (measuringDiagonal) {
-            stepTitle.text = "Accuracy check — diagonal"
+            stepTitle.text = "Accuracy check — diagonal (optional)"
             stepHint.text =
-                "Tap two OPPOSITE corners of the room (across the floor). " +
-                    "This catches scale errors. Or tap Use measurements to skip."
-            btnDone.isEnabled = resolvedWidthM() != null && resolvedLengthM() != null
+                "Tap two OPPOSITE corners, or press Use measurements to skip."
         } else if (n >= totalWalls) {
             stepTitle.text = "Done — measurements ready"
-            stepHint.text = if (chainMode) {
-                "Opposite walls averaged. Optional: diagonal was requested for scale check."
-            } else {
-                "Tap Use measurements to build your plan."
-            }
+            stepHint.text = "Tap Use measurements to build your plan."
         } else {
             stepTitle.text = "Step ${n + 1}/$totalWalls — ${labels[n]}"
-            stepHint.text = if (chainMode) {
-                "Walk clockwise around the room. Point at the floor grid. " +
-                    "Tap one corner of this wall, then the other corner."
-            } else {
-                "Move phone until a white grid appears on the floor. " +
-                    "Tap one corner of this wall, then the other corner."
-            }
+            stepHint.text =
+                "Point at the floor until a grid appears. Tap one corner, then the other end of this wall."
         }
 
         measuredSummary.text = buildString {
@@ -343,18 +359,6 @@ class ArMeasureActivity : AppCompatActivity() {
             val l = resolvedLengthM()
             if (w != null && l != null && n >= (if (chainMode) 4 else 2)) {
                 append(String.format("→ Room ≈ %.1f × %.1f ft", w * M_TO_FT, l * M_TO_FT))
-                if (chainMode && wallMeters.size >= 4) {
-                    val dw = abs(wallMeters[0] - wallMeters[2])
-                    val dl = abs(wallMeters[1] - wallMeters[3])
-                    if (dw > 0.25 || dl > 0.25) {
-                        append(
-                            String.format(
-                                "\n⚠ Opposite walls differ by up to %.0f cm — room may not be a perfect rectangle",
-                                maxOf(dw, dl) * 100,
-                            ),
-                        )
-                    }
-                }
             }
         }
 
@@ -365,22 +369,24 @@ class ArMeasureActivity : AppCompatActivity() {
         } else {
             wallMeters.size >= 2 && w != null && l != null && w > 0.5 && l > 0.5
         }
-        btnDone.isEnabled = ready
+        // Allow done during optional diagonal phase once walls are ready
+        btnDone.isEnabled = ready || (measuringDiagonal && w != null && l != null)
         if (ready && w != null && l != null) {
             liveDistance.text = String.format("%.1f × %.1f ft", w * M_TO_FT, l * M_TO_FT)
         } else if (wallMeters.isNotEmpty()) {
-            val last = wallMeters.last()
-            liveDistance.text = String.format("Last: %.1f ft", last * M_TO_FT)
-        } else {
+            liveDistance.text = String.format("Last: %.1f ft", wallMeters.last() * M_TO_FT)
+        } else if (!measuringDiagonal) {
             liveDistance.text = "—"
         }
     }
 
     private fun finishWithResult() {
+        // Allow skip diagonal
+        measuringDiagonal = false
         val w = resolvedWidthM()
         val l = resolvedLengthM()
         if (w == null || l == null || w < 0.5 || l < 0.5) {
-            Toast.makeText(this, "Finish all wall measurements first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Finish wall measurements first", Toast.LENGTH_SHORT).show()
             return
         }
         val wallsFt = wallMeters.map { it * M_TO_FT }.toDoubleArray()
@@ -399,6 +405,7 @@ class ArMeasureActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "ArMeasure"
         const val EXTRA_WIDTH_M = "width_m"
         const val EXTRA_LENGTH_M = "length_m"
         const val EXTRA_WIDTH_FT = "width_ft"
@@ -406,6 +413,7 @@ class ArMeasureActivity : AppCompatActivity() {
         const val EXTRA_MODE = "mode"
         const val EXTRA_WALLS_M = "walls_m"
         const val EXTRA_WALLS_FT = "walls_ft"
+        const val EXTRA_ERROR = "error"
         const val MODE_QUICK = "quick"
         const val MODE_CHAIN = "chain"
         const val REQUEST_CODE = 7142

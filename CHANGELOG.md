@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+18 (2026-07-14)
+
+### Crash fixes (AR)
+- Request **camera permission** before opening AR measure (common crash cause).
+- `isAvailable` no longer triggers AR install UI (probe-only).
+- ArMeasureActivity crash-hardened: programmatic fragment, fail with error result instead of process kill.
+- Safer AppCompat theme + plain buttons; default scan mode Easy until AR proves available.
+
 ## 1.0.0-beta.1+17 (2026-07-14)
 
 ### Accuracy upgrades

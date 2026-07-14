@@ -88,7 +88,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   final _lengthController = TextEditingController(text: '14');
 
   /// ar_guided | easy_scan | field_measure | wall_walk | free_frames | offline_only | gemini
-  String _scanMode = 'ar_guided';
+  /// Default easy_scan so devices without AR / camera don't crash on entry.
+  /// AR is still offered and auto-selected when available.
+  String _scanMode = 'easy_scan';
 
   /// When false (easy scan default), size is estimated from photos.
   bool _knowRoomSize = false;
@@ -119,8 +121,26 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
   Future<void> _refreshArStatus() async {
-    final s = await ArMeasureService.isAvailable();
-    if (mounted) setState(() => _arStatus = s);
+    try {
+      final s = await ArMeasureService.isAvailable();
+      if (!mounted) return;
+      setState(() {
+        _arStatus = s;
+        // Prefer AR when device supports it (higher accuracy)
+        if (s.supported && !s.installNeeded && _scanMode == 'easy_scan') {
+          _scanMode = 'ar_guided';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _arStatus = ArAvailability(
+          supported: false,
+          installNeeded: false,
+          message: 'AR unavailable ($e)',
+        );
+      });
+    }
   }
 
   Future<void> _runArMeasure() async {

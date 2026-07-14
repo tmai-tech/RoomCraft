@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -110,9 +111,10 @@ class ArMeasureService {
       );
     }
     try {
-      final raw =
-          await _channel.invokeMethod<Map<dynamic, dynamic>>('isAvailable');
-      if (raw == null) {
+      final raw = await _channel
+          .invokeMethod<dynamic>('isAvailable')
+          .timeout(const Duration(seconds: 5));
+      if (raw is! Map) {
         return const ArAvailability(
           supported: false,
           installNeeded: false,
