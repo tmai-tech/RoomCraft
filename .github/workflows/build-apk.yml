@@ -121,8 +121,10 @@ jobs:
           retention-days: 30
 
       # Firebase App Distribution — needs FIREBASE_ANDROID_APP_ID + FIREBASE_SERVICE_ACCOUNT
+      # Soft-fail: APK artifact is already uploaded; distribute must not fail the job.
       - name: Upload to Firebase App Distribution
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         env:
           FIREBASE_ANDROID_APP_ID: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -132,7 +134,10 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           APK_PATH: ${{ steps.named.outputs.path }}
         run: |
-          set -euo pipefail
+          # Avoid set -e / pipefail so early group resolution never aborts the step.
+          set -u
+
+          echo "Firebase distribute step starting…"
 
           if [ -z "${FIREBASE_ANDROID_APP_ID:-}" ] || [ -z "${FIREBASE_SERVICE_ACCOUNT:-}" ]; then
             echo "::notice::Firebase App Distribution skipped — set secrets FIREBASE_ANDROID_APP_ID and FIREBASE_SERVICE_ACCOUNT."
@@ -141,64 +146,63 @@ jobs:
           fi
 
           # Prefer workflow input, then secret alias, then hard default "testers".
-          # Note: FIREBASE_TESTER_GROUPS must be the *alias* (e.g. testers), never a
-          # numeric group id — Firebase API 404s on bad aliases and testers never see the build.
-          GROUPS="${INPUT_GROUPS:-}"
-          GROUPS="$(printf '%s' "${GROUPS}" | tr -d '[:space:]')"
-          if [ -z "${GROUPS}" ]; then
-            GROUPS="$(printf '%s' "${FIREBASE_TESTER_GROUPS:-}" | tr -d '[:space:]')"
+          # FIREBASE_TESTER_GROUPS must be the *alias* (e.g. testers), never a numeric group id.
+          # Use FAD_GROUPS (not GROUPS) — GROUPS can be a bash array in some environments.
+          FAD_GROUPS="${INPUT_GROUPS:-}"
+          if [ -z "${FAD_GROUPS}" ]; then
+            FAD_GROUPS="${FIREBASE_TESTER_GROUPS:-}"
           fi
-          # Reject empty / pure numeric ids (e.g. 1001). Use bash [[ ]] so set -e is safe.
-          if [ -z "${GROUPS}" ] || [[ "${GROUPS}" =~ ^[0-9]+$ ]]; then
-            echo "::warning::FIREBASE_TESTER_GROUPS='${GROUPS:-empty}' is invalid; using alias 'testers'"
-            GROUPS="testers"
+          if [ -z "${FAD_GROUPS}" ]; then
+            FAD_GROUPS="testers"
           fi
+          # Trim whitespace (no pipefail dependency)
+          FAD_GROUPS=$(echo "${FAD_GROUPS}" | tr -d '[:space:]')
+          # Empty or pure-numeric (legacy id 1001 etc.) → alias "testers"
+          case "${FAD_GROUPS}" in
+            ""|1001)
+              echo "::warning::Invalid/empty tester group; using alias testers"
+              FAD_GROUPS="testers"
+              ;;
+            *[!0-9]*)
+              # contains a non-digit → treat as alias (e.g. testers)
+              ;;
+            *)
+              echo "::warning::FIREBASE_TESTER_GROUPS looks numeric; using alias testers"
+              FAD_GROUPS="testers"
+              ;;
+          esac
+          echo "Resolved tester group alias: ${FAD_GROUPS}"
 
           if [ -n "${INPUT_NOTES:-}" ]; then
             NOTES="${INPUT_NOTES}"
           else
             MSG="${COMMIT_MSG:-Manual / workflow_dispatch build}"
+            # %s-only printf — never pass MSG as format string
             NOTES=$(printf 'RoomCraft %s @ %s\n\n%s\n\nRun: %s/%s/actions/runs/%s' \
               "${GITHUB_REF_NAME}" "${GITHUB_SHA::7}" "${MSG}" \
               "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
           fi
 
-          echo "${FIREBASE_SERVICE_ACCOUNT}" > "${RUNNER_TEMP}/firebase-sa.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="${RUNNER_TEMP}/firebase-sa.json"
+          SA_FILE="${RUNNER_TEMP}/firebase-sa.json"
+          printf '%s\n' "${FIREBASE_SERVICE_ACCOUNT}" > "${SA_FILE}"
+          export GOOGLE_APPLICATION_CREDENTIALS="${SA_FILE}"
 
           npm install -g firebase-tools
 
-          EXTRA=()
-          if [ -n "${GROUPS}" ]; then
-            EXTRA+=(--groups "${GROUPS}")
-            echo "Uploading ${APK_PATH} to Firebase App Distribution (groups: ${GROUPS})"
-          else
-            echo "Uploading ${APK_PATH} to Firebase App Distribution (no groups — invite testers in console)"
-          fi
+          echo "Uploading ${APK_PATH} to Firebase App Distribution (groups: ${FAD_GROUPS})"
 
           set +e
           firebase appdistribution:distribute "${APK_PATH}" \
             --app "${FIREBASE_ANDROID_APP_ID}" \
-            --release-notes "${NOTES}" \
-            "${EXTRA[@]}"
+            --groups "${FAD_GROUPS}" \
+            --release-notes "${NOTES}"
           RC=$?
-          set -e
 
-          rm -f "${RUNNER_TEMP}/firebase-sa.json"
+          rm -f "${SA_FILE}"
 
           if [ "$RC" -ne 0 ]; then
-            # Upload may have succeeded while group invite failed (missing group).
-            echo "::warning::firebase appdistribution:distribute exited with $RC (often missing tester group)."
-            if [ -n "${GROUPS}" ]; then
-              echo "Create group '${GROUPS}' in Firebase App Distribution console, or clear FIREBASE_TESTER_GROUPS / tester_groups input."
-            fi
-            # Fail only if binary upload likely failed — re-check by attempting a dry second path is hard;
-            # Prefer soft-fail for group issues: exit 0 when groups were specified and RC!=0 after possible upload.
-            # Hard-fail when no groups (pure upload failure).
-            if [ -z "${GROUPS}" ]; then
-              exit "$RC"
-            fi
-            echo "APK was likely uploaded; group distribution failed. Check Firebase console releases."
+            echo "::warning::firebase appdistribution:distribute exited with $RC"
+            echo "APK artifact is still available on this run. Check Firebase console / group '${FAD_GROUPS}'."
             exit 0
           fi
 
