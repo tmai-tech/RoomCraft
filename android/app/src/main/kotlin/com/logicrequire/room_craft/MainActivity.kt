@@ -13,8 +13,8 @@ import io.flutter.plugin.common.MethodChannel
  *
  * Channel: com.logicrequire.room_craft/ar_measure
  * Methods:
- *  - isAvailable → { supported: bool, message: string }
- *  - measureRoom → launches AR UI; result via callback
+ *  - isAvailable → { supported, installNeeded, message }
+ *  - measureRoom({ mode: "quick"|"chain" }) → launches AR UI
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "com.logicrequire.room_craft/ar_measure"
@@ -26,7 +26,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isAvailable" -> result.success(checkArCore())
-                    "measureRoom" -> launchMeasure(result)
+                    "measureRoom" -> {
+                        val mode = call.argument<String>("mode") ?: ArMeasureActivity.MODE_QUICK
+                        launchMeasure(result, mode)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -42,7 +45,6 @@ class MainActivity : FlutterActivity() {
                     "message" to "Checking ARCore… try again in a moment",
                 )
                 availability.isSupported -> {
-                    // May still need install
                     val install = ArCoreApk.getInstance().requestInstall(this, true)
                     if (install == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
                         mapOf(
@@ -79,7 +81,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun launchMeasure(result: MethodChannel.Result) {
+    private fun launchMeasure(result: MethodChannel.Result, mode: String) {
         if (pendingResult != null) {
             result.error("BUSY", "AR measure already in progress", null)
             return
@@ -90,10 +92,10 @@ class MainActivity : FlutterActivity() {
             return
         }
         pendingResult = result
-        startActivityForResult(
-            Intent(this, ArMeasureActivity::class.java),
-            ArMeasureActivity.REQUEST_CODE,
-        )
+        val intent = Intent(this, ArMeasureActivity::class.java).apply {
+            putExtra(ArMeasureActivity.EXTRA_MODE, mode)
+        }
+        startActivityForResult(intent, ArMeasureActivity.REQUEST_CODE)
     }
 
     @Deprecated("Deprecated in Java")
@@ -109,12 +111,18 @@ class MainActivity : FlutterActivity() {
             val lengthFt = data.getDoubleExtra(ArMeasureActivity.EXTRA_LENGTH_FT, 0.0)
             val widthM = data.getDoubleExtra(ArMeasureActivity.EXTRA_WIDTH_M, 0.0)
             val lengthM = data.getDoubleExtra(ArMeasureActivity.EXTRA_LENGTH_M, 0.0)
+            val mode = data.getStringExtra(ArMeasureActivity.EXTRA_MODE) ?: ArMeasureActivity.MODE_QUICK
+            val wallsFt = data.getDoubleArrayExtra(ArMeasureActivity.EXTRA_WALLS_FT)?.toList() ?: emptyList()
+            val wallsM = data.getDoubleArrayExtra(ArMeasureActivity.EXTRA_WALLS_M)?.toList() ?: emptyList()
             pending.success(
                 mapOf(
                     "widthFt" to widthFt,
                     "lengthFt" to lengthFt,
                     "widthM" to widthM,
                     "lengthM" to lengthM,
+                    "mode" to mode,
+                    "wallsFt" to wallsFt,
+                    "wallsM" to wallsM,
                     "source" to "arcore",
                 ),
             )

@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+16 (2026-07-14)
+
+### AR 4-wall chain + training export
+- **AR chain mode (default)**: measure walls A→B→C→D; opposite walls averaged for stable W×L.
+- Quick mode still available (width then length only).
+- **Training export**: scan ratings + plan snapshots saved as on-device JSONL; Settings → Export training data.
+- Consistency warning when opposite walls differ significantly.
+
 ## 1.0.0-beta.1+15 (2026-07-14)
 
 ### ARCore guided measure (consumer accuracy)

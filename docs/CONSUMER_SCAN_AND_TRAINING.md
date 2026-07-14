@@ -92,3 +92,22 @@ Options (pick one stack):
 Native code: `ArMeasureActivity.kt`, channel `com.logicrequire.room_craft/ar_measure`.
 
 Next AR upgrades: wall-by-wall multi-segment chain, door hit-tests, continuous depth mesh.
+
+## AR 4-wall chain (+16)
+
+Default AR path measures **four walls** clockwise (A–D). Room size:
+
+- width = average(A, C)
+- length = average(B, D)
+
+Warns if opposite walls differ by more than ~8%. Quick mode remains for faster two-segment measure.
+
+## Training data export (+16)
+
+| Event | When |
+|-------|------|
+| `scan_feedback` | User taps Looks right / Close / Off on Review |
+| `plan_snapshot` | User opens editor from Review (post-toggle furniture) |
+
+File: app documents `roomcraft_training_events.jsonl`  
+Export: **Settings → Export training data** (share sheet). Never auto-uploads.

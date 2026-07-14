@@ -10,6 +10,7 @@ import '../models/stroke_model.dart';
 import '../providers/room_provider.dart';
 import '../services/analytics_service.dart';
 import '../services/storage_service.dart';
+import '../services/training_export_service.dart';
 import 'blueprint_screen.dart';
 
 /// Review plan: edit openings by tape distances, toggle furniture, open editor.
@@ -42,12 +43,27 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
       mode: 'review',
       accuracyScore: _result.accuracyScore,
     );
+    final openings = _result.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .length;
+    await TrainingExportService().logScanFeedback(
+      rating: rating,
+      mode: 'review',
+      accuracyScore: _result.accuracyScore,
+      roomWidthFt: _result.roomWidthFt,
+      roomLengthFt: _result.roomLengthFt,
+      furnitureCount: _result.furniture.where((f) => f.included).length,
+      openingsCount: openings,
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           rating == 'good'
-              ? 'Thanks — helps us improve AI mapping'
+              ? 'Thanks — saved for model training'
               : rating == 'ok'
                   ? 'Noted — we’ll improve scale & placement'
                   : 'Thanks — bad scans guide the next model update',
@@ -73,6 +89,38 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
         );
     await StorageService().saveRoom(ref.read(roomProvider).room);
     await AnalyticsService.instance.openEditorFromScan();
+    // Snapshot corrected plan for training (after user toggled furniture etc.)
+    try {
+      await TrainingExportService().logPlanSnapshot(
+        source: 'open_editor',
+        widthFt: _result.roomWidthFt,
+        lengthFt: _result.roomLengthFt,
+        openings: [
+          for (final w in _result.walls)
+            if (w.type != StrokeType.wall)
+              {
+                'type': w.type.name,
+                'x0': w.startFt.dx,
+                'y0': w.startFt.dy,
+                'x1': w.endFt.dx,
+                'y1': w.endFt.dy,
+              },
+        ],
+        furniture: [
+          for (final f in _result.furniture)
+            if (f.included)
+              {
+                'type': f.type.name,
+                'x': f.posFt.dx,
+                'y': f.posFt.dy,
+                'w': f.widthFt,
+                'l': f.lengthFt,
+                'rot': f.rotationRad,
+              },
+        ],
+        feedbackRating: _feedbackRating,
+      );
+    } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const BlueprintScreen()),

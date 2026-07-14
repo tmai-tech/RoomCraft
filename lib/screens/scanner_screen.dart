@@ -94,6 +94,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   ArAvailability? _arStatus;
   ArRoomMeasure? _arMeasure;
+  /// AR mode: quick (W×L) or chain (4 walls).
+  bool _arChainMode = true;
 
   final Map<WallSide, File> _wallPhotos = {};
   final Map<WallSide, List<_OpeningDraft>> _wallOpenings = {
@@ -123,10 +125,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   Future<void> _runArMeasure() async {
     setState(() {
       _isLoading = true;
-      _loadingDetail = 'Starting AR measure…';
+      _loadingDetail = _arChainMode
+          ? 'AR 4-wall chain… walk each wall'
+          : 'Starting AR quick measure…';
     });
     try {
-      final m = await ArMeasureService.measureRoom();
+      final m = await ArMeasureService.measureRoom(
+        mode: _arChainMode ? 'chain' : 'quick',
+      );
       if (!mounted) return;
       setState(() {
         _arMeasure = m;
@@ -136,12 +142,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         _isLoading = false;
         _loadingDetail = '';
       });
+      final warn = m.oppositeWallError > 0.08
+          ? ' Opposite walls differ — room may not be rectangular.'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'AR measured ${m.widthFt.toStringAsFixed(1)} × '
-            '${m.lengthFt.toStringAsFixed(1)} ft — add photos for furniture (optional)',
-          ),
+          content: Text('${m.summaryLabel}.$warn Add photos for furniture (optional)'),
         ),
       );
     } catch (e) {
@@ -553,20 +559,29 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           );
         } else {
           // AR size only — exact rectangle; add furniture from catalog or photos later
+          final chain = _arMeasure?.isChain == true;
+          final oppErr = _arMeasure?.oppositeWallError ?? 0;
           result = AccurateScan.enforce(
             widthFt: w,
             lengthFt: l,
             openings: const [],
             furniture: const [],
             warnings: [
-              'Room size from ARCore floor measure '
-                  '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
+              chain
+                  ? 'Room size from AR 4-wall chain '
+                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft, opposite walls averaged)'
+                  : 'Room size from ARCore floor measure '
+                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
+              if (oppErr > 0.08)
+                'Opposite walls differ by ${(oppErr * 100).round()}% — edit in Review if needed',
               if (frames.isEmpty)
                 'No photos yet — add openings/furniture in Review or re-scan with photos',
             ],
-            sourceLabel: 'ARCore guided measure',
+            sourceLabel: chain ? 'ARCore 4-wall chain' : 'ARCore guided measure',
             inventDefaultOpenings: false,
-            accuracyScore: 0.88,
+            accuracyScore: chain
+                ? (oppErr > 0.12 ? 0.82 : 0.92)
+                : 0.88,
           );
         }
       } else if (mode == 'field_measure') {
@@ -820,11 +835,20 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Walk until a floor grid appears. Tap two ends of one wall (width), '
-                    'then two ends of the adjacent wall (length). No tape needed.',
+                    _arChainMode
+                        ? 'Walk clockwise. For each wall A→D: tap both floor corners. '
+                            'Opposite walls are averaged for a stable rectangle.'
+                        : 'Tap two ends of width, then two ends of length on the floor grid.',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                   ),
-                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('4-wall chain (recommended)'),
+                    subtitle: const Text('More accurate than width×length only'),
+                    value: _arChainMode,
+                    onChanged: (v) => setState(() => _arChainMode = v),
+                  ),
+                  const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: (_arStatus?.supported == true && !_isLoading)
                         ? _runArMeasure
@@ -832,7 +856,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     icon: const Icon(Icons.view_in_ar),
                     label: Text(
                       _arMeasure == null
-                          ? 'Measure with AR'
+                          ? (_arChainMode
+                              ? 'Measure 4 walls with AR'
+                              : 'Measure with AR')
                           : 'Re-measure with AR',
                     ),
                     style: FilledButton.styleFrom(
@@ -856,11 +882,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       color: Colors.teal.shade50,
                       child: ListTile(
                         leading: const Icon(Icons.check_circle, color: Colors.teal),
-                        title: Text(
-                          '${_arMeasure!.widthFt.toStringAsFixed(1)} × '
-                          '${_arMeasure!.lengthFt.toStringAsFixed(1)} ft',
+                        title: Text(_arMeasure!.summaryLabel),
+                        subtitle: Text(
+                          _arMeasure!.isChain
+                              ? 'Walls: ${_arMeasure!.wallsFt.map((f) => f.toStringAsFixed(1)).join(" · ")} ft'
+                              : 'From ARCore floor hit-testing',
                         ),
-                        subtitle: const Text('From ARCore floor hit-testing'),
                       ),
                     ),
                   ],

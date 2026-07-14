@@ -7,6 +7,7 @@ import '../services/ai_scanner_service.dart';
 import '../services/free_vision_scanner.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/prefs_service.dart';
+import '../services/training_export_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -278,6 +279,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Text(
             'Internal layout stays in feet; labels convert for display.',
             style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          const Divider(height: 32),
+          const Text(
+            'Improve AI accuracy',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Ratings and plan snapshots stay on this device until you export them '
+            'for model training.',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.upload_file_outlined, color: Colors.teal),
+            title: const Text('Export training data'),
+            subtitle: const Text('Share JSONL of scan feedback + plans'),
+            onTap: () async {
+              try {
+                final n = await TrainingExportService().eventCount();
+                if (!context.mounted) return;
+                if (n == 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('No events yet — rate scans in Review first'),
+                    ),
+                  );
+                  return;
+                }
+                await TrainingExportService().shareExport();
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$e')),
+                );
+              }
+            },
           ),
           const Divider(height: 32),
           const Text(

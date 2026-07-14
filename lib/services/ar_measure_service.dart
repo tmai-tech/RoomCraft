@@ -3,13 +3,18 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Result of an ARCore guided floor measure (width × length).
+/// Result of an ARCore guided floor measure.
 class ArRoomMeasure {
   final double widthFt;
   final double lengthFt;
   final double widthM;
   final double lengthM;
   final String source;
+  /// `quick` (W×L) or `chain` (4 walls A–D).
+  final String mode;
+  /// Per-wall lengths in feet (A,B[,C,D]).
+  final List<double> wallsFt;
+  final List<double> wallsM;
 
   const ArRoomMeasure({
     required this.widthFt,
@@ -17,19 +22,52 @@ class ArRoomMeasure {
     required this.widthM,
     required this.lengthM,
     this.source = 'arcore',
+    this.mode = 'quick',
+    this.wallsFt = const [],
+    this.wallsM = const [],
   });
 
   factory ArRoomMeasure.fromMap(Map<dynamic, dynamic> map) {
+    List<double> asDoubles(dynamic v) {
+      if (v is! List) return const [];
+      return v.map((e) => (e as num).toDouble()).toList();
+    }
+
     return ArRoomMeasure(
       widthFt: (map['widthFt'] as num).toDouble(),
       lengthFt: (map['lengthFt'] as num).toDouble(),
       widthM: (map['widthM'] as num?)?.toDouble() ?? 0,
       lengthM: (map['lengthM'] as num?)?.toDouble() ?? 0,
       source: map['source']?.toString() ?? 'arcore',
+      mode: map['mode']?.toString() ?? 'quick',
+      wallsFt: asDoubles(map['wallsFt']),
+      wallsM: asDoubles(map['wallsM']),
     );
   }
 
-  /// Swap so width is the larger dimension when useful for display.
+  bool get isChain => mode == 'chain' && wallsFt.length >= 4;
+
+  /// Opposite-wall consistency: max relative difference (0–1).
+  double get oppositeWallError {
+    if (wallsFt.length < 4) return 0;
+    final a = wallsFt[0];
+    final b = wallsFt[1];
+    final c = wallsFt[2];
+    final d = wallsFt[3];
+    final eW = a <= 0 ? 0.0 : ((a - c).abs() / a);
+    final eL = b <= 0 ? 0.0 : ((b - d).abs() / b);
+    return eW > eL ? eW : eL;
+  }
+
+  String get summaryLabel {
+    final base =
+        '${widthFt.toStringAsFixed(1)} × ${lengthFt.toStringAsFixed(1)} ft';
+    if (isChain) {
+      return '$base · 4-wall AR chain';
+    }
+    return '$base · AR quick';
+  }
+
   ArRoomMeasure get normalized {
     if (widthFt >= lengthFt) return this;
     return ArRoomMeasure(
@@ -38,6 +76,9 @@ class ArRoomMeasure {
       widthM: lengthM,
       lengthM: widthM,
       source: source,
+      mode: mode,
+      wallsFt: wallsFt,
+      wallsM: wallsM,
     );
   }
 }
@@ -60,7 +101,6 @@ class ArMeasureService {
 
   static bool get isPlatformSupported => !kIsWeb && Platform.isAndroid;
 
-  /// Probe ARCore support (does not open camera).
   static Future<ArAvailability> isAvailable() async {
     if (!isPlatformSupported) {
       return const ArAvailability(
@@ -70,7 +110,8 @@ class ArMeasureService {
       );
     }
     try {
-      final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('isAvailable');
+      final raw =
+          await _channel.invokeMethod<Map<dynamic, dynamic>>('isAvailable');
       if (raw == null) {
         return const ArAvailability(
           supported: false,
@@ -98,16 +139,18 @@ class ArMeasureService {
     }
   }
 
-  /// Opens native AR UI. User taps floor corners for width, then length.
-  /// Throws [PlatformException] on cancel or failure.
-  static Future<ArRoomMeasure> measureRoom() async {
+  /// [mode]: `quick` (width+length) or `chain` (four walls A→D).
+  static Future<ArRoomMeasure> measureRoom({String mode = 'quick'}) async {
     if (!isPlatformSupported) {
       throw PlatformException(
         code: 'UNSUPPORTED',
         message: 'AR measure requires Android + ARCore',
       );
     }
-    final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('measureRoom');
+    final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'measureRoom',
+      {'mode': mode},
+    );
     if (raw == null) {
       throw PlatformException(code: 'EMPTY', message: 'No measure result');
     }
@@ -115,13 +158,15 @@ class ArMeasureService {
     if (m.widthFt < 1.5 || m.lengthFt < 1.5) {
       throw PlatformException(
         code: 'TOO_SMALL',
-        message: 'Measured size looks too small — try again with clearer floor tracking',
+        message:
+            'Measured size looks too small — try again with clearer floor tracking',
       );
     }
     if (m.widthFt > 80 || m.lengthFt > 80) {
       throw PlatformException(
         code: 'TOO_LARGE',
-        message: 'Measured size looks unrealistic — retake with both ends on the floor grid',
+        message:
+            'Measured size looks unrealistic — retake with both ends on the floor grid',
       );
     }
     return m;
