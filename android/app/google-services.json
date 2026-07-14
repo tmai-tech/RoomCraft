@@ -12,7 +12,28 @@
           "package_name": "com.logicrequire.room_craft"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "768748224321-6pa6tvojubbgfn1eeirln49bn304p4er.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.logicrequire.room_craft",
+            "certificate_hash": "b7efa7f5c3e6e75e9a21ef4c5cf0622f11a24b09"
+          }
+        },
+        {
+          "client_id": "768748224321-h9k7tcrfpqo015a7vna0sr7ct1vft19p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.logicrequire.room_craft",
+            "certificate_hash": "f38de38e3afdddbd7d849a69a2060914a1b1a1ef"
+          }
+        },
+        {
+          "client_id": "768748224321-18b90n6pbquuojr564ns1mf49d7orq56.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyA9BxQMgkEI9kVvL70K5ZvkBOvCty5a5ZM"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "768748224321-18b90n6pbquuojr564ns1mf49d7orq56.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

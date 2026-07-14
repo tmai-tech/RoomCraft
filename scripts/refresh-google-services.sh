@@ -14,8 +14,11 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
   fi
 fi
 
+TMP="$(mktemp)"
 npx --yes firebase-tools@15 apps:sdkconfig ANDROID "$APP_ID" \
-  --project "$PROJECT" --out "$OUT"
+  --project "$PROJECT" --out "$TMP"
+cp "$TMP" "$OUT"
+rm -f "$TMP"
 
 echo "Wrote $OUT"
 python3 - <<'PY'

@@ -32,8 +32,8 @@ Verify in Console: [Project settings → Android app](https://console.firebase.g
 | Firestore `(default)` DB (`nam5`) | Created |
 | Firestore security rules (`users/{uid}/rooms/*`) | Deployed |
 | Web app (Auth helper) | Created |
-| Firebase **Authentication** product | **Not started** — needs Owner click (see below) |
-| `google-services.json` `oauth_client` | Still empty until Auth Google provider is enabled |
+| Firebase **Authentication** product | **Enabled** (Google provider on) |
+| `google-services.json` `oauth_client` | **Populated** (+13): 2 Android + 1 Web client |
 ### Recompute fingerprints
 
 ```bash
@@ -48,40 +48,17 @@ keytool -list -v -alias androiddebugkey \
   -storepass android -keypass android
 ```
 
-## Console steps remaining (you — ~3 minutes)
+## Console steps (completed 2026-07-14)
 
-SHAs, Firestore DB, and rules are already done. **One Owner-only step remains:** Firebase Auth was never initialized on this project (`CONFIGURATION_NOT_FOUND` / `firebase-core: disabled`). That cannot be finished with a service account alone.
+1. ~~Start Authentication + enable Google~~ ✅  
+2. ~~Refresh `google-services.json` + `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID`~~ ✅ (+13)  
+3. ~~Firestore DB + rules~~ ✅  
 
-### 1. Start Authentication + enable Google
-
-1. Open [Authentication](https://console.firebase.google.com/project/roomcraft-e1312/authentication)
-2. Click **Get started** (first-time only)
-3. **Sign-in method** → **Google** → Enable → support email → Save
-
-This creates the Web + Android OAuth clients and fills `oauth_client` in `google-services.json`.
-
-### 2. Refresh `google-services.json` + web client secret
+Re-refresh config after adding new signing certs:
 
 ```bash
-# From repo root (uses service account if GOOGLE_APPLICATION_CREDENTIALS is set)
 ./scripts/refresh-google-services.sh
-# or:
-export GOOGLE_APPLICATION_CREDENTIALS=.secrets/roomcraft-e1312-firebase-adminsdk-*.json
-npx firebase-tools apps:sdkconfig ANDROID 1:768748224321:android:2ef77f7bc86ecb080fabc0 \
-  --project roomcraft-e1312 --out android/app/google-services.json
 ```
-
-Confirm `oauth_client` is **no longer empty**. Then set:
-
-```bash
-# client_type 3 entry from the new JSON
-gh secret set ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID --repo tmai-tech/RoomCraft \
-  --body 'XXXX.apps.googleusercontent.com'
-```
-
-CI already passes this as `--dart-define=ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID=...`.
-
-Commit the updated JSON and re-run **Build APK**.
 
 ### 3. Firestore
 

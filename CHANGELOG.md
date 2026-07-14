@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+13 (2026-07-14)
+
+### Cloud Sign-In ready
+- Refreshed `google-services.json` with OAuth clients (Android SHA-bound + Web).
+- CI bundles `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID` for Google `idToken` / Firebase Auth.
+- Auth + Google provider enabled; Firestore already live with per-user rules.
+
 ## 1.0.0-beta.1+12 (2026-07-14)
 
 ### Signing & cloud readiness

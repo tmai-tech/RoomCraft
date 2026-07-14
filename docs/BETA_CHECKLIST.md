@@ -9,9 +9,9 @@
 - [x] Stable CI keystore SHA for Google Sign-In (see PLAY_AND_SIGNING.md)
 - [x] Add **CI + local SHA-1/256** in Firebase Android app (Management API 2026-07-14)
 - [x] Create Firestore DB + deploy rules
-- [ ] Enable Authentication → Get started → Google (Owner console — creates oauth_client)
-- [ ] Re-download `google-services.json` via `./scripts/refresh-google-services.sh` and commit
-- [ ] Set `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID` secret; rebuild APK
+- [x] Enable Authentication → Get started → Google
+- [x] Re-download `google-services.json` (oauth_client populated) + commit
+- [x] Set `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID` secret; rebuild APK (+13)
 - [ ] Add tester emails in [Firebase console](https://console.firebase.google.com/project/roomcraft-e1312/appdistribution)
 - [ ] Confirm latest successful **Build APK** + distribute run
 - [ ] Share install invite / release link with testers
