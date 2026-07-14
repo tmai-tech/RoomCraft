@@ -8,11 +8,22 @@ plugins {
 
 import java.util.Properties
 
+// Shared upload/CI keystore (android/key.properties). Used for:
+// - release builds
+// - debug APKs when present so Firebase App Distribution + Google Sign-In
+//   share a stable SHA-1 (not the ephemeral CI debug.keystore).
 val keystorePropertiesFile = rootProject.projectDir.resolve("key.properties")
 val keystoreProperties = Properties()
-val hasReleaseKeystore = keystorePropertiesFile.exists()
-if (hasReleaseKeystore) {
+val hasUploadKeystore = keystorePropertiesFile.exists()
+if (hasUploadKeystore) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
+}
+
+fun resolveStoreFile(path: String): java.io.File {
+    val f = file(path)
+    if (f.isFile) return f
+    // Paths in key.properties are relative to android/
+    return rootProject.file(path)
 }
 
 android {
@@ -30,23 +41,18 @@ android {
     }
 
     signingConfigs {
-        // Only configure release signing when android/key.properties is present
-        // (local release builds). CI debug builds do not ship a keystore.
-        if (hasReleaseKeystore) {
-            create("release") {
+        if (hasUploadKeystore) {
+            create("upload") {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
+                storeFile = resolveStoreFile(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
             }
         }
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.logicrequire.room_craft"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -54,11 +60,15 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Prefer stable upload key so distributed debug APKs keep one SHA-1.
+            if (hasUploadKeystore) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = if (hasReleaseKeystore) {
-                signingConfigs.getByName("release")
+            signingConfig = if (hasUploadKeystore) {
+                signingConfigs.getByName("upload")
             } else {
                 signingConfigs.getByName("debug")
             }

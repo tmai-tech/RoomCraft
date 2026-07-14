@@ -3,9 +3,13 @@
 ## Before inviting testers
 
 - [x] MVP phases 0–4 on `dev`
-- [x] Version `1.0.0-beta.1+2`
-- [x] Firebase App Distribution wired
+- [x] Version `1.0.0-beta.1+12` (field measure + stable CI signing)
+- [x] Firebase App Distribution wired + green CI distribute
 - [x] Tester group `testers` exists
+- [x] Stable CI keystore SHA for Google Sign-In (see PLAY_AND_SIGNING.md)
+- [ ] Add **CI SHA-1** in Firebase Android app settings
+- [ ] Enable Authentication → Google; re-download `google-services.json`
+- [ ] Set `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID` secret; create Firestore + deploy rules
 - [ ] Add tester emails in [Firebase console](https://console.firebase.google.com/project/roomcraft-e1312/appdistribution)
 - [ ] Confirm latest successful **Build APK** + distribute run
 - [ ] Share install invite / release link with testers

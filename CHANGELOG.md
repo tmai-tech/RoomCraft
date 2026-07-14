@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+12 (2026-07-14)
+
+### Signing & cloud readiness
+- **Stable CI upload keystore**: App Distribution APKs share one SHA-1 for Google Sign-In (not ephemeral runner debug keys).
+- **Google Sign-In**: request `idToken` via optional `ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID`; clearer error if SHA/Auth incomplete.
+- **Firestore rules** (`firestore.rules`): per-user `users/{uid}/rooms/*` only.
+- **Docs**: `docs/PLAY_AND_SIGNING.md` — fingerprints, console steps, Play closed testing checklist.
+- **CI**: decode keystore from secrets; soft-fail-safe Firebase distribute (from +11 fix).
+
 ## 1.0.0-beta.1+11 (2026-07-13)
 
 ### Precision — designer field measure (tape) as primary path

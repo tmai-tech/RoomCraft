@@ -177,7 +177,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Text(
                     _cloudUserEmail == null
-                        ? 'Sign in with Google to back up plans across devices.'
+                        ? 'Sign in with Google to back up plans across devices. '
+                            'Needs Firebase SHA fingerprints + Google provider '
+                            '(maintainers: docs/PLAY_AND_SIGNING.md).'
                         : 'Signed in as $_cloudUserEmail',
                     style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                   ),

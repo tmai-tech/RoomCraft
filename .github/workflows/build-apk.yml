@@ -64,12 +64,40 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      # Stable signing so Google Sign-In SHA-1 stays fixed across CI builds.
+      # Secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      # ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD (see docs/PLAY_AND_SIGNING.md).
+      - name: Decode upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::notice::No ANDROID_KEYSTORE_BASE64 — using default debug keystore (Google Sign-In SHA will vary)."
+            exit 0
+          fi
+          mkdir -p android
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > android/ci-upload.keystore
+          cat > android/key.properties <<EOF
+          storePassword=${ANDROID_KEYSTORE_PASSWORD}
+          keyPassword=${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}
+          keyAlias=${ANDROID_KEY_ALIAS:-roomcraft}
+          storeFile=ci-upload.keystore
+          EOF
+          # Strip accidental leading spaces from heredoc indentation
+          sed -i 's/^[[:space:]]*//' android/key.properties
+          echo "Wrote android/key.properties + ci-upload.keystore for stable SHA signing"
+
       # Optional free vision keys — testers never paste keys in the app.
       # Set GitHub secrets ROOMCRAFT_GROQ_API_KEY and/or ROOMCRAFT_GEMINI_API_KEY.
       - name: Build debug APK
         env:
           ROOMCRAFT_GROQ_API_KEY: ${{ secrets.ROOMCRAFT_GROQ_API_KEY }}
           ROOMCRAFT_GEMINI_API_KEY: ${{ secrets.ROOMCRAFT_GEMINI_API_KEY }}
+          ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID: ${{ secrets.ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID }}
         run: |
           set -euo pipefail
           DEFS=()
@@ -82,6 +110,10 @@ jobs:
           if [ -n "${ROOMCRAFT_GEMINI_API_KEY:-}" ]; then
             DEFS+=(--dart-define=ROOMCRAFT_GEMINI_API_KEY="${ROOMCRAFT_GEMINI_API_KEY}")
             echo "Bundling Gemini assist key"
+          fi
+          if [ -n "${ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID:-}" ]; then
+            DEFS+=(--dart-define=ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID="${ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID}")
+            echo "Bundling Google Sign-In web client id"
           fi
           flutter build apk --debug "${DEFS[@]}"
 

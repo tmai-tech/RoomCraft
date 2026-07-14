@@ -1,6 +1,6 @@
 # Known issues — RoomCraft closed beta
 
-Last updated: 2026-07-13 · Version **1.0.0-beta.1+11**
+Last updated: 2026-07-14 · Version **1.0.0-beta.1+12**
 
 ## Expected limitations
 
@@ -11,7 +11,7 @@ Last updated: 2026-07-13 · Version **1.0.0-beta.1+11**
 | Scan confidence is **heuristic** | Score is not survey-grade | Tape path ≈ high; photo path needs Review edits |
 | Video keyframes depend on device codecs | Some videos yield few frames | Prefer mid-length 10–30s, good light; or still photos |
 | Vision may miss small/occluded items | Incomplete furniture/openings | Add from catalog / draw doors |
-| Cloud Sign-In needs Firebase SHA | Backup may fail | Add debug SHA to Firebase Console |
+| Cloud Sign-In needs Firebase setup | Backup may fail until console steps done | See [PLAY_AND_SIGNING.md](PLAY_AND_SIGNING.md): add CI SHA-1, enable Google provider, refresh `google-services.json`, set web client id |
 
 ## How to report
 

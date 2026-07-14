@@ -4,12 +4,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../config/app_config.dart';
 import '../models/room_model.dart';
 import 'storage_service.dart';
 
 /// Optional Google Sign-In + Firestore backup for room plans.
 ///
 /// Best-effort: fails gracefully when Firebase / SHA config is incomplete.
+/// See docs/PLAY_AND_SIGNING.md for SHA fingerprints + console setup.
 class CloudSyncService {
   CloudSyncService({
     FirebaseAuth? auth,
@@ -18,7 +20,14 @@ class CloudSyncService {
     StorageService? storage,
   })  : _auth = auth,
         _firestore = firestore,
-        _googleSignIn = googleSignIn ?? GoogleSignIn(),
+        _googleSignIn = googleSignIn ??
+            GoogleSignIn(
+              // Web client ID required for a non-null idToken on Android.
+              serverClientId: AppConfig.googleServerClientId.trim().isEmpty
+                  ? null
+                  : AppConfig.googleServerClientId.trim(),
+              scopes: const ['email', 'profile'],
+            ),
         _storage = storage ?? StorageService();
 
   FirebaseAuth? _auth;
@@ -50,18 +59,31 @@ class CloudSyncService {
   Future<User?> signInWithGoogle() async {
     if (!await ensureReady()) {
       throw Exception(
-        'Firebase not configured on this device. Check google-services.json / SHA fingerprints.',
+        'Firebase not ready. Add debug/upload SHA-1 in Firebase Console '
+        'and re-download google-services.json (see Settings help / docs).',
       );
     }
-    final googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) return null; // cancelled
-    final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-    final cred = await _auth!.signInWithCredential(credential);
-    return cred.user;
+    try {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return null; // cancelled
+      final googleAuth = await googleUser.authentication;
+      if (googleAuth.idToken == null) {
+        throw Exception(
+          'Google idToken missing. Add the Android SHA-1 fingerprint in '
+          'Firebase → Project settings → Your apps, enable Authentication → '
+          'Google, then set secret ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID '
+          '(Web client ID from google-services.json oauth_client type 3).',
+        );
+      }
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final cred = await _auth!.signInWithCredential(credential);
+      return cred.user;
+    } on FirebaseAuthException catch (e) {
+      throw Exception('Firebase Auth: ${e.code} — ${e.message}');
+    }
   }
 
   Future<void> signOut() async {

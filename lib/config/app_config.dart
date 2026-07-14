@@ -5,8 +5,16 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 10;
+  static const int buildNumber = 12;
   static const bool isBeta = true;
+
+  /// Firebase Google Sign-In Web client ID (oauth_client client_type 3).
+  /// Pass at build time after adding SHA fingerprints in Firebase Console:
+  ///   --dart-define=ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID=xxxx.apps.googleusercontent.com
+  static const String googleServerClientId = String.fromEnvironment(
+    'ROOMCRAFT_GOOGLE_SERVER_CLIENT_ID',
+    defaultValue: '',
+  );
 
   /// Feedback — opens mail client on device.
   static const String feedbackEmail = 'prjoshi0711@gmail.com';

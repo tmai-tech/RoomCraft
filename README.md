@@ -38,6 +38,7 @@ Personal keys in Settings are optional advanced overrides.
 | [Market study & phase plan](docs/Market-Study-and-Phase-Plan.md) | Competitors, gaps, Phases 0–4 |
 | [MVP plan](docs/MVP-Implementation-Plan.md) | Original Phases 0–5 (closed beta) |
 | [Beta checklist](docs/BETA_CHECKLIST.md) | Tester ops |
+| [Play signing & Google Sign-In](docs/PLAY_AND_SIGNING.md) | SHA fingerprints, Auth, Play closed track |
 | [Known issues](docs/KNOWN_ISSUES.md) | Beta limits |
 | [Changelog](CHANGELOG.md) | Release notes |
 | [Firebase App Distribution](docs/FIREBASE_APP_DISTRIBUTION.md) | CI distribute |
