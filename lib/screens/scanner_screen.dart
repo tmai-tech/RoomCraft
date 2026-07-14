@@ -268,10 +268,57 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
   Future<void> _addFreeFrame({required bool camera}) async {
-    if (_freeFrames.length >= 8) return;
+    if (_freeFrames.length >= 8) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Max 8 photos — remove some to add more')),
+        );
+      }
+      return;
+    }
     final f = camera ? await _capturePhoto() : await _galleryPhoto();
     if (f == null || !mounted) return;
     setState(() => _freeFrames.add(f));
+  }
+
+  /// Multi-select from gallery — primary consumer path for room photos.
+  Future<void> _addGalleryMultiPhotos() async {
+    final room = 8 - _freeFrames.length;
+    if (room <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Max 8 photos — remove some to add more')),
+        );
+      }
+      return;
+    }
+    try {
+      final picked = await _picker.pickMultiImage(
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 92,
+        limit: room,
+      );
+      if (picked.isEmpty || !mounted) return;
+      final files = picked.take(room).map((x) => File(x.path)).toList();
+      setState(() => _freeFrames.addAll(files));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Added ${files.length} photo${files.length == 1 ? '' : 's'} '
+              '(${_freeFrames.length}/8). Cover every wall for best results.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gallery pick failed: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _addVideoToFreeFrames({required bool fromCamera}) async {
@@ -921,8 +968,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Add a walkaround video or photos so AI can place sofas, beds, etc. '
-                    'Skip if you only need the empty room plan.',
+                    'Add photos of the room (multi-select from gallery) or a walkaround '
+                    'video so AI can place sofas, beds, etc. Skip for an empty room plan.',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                   ),
                   const SizedBox(height: 8),
@@ -931,6 +978,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     runSpacing: 8,
                     children: [
                       FilledButton.tonalIcon(
+                        onPressed: _addGalleryMultiPhotos,
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text('Gallery (multi)'),
+                      ),
+                      OutlinedButton.icon(
                         onPressed: () => _addVideoToFreeFrames(fromCamera: true),
                         icon: const Icon(Icons.videocam),
                         label: const Text('Record video'),
@@ -944,7 +996,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                   if (_freeFrames.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text('Frames: ${_freeFrames.length}',
+                    Text('Frames: ${_freeFrames.length}/8',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -953,31 +1005,63 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                         scrollDirection: Axis.horizontal,
                         itemCount: _freeFrames.length,
                         separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (_, i) => ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(_freeFrames[i],
-                              width: 72, height: 72, fit: BoxFit.cover),
+                        itemBuilder: (_, i) => Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(_freeFrames[i],
+                                  width: 72, height: 72, fit: BoxFit.cover),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: InkWell(
+                                onTap: () =>
+                                    setState(() => _freeFrames.removeAt(i)),
+                                child: const CircleAvatar(
+                                  radius: 10,
+                                  backgroundColor: Colors.black54,
+                                  child: Icon(Icons.close,
+                                      size: 12, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ] else if (_scanMode == 'easy_scan') ...[
                   Text(
-                    '1. Film every wall (slow walkaround)',
+                    '1. Add room photos or a walkaround video',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Hold the phone steady. Point at the floor edge and corners. '
-                    'Include doors and windows. 15–40 seconds is ideal.',
+                    'Best: pick several photos from your gallery (every wall, doors, '
+                    'furniture). Or film a slow 15–40s walkaround. Include floor edges '
+                    'and corners.',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                   ),
                   const SizedBox(height: 12),
+                  // Primary action: multi gallery pick (consumer feedback)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _addGalleryMultiPhotos,
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('Pick photos from gallery'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      FilledButton.icon(
+                      OutlinedButton.icon(
                         onPressed: () => _addVideoToFreeFrames(fromCamera: true),
                         icon: const Icon(Icons.videocam),
                         label: const Text('Record video'),
@@ -990,19 +1074,19 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       OutlinedButton.icon(
                         onPressed: () => _addFreeFrame(camera: true),
                         icon: const Icon(Icons.camera_alt),
-                        label: const Text('Photo'),
+                        label: const Text('Camera photo'),
                       ),
                       OutlinedButton.icon(
                         onPressed: () => _addFreeFrame(camera: false),
-                        icon: const Icon(Icons.photo_library),
-                        label: const Text('Gallery'),
+                        icon: const Icon(Icons.image),
+                        label: const Text('Single photo'),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Frames: ${_freeFrames.length}/8 '
-                    '(video auto-extracts the best frames)',
+                    'Photos: ${_freeFrames.length}/8 '
+                    '(multi-select gallery or video keyframes)',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                   if (_freeFrames.isNotEmpty) ...[
@@ -1169,8 +1253,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
+                    runSpacing: 8,
                     children: [
                       FilledButton.tonalIcon(
+                        onPressed: _addGalleryMultiPhotos,
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text('Gallery (multi)'),
+                      ),
+                      OutlinedButton.icon(
                         onPressed: () => _addVideoToFreeFrames(fromCamera: true),
                         icon: const Icon(Icons.videocam),
                         label: const Text('Record video'),

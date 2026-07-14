@@ -2,6 +2,12 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+23 (2026-07-14)
+
+### Fixes from user feedback (report 1c373b54-144)
+- **Multi gallery scan**: Easy scan primary action is **Pick photos from gallery** (multi-select up to 8). AR and free-frame modes also get **Gallery (multi)**.
+- Gallery is no longer single-image-only — consumers can upload several room wall photos at once.
+
 ## 1.0.0-beta.1+22 (2026-07-14)
 
 ### Fixes from user feedback (report 7be5dbfd-09b)
