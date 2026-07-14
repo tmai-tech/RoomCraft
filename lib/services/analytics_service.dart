@@ -68,4 +68,17 @@ class AnalyticsService {
   Future<void> exportPng() => logEvent('export');
 
   Future<void> openEditorFromScan() => logEvent('open_editor_from_scan');
+
+  /// User feedback on scan quality — training signal for future models.
+  Future<void> scanFeedback({
+    required String rating,
+    required String mode,
+    double? accuracyScore,
+  }) =>
+      logEvent('scan_feedback', {
+        'rating': rating,
+        'mode': mode,
+        if (accuracyScore != null)
+          'accuracy_pct': (accuracyScore * 100).round(),
+      });
 }

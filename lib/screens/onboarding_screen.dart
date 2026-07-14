@@ -20,7 +20,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.camera_alt_outlined,
       title: 'Scan your room',
       body:
-          'Enter exact width × length, then take 1–4 photos. RoomCraft builds a measured top-down layout sketch — not LiDAR or CAD. Size always matches your measurements.',
+          'Film a walkaround video or upload photos — no tape needed. AI estimates your room and furniture. Optional: lock size if you know it. Not LiDAR/CAD — tweak in Review if needed.',
     ),
     (
       icon: Icons.dashboard_customize_outlined,

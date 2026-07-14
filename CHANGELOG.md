@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+14 (2026-07-14)
+
+### Consumer Easy Scan (no measurements required)
+- **Default scan mode**: Easy — record a walkaround video or upload photos; no tape.
+- **Auto-scale**: estimate room size from vision + standard door (~2.75 ft) and furniture priors.
+- **Review feedback**: Looks right / Close / Off → analytics for future model training.
+- **Docs**: `docs/CONSUMER_SCAN_AND_TRAINING.md` accuracy + training roadmap.
+- Field measure remains as Advanced for survey-grade accuracy.
+
 ## 1.0.0-beta.1+13 (2026-07-14)
 
 ### Cloud Sign-In ready

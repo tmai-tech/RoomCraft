@@ -84,8 +84,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   final _widthController = TextEditingController(text: '12');
   final _lengthController = TextEditingController(text: '14');
 
-  /// field_measure (default) | wall_walk | free_frames | offline_only | gemini
-  String _scanMode = 'field_measure';
+  /// easy_scan (default for everyone) | field_measure | wall_walk |
+  /// free_frames | offline_only | gemini
+  String _scanMode = 'easy_scan';
+
+  /// When false (easy scan default), size is estimated from photos.
+  bool _knowRoomSize = false;
 
   final Map<WallSide, File> _wallPhotos = {};
   final Map<WallSide, List<_OpeningDraft>> _wallOpenings = {
@@ -375,10 +379,18 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
   Future<void> _process() async {
+    final needsExactSize =
+        _scanMode == 'field_measure' ||
+        _scanMode == 'wall_walk' ||
+        _scanMode == 'offline_only' ||
+        (_scanMode == 'easy_scan' && _knowRoomSize) ||
+        (_scanMode == 'free_frames' && _knowRoomSize) ||
+        (_scanMode == 'gemini' && _knowRoomSize);
+
     final size = _parseRoomSize();
-    if (size == null) {
+    if (needsExactSize && size == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter exact room width × length first')),
+        const SnackBar(content: Text('Enter room width × length first')),
       );
       return;
     }
@@ -396,7 +408,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       }
     } else if (_scanMode != 'offline_only' && _freeFrames.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add photos or a walkthrough video')),
+        const SnackBar(
+          content: Text('Record a walkthrough video or add room photos'),
+        ),
       );
       return;
     }
@@ -410,8 +424,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         builder: (ctx) => AlertDialog(
           title: const Text('Vision offline'),
           content: const Text(
-            'No free vision key — only an empty measured rectangle will be created. '
-            'Add Groq in Settings, or use Field measure with tape numbers.',
+            'AI room mapping needs a free vision key on this build. '
+            'Add Groq in Settings, or use Field measure if you have a tape.',
           ),
           actions: [
             TextButton(
@@ -420,7 +434,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Frame only'),
+              child: const Text('Continue offline'),
             ),
           ],
         ),
@@ -439,6 +453,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     setState(() {
       _isLoading = true;
       _loadingDetail = switch (_scanMode) {
+        'easy_scan' => 'Mapping your room from photos/video…',
         'field_measure' => 'Building plan from tape measurements…',
         'wall_walk' => 'Analyzing each wall (designer method)…',
         _ => 'Running multi-frame scan…',
@@ -451,19 +466,19 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     try {
       late final ScanResult result;
       if (mode == 'field_measure') {
-        result = _composeFieldMeasure(size.$1, size.$2);
+        result = _composeFieldMeasure(size!.$1, size.$2);
       } else if (mode == 'wall_walk') {
         if (_freeVisionReady == true) {
           result = await WallRelativeVision.scanWallByWall(
             wallPhotos: Map<WallSide, File>.from(_wallPhotos),
-            roomWidthFt: size.$1,
+            roomWidthFt: size!.$1,
             roomLengthFt: size.$2,
             overviewPhotos: List<File>.from(_overviewPhotos),
           );
         } else {
           result = await _aiService.scanRoomAccurateFree(
             _wallPhotos.values.toList(),
-            roomWidthFt: size.$1,
+            roomWidthFt: size!.$1,
             roomLengthFt: size.$2,
             tryVision: false,
             layoutType: RoomLayoutType.empty,
@@ -473,7 +488,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         result = await _aiService.scanRoomAccurateFree(
           _freeFrames.isEmpty ? _wallPhotos.values.toList() : _freeFrames,
           layoutType: _layoutType,
-          roomWidthFt: size.$1,
+          roomWidthFt: size!.$1,
           roomLengthFt: size.$2,
           tryVision: false,
         );
@@ -481,16 +496,27 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         result = await _aiService.scanRoom(
           _freeFrames,
           preferGemini: true,
-          roomWidthFt: size.$1,
-          roomLengthFt: size.$2,
+          roomWidthFt: size?.$1,
+          roomLengthFt: size?.$2,
+        );
+      } else if (mode == 'easy_scan') {
+        // Everyday users: photos/video only; auto-scale unless they know size.
+        result = await _aiService.scanRoomAccurateFree(
+          _freeFrames,
+          layoutType: RoomLayoutType.empty,
+          roomWidthFt: _knowRoomSize ? size?.$1 : null,
+          roomLengthFt: _knowRoomSize ? size?.$2 : null,
+          tryVision: true,
+          autoScale: !_knowRoomSize,
         );
       } else {
         result = await _aiService.scanRoomAccurateFree(
           _freeFrames,
           layoutType: RoomLayoutType.empty,
-          roomWidthFt: size.$1,
-          roomLengthFt: size.$2,
+          roomWidthFt: size?.$1,
+          roomLengthFt: size?.$2,
           tryVision: true,
+          autoScale: size == null,
         );
       }
 
@@ -579,61 +605,27 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
                 Card(
-                  color: Colors.teal.shade50,
+                  color: Colors.indigo.shade50,
                   child: const ListTile(
-                    leading: Icon(Icons.straighten),
-                    title: Text('Precision truth: tape + walls'),
+                    leading: Icon(Icons.videocam_outlined),
+                    title: Text('Just film your room'),
                     subtitle: Text(
-                      'Competitors (magicplan, RoomPlan, Houzz Pro) use AR/LiDAR '
-                      'or laser meters — photos alone cannot measure feet accurately. '
-                      'Best Flutter path: measure room + each opening from the left '
-                      'corner while facing the wall (how designers field-measure). '
-                      'Photos are optional AI assist — always verify numbers.',
+                      'For most people: record a slow walkaround video (or photos of each wall). '
+                      'No tape measure needed — AI estimates size from doors & furniture, '
+                      'then you fine-tune in Review. For survey-grade accuracy use '
+                      'Field measure (advanced).',
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _widthController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          labelText: 'Width (${unit.label})',
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                          helperText: 'Wall A / C length',
-                        ),
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Text('×', style: TextStyle(fontSize: 20)),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _lengthController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          labelText: 'Length (${unit.label})',
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                          helperText: 'Wall B / D length',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
                 InputDecorator(
                   decoration: InputDecoration(
-                    labelText: 'Scan method',
+                    labelText: 'How do you want to scan?',
                     border: const OutlineInputBorder(),
                     isDense: true,
                     helperText: _freeVisionReady == true
-                        ? 'Vision ready for assist'
-                        : 'Vision offline — field measure still works',
+                        ? 'AI mapping ready'
+                        : 'AI offline — use Field measure or add a vision key',
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -641,16 +633,20 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       value: _scanMode,
                       items: const [
                         DropdownMenuItem(
+                          value: 'easy_scan',
+                          child: Text('Easy — photos / video (recommended)'),
+                        ),
+                        DropdownMenuItem(
                           value: 'field_measure',
-                          child: Text('Field measure — tape (most accurate)'),
+                          child: Text('Advanced — field measure with tape'),
                         ),
                         DropdownMenuItem(
                           value: 'wall_walk',
-                          child: Text('Wall photos + AI (assistive)'),
+                          child: Text('Advanced — wall photos + AI'),
                         ),
                         DropdownMenuItem(
                           value: 'free_frames',
-                          child: Text('Free photos / video (lowest accuracy)'),
+                          child: Text('Legacy free frames'),
                         ),
                         DropdownMenuItem(
                           value: 'offline_only',
@@ -667,8 +663,150 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     ),
                   ),
                 ),
+                if (_scanMode != 'easy_scan' || _knowRoomSize) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _widthController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Width (${unit.label})',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                            helperText: 'Wall A / C',
+                          ),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('×', style: TextStyle(fontSize: 20)),
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _lengthController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Length (${unit.label})',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                            helperText: 'Wall B / D',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
-                if (_scanMode == 'field_measure') ...[
+                if (_scanMode == 'easy_scan') ...[
+                  Text(
+                    '1. Film every wall (slow walkaround)',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Hold the phone steady. Point at the floor edge and corners. '
+                    'Include doors and windows. 15–40 seconds is ideal.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => _addVideoToFreeFrames(fromCamera: true),
+                        icon: const Icon(Icons.videocam),
+                        label: const Text('Record video'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _addVideoToFreeFrames(fromCamera: false),
+                        icon: const Icon(Icons.video_library),
+                        label: const Text('Pick video'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _addFreeFrame(camera: true),
+                        icon: const Icon(Icons.camera_alt),
+                        label: const Text('Photo'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _addFreeFrame(camera: false),
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text('Gallery'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Frames: ${_freeFrames.length}/8 '
+                    '(video auto-extracts the best frames)',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
+                  if (_freeFrames.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 88,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _freeFrames.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, i) => Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(
+                                _freeFrames[i],
+                                width: 88,
+                                height: 88,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: InkWell(
+                                onTap: () =>
+                                    setState(() => _freeFrames.removeAt(i)),
+                                child: const CircleAvatar(
+                                  radius: 10,
+                                  backgroundColor: Colors.black54,
+                                  child: Icon(Icons.close,
+                                      size: 12, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('I know the room size'),
+                    subtitle: const Text(
+                      'Optional: lock width × length if you measured once',
+                    ),
+                    value: _knowRoomSize,
+                    onChanged: (v) => setState(() => _knowRoomSize = v),
+                  ),
+                  Card(
+                    color: Colors.amber.shade50,
+                    child: const ListTile(
+                      dense: true,
+                      leading: Icon(Icons.info_outline),
+                      title: Text('About accuracy'),
+                      subtitle: Text(
+                        'Easy mode is for arranging furniture, not CAD. '
+                        'We estimate scale from doors (~2.8 ft) and furniture. '
+                        'ARCore depth / custom-trained models come next for higher accuracy.',
+                      ),
+                    ),
+                  ),
+                ] else if (_scanMode == 'field_measure') ...[
                   Text(
                     'Step 2 — Openings on each wall (from LEFT corner facing wall)',
                     style: Theme.of(context).textTheme.titleMedium,

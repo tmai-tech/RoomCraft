@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
+import '../domain/auto_scale.dart';
 import '../domain/furniture_vision_filter.dart';
 import '../domain/scan_keyframes.dart';
 import '../domain/scan_parser.dart';
@@ -18,8 +19,11 @@ import 'secure_key_store.dart';
 
 /// Free multimodal scan via Groq (Llama 4 Scout vision).
 ///
-/// Precision mode (default): multi-frame interior-designer pass for openings +
-/// furniture, then confidence filter. User room size remains authoritative.
+/// **Easy mode** ([autoScale]): no tape required — estimate room size from
+/// photos/video + door/furniture priors, then place openings/furniture.
+///
+/// **Locked mode** (default when size given): multi-frame interior-designer
+/// pass; user room size remains authoritative.
 class FreeVisionScanner {
   static const double minConfidence = 0.72;
 
@@ -52,13 +56,17 @@ class FreeVisionScanner {
     return key != null && key.isNotEmpty;
   }
 
-  /// Full precision scan: architecture (openings) + furniture from many frames.
+  /// Full scan: architecture (openings) + furniture from many frames.
+  ///
+  /// When [autoScale] is true (or width/length are null), estimates size for
+  /// everyday users who only upload photos/video.
   Future<ScanResult> scan({
     required List<File> images,
-    required double roomWidthFt,
-    required double roomLengthFt,
+    double? roomWidthFt,
+    double? roomLengthFt,
     String? apiKey,
     bool precisionMode = true,
+    bool autoScale = false,
   }) async {
     final key = await resolveApiKey(apiKey: apiKey);
     if (key == null || key.isEmpty) {
@@ -69,15 +77,33 @@ class FreeVisionScanner {
     }
 
     // Prefer sharpest diverse frames for the model (token/payload limits).
-    final prepared = await ScanKeyframes.pickSharpest(images, maxKeep: 6);
-    final frames = prepared.isEmpty ? images.take(6).toList() : prepared;
+    final prepared = await ScanKeyframes.pickSharpest(images, maxKeep: 8);
+    final frames = prepared.isEmpty ? images.take(8).toList() : prepared;
 
+    final needAuto =
+        autoScale || roomWidthFt == null || roomLengthFt == null ||
+            roomWidthFt <= 0 ||
+            roomLengthFt <= 0;
+
+    if (needAuto) {
+      return _consumerEasyScan(
+        key: key,
+        frames: frames,
+        frameCount: images.length,
+        userWidthFt: roomWidthFt,
+        userLengthFt: roomLengthFt,
+      );
+    }
+
+    // needAuto already returned — size is locked for precision path.
+    final lockedW = roomWidthFt!;
+    final lockedL = roomLengthFt!;
     if (precisionMode) {
       return _precisionScan(
         key: key,
         frames: frames,
-        roomWidthFt: roomWidthFt,
-        roomLengthFt: roomLengthFt,
+        roomWidthFt: lockedW,
+        roomLengthFt: lockedL,
         frameCount: images.length,
       );
     }
@@ -85,9 +111,179 @@ class FreeVisionScanner {
     return _singlePassScan(
       key: key,
       frames: frames,
-      roomWidthFt: roomWidthFt,
-      roomLengthFt: roomLengthFt,
+      roomWidthFt: lockedW,
+      roomLengthFt: lockedL,
     );
+  }
+
+  /// Consumer path: film/photos → estimated plan without tape knowledge.
+  Future<ScanResult> _consumerEasyScan({
+    required String key,
+    required List<File> frames,
+    required int frameCount,
+    double? userWidthFt,
+    double? userLengthFt,
+  }) async {
+    final warnings = <String>[
+      'Easy scan: $frameCount frame(s) · no tape required',
+      'Walk every wall in the video for best doors/windows/furniture.',
+    ];
+
+    Map<String, dynamic> layoutJson = {};
+    try {
+      layoutJson = await _callVision(
+        key: key,
+        frames: frames,
+        prompt: _consumerLayoutPrompt(),
+        system:
+            'You map rooms for everyday people who do NOT know measurements. '
+            'Estimate a realistic top-down floor plan in feet using multi-view '
+            'cues and standard object sizes (doors ~2.5–3 ft, queen bed ~5×6.5 ft, '
+            'sofa ~6–8 ft). Never invent furniture that is not visible. '
+            'Prefer empty furniture [] over guesses. JSON only.',
+      );
+    } catch (e) {
+      warnings.add('Layout pass failed: $e');
+      final size = AutoScale.resolve(
+        userWidthFt: userWidthFt,
+        userLengthFt: userLengthFt,
+      );
+      return AccurateScan.enforce(
+        widthFt: size.widthFt,
+        lengthFt: size.lengthFt,
+        openings: const [],
+        furniture: const [],
+        warnings: [...warnings, ...size.notes],
+        sourceLabel: 'Easy scan fallback — empty plan',
+        inventDefaultOpenings: false,
+        accuracyScore: size.confidence * 0.5,
+      );
+    }
+
+    final vW = _asDouble(layoutJson['roomWidth']) ??
+        _asDouble(layoutJson['room_width']);
+    final vL = _asDouble(layoutJson['roomLength']) ??
+        _asDouble(layoutJson['room_length']);
+    final vConf = _asDouble(layoutJson['sizeConfidence']) ??
+        _asDouble(layoutJson['size_confidence']) ??
+        0.5;
+
+    // Parse with provisional size so relative positions exist
+    final provisionalW = (vW != null && vW > 0) ? vW : AutoScale.fallbackWidthFt;
+    final provisionalL = (vL != null && vL > 0) ? vL : AutoScale.fallbackLengthFt;
+    layoutJson['roomWidth'] = provisionalW;
+    layoutJson['roomLength'] = provisionalL;
+
+    final filtered = _filterFurnitureMap(layoutJson);
+    if (filtered.dropped > 0) {
+      warnings.add(
+        'Dropped ${filtered.dropped} low-confidence furniture guess(es)',
+      );
+    }
+    final parsed = ScanParser.parse(filtered.map);
+
+    final doorWidths = AutoScale.doorWidthsFromWalls(parsed.walls);
+    // Also read explicit scale cues from model
+    final cues = layoutJson['scaleCues'] ?? layoutJson['scale_cues'];
+    if (cues is List) {
+      for (final c in cues) {
+        if (c is! Map) continue;
+        final type = c['type']?.toString().toLowerCase() ?? '';
+        final w = _asDouble(c['widthFt']) ?? _asDouble(c['width']);
+        if (type.contains('door') && w != null && w > 0) {
+          doorWidths.add(w);
+        }
+      }
+    }
+
+    final furnPriors = <({String type, double widthFt, double lengthFt})>[
+      for (final f in parsed.furniture)
+        (
+          type: f.type.name.toUpperCase(),
+          widthFt: f.widthFt,
+          lengthFt: f.lengthFt,
+        ),
+    ];
+
+    final size = AutoScale.resolve(
+      userWidthFt: userWidthFt,
+      userLengthFt: userLengthFt,
+      visionWidthFt: provisionalW,
+      visionLengthFt: provisionalL,
+      visionSizeConfidence: vConf,
+      doorWidthsFt: doorWidths,
+      furniture: furnPriors,
+    );
+    warnings.addAll(size.notes);
+
+    // Enforce final size (reprojects openings onto clean rectangle)
+    var result = AccurateScan.enforce(
+      widthFt: size.widthFt,
+      lengthFt: size.lengthFt,
+      openings: parsed.walls,
+      furniture: parsed.furniture,
+      warnings: warnings,
+      sourceLabel:
+          'Easy photo/video plan — size estimated for everyday use',
+      inventDefaultOpenings: false,
+      accuracyScore: null,
+    );
+
+    // If provisional size differed a lot, re-map furniture positions
+    if ((provisionalW - size.widthFt).abs() > 0.4 ||
+        (provisionalL - size.lengthFt).abs() > 0.4) {
+      final scaled = AutoScale.rescaleResult(
+        ScanResult(
+          roomWidthFt: provisionalW,
+          roomLengthFt: provisionalL,
+          walls: parsed.walls,
+          furniture: parsed.furniture,
+          warnings: const [],
+        ),
+        newWidthFt: size.widthFt,
+        newLengthFt: size.lengthFt,
+      );
+      result = AccurateScan.enforce(
+        widthFt: size.widthFt,
+        lengthFt: size.lengthFt,
+        openings: scaled.walls,
+        furniture: scaled.furniture,
+        warnings: warnings,
+        sourceLabel:
+            'Easy photo/video plan — size estimated for everyday use',
+        inventDefaultOpenings: false,
+      );
+    }
+
+    final openingsCount = result.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .length;
+    final accuracy = _estimateAccuracy(
+      frames: frames.length,
+      furnitureCount: result.furniture.length,
+      openingsCount: openingsCount,
+      dropped: filtered.dropped,
+      autoScale: !size.usedUserSize,
+      scaleConfidence: size.confidence,
+    );
+    warnings.add(
+      'Layout confidence ~${(accuracy * 100).round()}% '
+      '(more wall coverage + clear doors improve scale)',
+    );
+
+    return result.copyWith(
+      warnings: warnings,
+      accuracyScore: accuracy,
+    );
+  }
+
+  static double? _asDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim());
+    return null;
   }
 
   /// Two-pass: (1) openings / wall features (2) furniture placement.
@@ -307,16 +503,71 @@ class FreeVisionScanner {
     required int furnitureCount,
     required int openingsCount,
     required int dropped,
+    bool autoScale = false,
+    double scaleConfidence = 0.5,
   }) {
-    // Heuristic score for UI — not CAD precision.
-    var score = 0.45;
+    // Heuristic score for UI — not CAD / LiDAR precision.
+    var score = autoScale ? 0.38 : 0.45;
     score += (frames.clamp(1, 8) / 8) * 0.25;
     if (openingsCount > 0) score += 0.12;
     if (furnitureCount > 0) score += 0.12;
     if (dropped == 0 && furnitureCount > 0) score += 0.06;
     if (frames >= 4) score += 0.05;
+    if (autoScale) {
+      score += (scaleConfidence - 0.4).clamp(0.0, 0.2);
+      // Cap: photo-only auto-scale never claims "survey grade"
+      return score.clamp(0.30, 0.82);
+    }
     return score.clamp(0.35, 0.92);
   }
+
+  /// Consumer prompt: estimate size + openings + furniture in one multi-view pass.
+  static String _consumerLayoutPrompt() => '''
+You help regular people map a room from phone photos/video. They do NOT know
+the room measurements. Estimate a realistic top-down plan in FEET.
+
+Cross-check the SAME room across all frames (walkaround). Prefer multi-view
+agreement. Use standard object sizes as your ruler:
+- Interior door clear width ≈ 2.5–3.0 ft (use this as primary scale)
+- Queen bed ≈ 5.0 × 6.5–7.0 ft, twin ≈ 3.2 × 6.5 ft
+- 3-seat sofa ≈ 6.5–8.0 ft long
+- Ceiling in most homes 8–9 ft (depth cue only)
+
+Return ONLY JSON:
+{
+  "roomWidth": 12.0,
+  "roomLength": 14.0,
+  "sizeConfidence": 0.6,
+  "scaleCues": [
+    {"type": "door", "widthFt": 2.8, "note": "main door visible"}
+  ],
+  "openings": [
+    {
+      "type": "door",
+      "start": {"x": 1.0, "y": 0},
+      "end": {"x": 3.8, "y": 0},
+      "confidence": 0.85,
+      "evidence": "door on near wall"
+    }
+  ],
+  "furniture": []
+}
+
+Coordinate system:
+- roomWidth = X (left–right), roomLength = Y (near–far)
+- Origin (0,0) = one corner of the rectangle
+- Place openings ON outer walls (y=0, y=roomLength, x=0, or x=roomWidth)
+- furniture pos = CENTER of piece in feet; dim = footprint feet; rot degrees
+
+STRICT rules:
+1. furniture default []. Never invent bed/sofa/TV/bookshelf not clearly visible.
+2. openings: door | window | balcony only. Empty [] if unsure.
+3. confidence >= 0.75 required or omit item.
+4. sizeConfidence 0–1 honesty about room size estimate.
+5. Prefer a clean rectangular room unless photos clearly show L-shape (still use outer bounds).
+6. If only one wall is visible, still estimate full room but lower sizeConfidence.
+7. Types for furniture: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND
+''';
 
   static Future<String?> _prepareImageDataUrl(File image) async {
     try {

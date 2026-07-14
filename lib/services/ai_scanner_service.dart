@@ -102,7 +102,10 @@ class AIScannerService {
   ///
   /// Does **not** require the user to paste a key. Uses app-bundled keys when
   /// present (`ROOMCRAFT_GROQ_API_KEY` / `ROOMCRAFT_GEMINI_API_KEY`), then user
-  /// keys, then offline empty plan. Room size is always locked.
+  /// keys, then offline empty plan.
+  ///
+  /// When [autoScale] is true, room size is estimated from photos (everyday
+  /// users). When false, size is locked to measurements / defaults.
   Future<ScanResult> scanRoomAccurateFree(
     List<File> images, {
     Map<File, double>? wallMeasurements,
@@ -110,6 +113,7 @@ class AIScannerService {
     double? roomWidthFt,
     double? roomLengthFt,
     bool tryVision = true,
+    bool autoScale = false,
   }) async {
     if (images.isEmpty) {
       throw Exception('Add at least one room photo.');
@@ -129,8 +133,9 @@ class AIScannerService {
         try {
           return await FreeVisionScanner().scan(
             images: images,
-            roomWidthFt: w,
-            roomLengthFt: l,
+            roomWidthFt: autoScale ? roomWidthFt : w,
+            roomLengthFt: autoScale ? roomLengthFt : l,
+            autoScale: autoScale,
           );
         } catch (e) {
           // Fall through — accuracy preserved via offline path

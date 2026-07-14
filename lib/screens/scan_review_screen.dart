@@ -26,11 +26,34 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   late ScanResult _result;
   int? _calibrateWallIndex;
   final _scaleController = TextEditingController();
+  /// null | good | ok | bad — training signal for future model improvement.
+  String? _feedbackRating;
 
   @override
   void initState() {
     super.initState();
     _result = widget.initial;
+  }
+
+  Future<void> _sendFeedback(String rating) async {
+    setState(() => _feedbackRating = rating);
+    await AnalyticsService.instance.scanFeedback(
+      rating: rating,
+      mode: 'review',
+      accuracyScore: _result.accuracyScore,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          rating == 'good'
+              ? 'Thanks — helps us improve AI mapping'
+              : rating == 'ok'
+                  ? 'Noted — we’ll improve scale & placement'
+                  : 'Thanks — bad scans guide the next model update',
+        ),
+      ),
+    );
   }
 
   @override
@@ -649,6 +672,44 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Text(
+                    'How is this plan?',
+                    style: Theme.of(context).textTheme.titleSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Your rating trains better auto-layout over time',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _FeedbackChip(
+                        label: 'Looks right',
+                        icon: Icons.thumb_up_alt_outlined,
+                        selected: _feedbackRating == 'good',
+                        onTap: () => _sendFeedback('good'),
+                      ),
+                      const SizedBox(width: 8),
+                      _FeedbackChip(
+                        label: 'Close',
+                        icon: Icons.thumbs_up_down_outlined,
+                        selected: _feedbackRating == 'ok',
+                        onTap: () => _sendFeedback('ok'),
+                      ),
+                      const SizedBox(width: 8),
+                      _FeedbackChip(
+                        label: 'Off',
+                        icon: Icons.thumb_down_alt_outlined,
+                        selected: _feedbackRating == 'bad',
+                        onTap: () => _sendFeedback('bad'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   FilledButton.icon(
                     onPressed: _openEditor,
                     icon: const Icon(Icons.edit),
@@ -667,6 +728,30 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FeedbackChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FeedbackChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      label: Text(label),
+      avatar: Icon(icon, size: 16),
+      selected: selected,
+      onSelected: (_) => onTap(),
     );
   }
 }
