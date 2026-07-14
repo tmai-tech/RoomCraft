@@ -100,12 +100,12 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           ],
         ),
       );
-      if (share == true && mounted) {
+      if (!mounted) return;
+      if (share == true) {
         await _service.shareLocalReport(result.id);
       }
-      if (mounted && result.cloudOk || result.storageOk) {
-        Navigator.of(context).pop();
-      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
