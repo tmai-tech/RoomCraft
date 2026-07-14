@@ -8,8 +8,9 @@ import 'furniture_bounds.dart';
 
 /// Snap furniture center to grid, room walls, and neighbor edges.
 class FurnitureSnap {
-  /// Default snap distance in pixels (~0.5 ft at 20 px/ft).
-  static const double defaultThresholdPx = 12;
+  /// Soft snap distance in pixels (~0.35 ft at 20 px/ft).
+  /// Lower = freer placement; snap only when close to guides.
+  static const double defaultThresholdPx = 7;
 
   static Offset snap({
     required FurnitureItem item,
@@ -17,15 +18,19 @@ class FurnitureSnap {
     required double pixelsPerFoot,
     required List<FurnitureItem> others,
     double thresholdPx = defaultThresholdPx,
+    /// When false, only snap to walls/neighbors (no grid) for freer layout.
+    bool useGrid = true,
   }) {
     var pos = item.position;
 
-    // 1) Grid (1 ft)
-    final grid = pixelsPerFoot;
-    pos = Offset(
-      (pos.dx / grid).roundToDouble() * grid,
-      (pos.dy / grid).roundToDouble() * grid,
-    );
+    // 1) Fine grid (¼ ft) — less "stuck" than 1 ft snaps
+    if (useGrid) {
+      final grid = pixelsPerFoot * 0.25;
+      pos = Offset(
+        (pos.dx / grid).roundToDouble() * grid,
+        (pos.dy / grid).roundToDouble() * grid,
+      );
+    }
 
     final roomR = FurnitureBounds.roomRect(
       room.widthInFeet,

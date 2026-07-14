@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -72,6 +73,7 @@ class FeedbackService {
     };
 
     await _saveLocal(id, meta, screenshots);
+    final previews = await _buildPreviews(screenshots);
 
     var cloudOk = false;
     var storageOk = false;
@@ -115,6 +117,7 @@ class FeedbackService {
           ...meta,
           'uid': uid,
           'screenshotUrls': urls,
+          'screenshotPreviews': previews,
           'hasLocalScreenshots': screenshots.isNotEmpty,
           'createdAtServer': FieldValue.serverTimestamp(),
         });
@@ -187,6 +190,30 @@ class FeedbackService {
           'To: ${AppConfig.feedbackEmail}\n\n'
           'Screenshots attached for crash/error diagnosis.',
     );
+  }
+
+
+  /// Small JPEG data-URLs for Firestore when Storage is unavailable (max 3).
+  Future<List<String>> _buildPreviews(List<File> screenshots) async {
+    final out = <String>[];
+    for (final file in screenshots.take(3)) {
+      try {
+        final bytes = await file.readAsBytes();
+        final decoded = img.decodeImage(bytes);
+        if (decoded == null) continue;
+        final thumb = img.copyResize(
+          decoded,
+          width: decoded.width >= decoded.height ? 480 : null,
+          height: decoded.height > decoded.width ? 480 : null,
+        );
+        final jpg = img.encodeJpg(thumb, quality: 55);
+        if (jpg.length > 180000) continue; // skip huge
+        out.add('data:image/jpeg;base64,${base64Encode(jpg)}');
+      } catch (e) {
+        debugPrint('preview: $e');
+      }
+    }
+    return out;
   }
 
   String _contentType(String ext) {

@@ -11,7 +11,6 @@ import '../models/room_model.dart';
 import '../models/stroke_model.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/layout/clearances.dart';
-import '../domain/layout/collision.dart';
 import '../domain/layout/furniture_bounds.dart';
 import '../domain/layout/layout_score.dart';
 import '../domain/layout/snap.dart';
@@ -325,10 +324,11 @@ class RoomNotifier extends Notifier<RoomState> {
       state.room.lengthInFeet,
       state.pixelsPerFoot,
     );
+    // Place where user asked — soft clamp only (no auto-shove for "flexibility")
     var newItem = FurnitureItem(
       id: _uuid.v4(),
       type: type,
-      position: _snapToGrid(position),
+      position: position,
       widthInFeet: width,
       lengthInFeet: length,
     );
@@ -337,13 +337,8 @@ class RoomNotifier extends Notifier<RoomState> {
         newItem,
         state.pixelsPerFoot,
         roomR,
+        margin: 1,
       ),
-    );
-    newItem = Collision.resolveOverlaps(
-      newItem,
-      state.room.furniture,
-      state.pixelsPerFoot,
-      roomR,
     );
     state = state.copyWith(
       room: state.room.copyWith(
@@ -466,6 +461,8 @@ class RoomNotifier extends Notifier<RoomState> {
       );
       final ids = state.effectiveSelection;
 
+      // Soft snap + stay in room. Do NOT auto-push off overlaps — user
+      // can place freely; red collision tips still show via _refreshLayout.
       final furniture = state.room.furniture.map((item) {
         if (!ids.contains(item.id)) return item;
         final others =
@@ -476,6 +473,7 @@ class RoomNotifier extends Notifier<RoomState> {
             room: state.room,
             pixelsPerFoot: state.pixelsPerFoot,
             others: others,
+            thresholdPx: 7,
           ),
         );
         next = next.copyWith(
@@ -483,14 +481,10 @@ class RoomNotifier extends Notifier<RoomState> {
             next,
             state.pixelsPerFoot,
             roomR,
+            margin: 1,
           ),
         );
-        return Collision.resolveOverlaps(
-          next,
-          others,
-          state.pixelsPerFoot,
-          roomR,
-        );
+        return next;
       }).toList();
 
       state = state.copyWith(
@@ -701,7 +695,8 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 
   Offset _snapToGrid(Offset pos) {
-    final double snap = state.pixelsPerFoot;
+    // ¼ ft grid — freer than full-foot snaps for manual placement
+    final double snap = state.pixelsPerFoot * 0.25;
     return Offset(
       (pos.dx / snap).roundToDouble() * snap,
       (pos.dy / snap).roundToDouble() * snap,

@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+21 (2026-07-14)
+
+### Fixes from user feedback (report 94510d3e-bd8)
+- **Manual room size**: creating a manual plan asks for width × length (no mystery 10×10 default).
+- **Furniture placement**: freer drag — soft ¼-ft snap, no auto-shove when items overlap (collisions still highlighted).
+- **Feedback previews**: embed small screenshot previews in Firestore when Storage is unavailable so the team can review images.
+
 ## 1.0.0-beta.1+20 (2026-07-14)
 
 ### Feedback form with screenshots

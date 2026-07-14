@@ -113,11 +113,87 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _createNewManual() {
+  Future<void> _createNewManual() async {
+    final size = await _promptRoomSize();
+    if (!mounted || size == null) return;
     ref.invalidate(roomProvider);
+    // Reading after invalidate creates a fresh editor room, then apply size.
+    ref.read(roomProvider);
+    ref.read(roomProvider.notifier).updateRoomSize(size.$1, size.$2);
+    ref.read(roomProvider.notifier).setTool(ToolMode.wall);
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const BlueprintScreen()))
         .then((_) => _loadRooms());
+  }
+
+  /// Ask for room size so manual plans are not stuck at a mystery 10×10 box.
+  Future<(double, double)?> _promptRoomSize() async {
+    final wCtrl = TextEditingController(text: '12');
+    final lCtrl = TextEditingController(text: '14');
+    final unit = _units;
+    final result = await showDialog<(double, double)>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New room size'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Set the outer room size first (not a fixed 10×10). '
+              'You can change it later in the editor.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: wCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Width (${unit.label})',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: lCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Length (${unit.label})',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final wDisp = double.tryParse(wCtrl.text.trim());
+              final lDisp = double.tryParse(lCtrl.text.trim());
+              if (wDisp == null ||
+                  lDisp == null ||
+                  wDisp <= 0 ||
+                  lDisp <= 0) {
+                return;
+              }
+              Navigator.pop(ctx, (
+                LengthFormat.displayToFeet(wDisp, unit),
+                LengthFormat.displayToFeet(lDisp, unit),
+              ));
+            },
+            child: const Text('Create room'),
+          ),
+        ],
+      ),
+    );
+    wCtrl.dispose();
+    lCtrl.dispose();
+    return result;
   }
 
   void _createNewAI() {
