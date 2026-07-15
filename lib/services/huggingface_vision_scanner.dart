@@ -12,6 +12,7 @@ import '../domain/scan_refine.dart';
 import '../domain/vision_layout_prompts.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
+import 'free_vision_scanner.dart';
 import 'openai_vision_client.dart';
 import 'secure_key_store.dart';
 
