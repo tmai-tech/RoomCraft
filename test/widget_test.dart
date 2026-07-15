@@ -35,10 +35,8 @@ void main() {
     await tester.tap(find.text('New Blueprint'));
     await tester.pumpAndSettle();
 
-    // Primary path is Scan room AI → simple gallery/camera UI.
-    final scan = find.textContaining('Scan room');
-    expect(scan, findsWidgets);
-    await tester.tap(scan.first);
+    // Sheet option opens ScannerScreen (simple Gallery / Camera / Video).
+    await tester.tap(find.text('Scan with AI'));
     await tester.pumpAndSettle();
 
     expect(find.text('Gallery photos'), findsOneWidget);
