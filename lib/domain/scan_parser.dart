@@ -224,10 +224,11 @@ class ScanParser {
       );
     }
 
-    var walls = freeWalls;
-    if (walls.isEmpty) {
-      warnings.add('No openings detected — rectangular outline only');
-      walls = [
+    final outline = freeWalls.where((s) => s.type == StrokeType.wall).toList();
+    final openingsOnly =
+        freeWalls.where((s) => s.type != StrokeType.wall).toList();
+    final walls = <ScanWallSegment>[
+      if (outline.isEmpty) ...[
         ScanWallSegment(
           type: StrokeType.wall,
           startFt: Offset.zero,
@@ -248,7 +249,16 @@ class ScanParser {
           startFt: Offset(0, roomLength),
           endFt: Offset.zero,
         ),
-      ];
+      ] else
+        ...outline,
+      ...openingsOnly,
+    ];
+    if (outline.isEmpty) {
+      warnings.add(
+        openingsOnly.isEmpty
+            ? 'No walls detected — created rectangular outline'
+            : 'Added rectangular outline around openings',
+      );
     }
 
     return _normalize(

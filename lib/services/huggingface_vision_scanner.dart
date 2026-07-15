@@ -128,11 +128,28 @@ class HuggingFaceVisionScanner {
       'Model: $modelLabel',
     ];
 
-    final layoutJson = await client.completeJson(
+    var inventoryHint = '';
+    try {
+      final inv = await client.completeJson(
+        apiKey: key,
+        frames: frames,
+        prompt: VisionLayoutPrompts.inventoryPass(),
+        system: VisionLayoutPrompts.inventorySystem,
+        temperature: 0.0,
+      );
+      inventoryHint = FreeVisionScanner.formatInventoryHintPublic(inv);
+      warnings.add('Inventory: $inventoryHint');
+    } catch (_) {}
+
+    var layoutJson = await client.completeJson(
       apiKey: key,
       frames: frames,
-      prompt: VisionLayoutPrompts.consumerLayout(),
+      prompt: VisionLayoutPrompts.consumerLayout(inventoryHint: inventoryHint),
       system: VisionLayoutPrompts.consumerSystem,
+    );
+    layoutJson = FreeVisionScanner.applyInventoryGatePublic(
+      layoutJson,
+      inventoryHint,
     );
 
     final vW = _asDouble(layoutJson['roomWidth']) ??

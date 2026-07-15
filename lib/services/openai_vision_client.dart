@@ -27,7 +27,7 @@ class OpenAiVisionClient {
     required List<File> frames,
     required String prompt,
     required String system,
-    double temperature = 0.1,
+    double temperature = 0.05,
   }) async {
     final content = <Map<String, dynamic>>[
       {'type': 'text', 'text': prompt},

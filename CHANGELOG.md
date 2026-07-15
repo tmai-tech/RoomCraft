@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+26 (2026-07-15)
+
+### Accuracy vs feedback 5244fa22 + e89c702e
+- **Root cause of “random”**: geometry refine always re-snapped furniture to nearest wall after correct wall-anchored placement — **fixed** (only floating pieces snap).
+- **Inventory → place**: first pass lists what exists (no invented bed/sofa/TV); second pass places only those items on walls.
+- Softer catalog size overrides so wardrobe/desk footprints match photos.
+- Feedback previews: up to **5** smaller thumbs so input + output plans both upload.
+
 ## 1.0.0-beta.1+25 (2026-07-15)
 
 ### Simple scan + less random layout (feedback 53a501e6-018)

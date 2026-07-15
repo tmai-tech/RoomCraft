@@ -193,21 +193,22 @@ class FeedbackService {
   }
 
 
-  /// Small JPEG data-URLs for Firestore when Storage is unavailable (max 3).
+  /// Small JPEG data-URLs for Firestore when Storage is unavailable (max 5).
+  /// Keep thumbs small so input + output plans both fit (feedback 5244fa22).
   Future<List<String>> _buildPreviews(List<File> screenshots) async {
     final out = <String>[];
-    for (final file in screenshots.take(3)) {
+    for (final file in screenshots.take(5)) {
       try {
         final bytes = await file.readAsBytes();
         final decoded = img.decodeImage(bytes);
         if (decoded == null) continue;
         final thumb = img.copyResize(
           decoded,
-          width: decoded.width >= decoded.height ? 480 : null,
-          height: decoded.height > decoded.width ? 480 : null,
+          width: decoded.width >= decoded.height ? 360 : null,
+          height: decoded.height > decoded.width ? 360 : null,
         );
-        final jpg = img.encodeJpg(thumb, quality: 55);
-        if (jpg.length > 180000) continue; // skip huge
+        final jpg = img.encodeJpg(thumb, quality: 48);
+        if (jpg.length > 120000) continue;
         out.add('data:image/jpeg;base64,${base64Encode(jpg)}');
       } catch (e) {
         debugPrint('preview: $e');

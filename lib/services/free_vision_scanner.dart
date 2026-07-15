@@ -133,12 +133,28 @@ class FreeVisionScanner {
       'Walk every wall in the video for best doors/windows/furniture.',
     ];
 
+    // Pass 1 — inventory (what exists) so placement cannot invent beds/sofas.
+    var inventoryHint = '';
+    try {
+      final inv = await _client.completeJson(
+        apiKey: key,
+        frames: frames,
+        prompt: VisionLayoutPrompts.inventoryPass(),
+        system: VisionLayoutPrompts.inventorySystem,
+        temperature: 0.0,
+      );
+      inventoryHint = _formatInventoryHint(inv);
+      warnings.add('Inventory: $inventoryHint');
+    } catch (e) {
+      warnings.add('Inventory pass skipped: $e');
+    }
+
     Map<String, dynamic> layoutJson = {};
     try {
       layoutJson = await _client.completeJson(
         apiKey: key,
         frames: frames,
-        prompt: VisionLayoutPrompts.consumerLayout(),
+        prompt: VisionLayoutPrompts.consumerLayout(inventoryHint: inventoryHint),
         system: VisionLayoutPrompts.consumerSystem,
       );
     } catch (e) {
@@ -158,6 +174,9 @@ class FreeVisionScanner {
         accuracyScore: size.confidence * 0.5,
       );
     }
+
+    // Strip invented types that inventory said are absent.
+    layoutJson = _applyInventoryGate(layoutJson, inventoryHint);
 
     final vW = _asDouble(layoutJson['roomWidth']) ??
         _asDouble(layoutJson['room_width']);
@@ -285,6 +304,68 @@ class FreeVisionScanner {
     if (v is num) return v.toDouble();
     if (v is String) return double.tryParse(v.trim());
     return null;
+  }
+
+  /// Public for HuggingFaceVisionScanner inventory gate.
+  static String formatInventoryHintPublic(Map<String, dynamic> inv) =>
+      _formatInventoryHint(inv);
+
+  static Map<String, dynamic> applyInventoryGatePublic(
+    Map<String, dynamic> layout,
+    String inventoryHint,
+  ) =>
+      _applyInventoryGate(layout, inventoryHint);
+
+  static String _formatInventoryHint(Map<String, dynamic> inv) {
+    bool b(String k) {
+      final v = inv[k];
+      if (v is bool) return v;
+      if (v is String) return v.toLowerCase() == 'true';
+      return false;
+    }
+
+    final parts = <String>[];
+    if (b('hasWardrobe')) parts.add('MUST include WARDROBE');
+    if (b('hasDeskOrTable')) parts.add('MUST include TABLE (desk)');
+    if (b('hasChair')) parts.add('include CHAIR if seen');
+    if (!b('hasBed')) parts.add('NO BED');
+    if (!b('hasSofa')) parts.add('NO SOFA');
+    if (!b('hasTvUnit')) parts.add('NO TV_UNIT');
+    if (b('hasMeshOrSlidingGlass')) {
+      parts.add('include balcony or large window for mesh/glass sliding');
+    }
+    final doors = inv['doorCount'];
+    if (doors is num && doors > 0) {
+      parts.add('about ${doors.toInt()} door opening(s)');
+    }
+    final notes = inv['notes']?.toString();
+    if (notes != null && notes.isNotEmpty) parts.add('notes: $notes');
+    return parts.isEmpty ? 'use photos only' : parts.join('; ');
+  }
+
+  static Map<String, dynamic> _applyInventoryGate(
+    Map<String, dynamic> layout,
+    String inventoryHint,
+  ) {
+    if (inventoryHint.isEmpty) return layout;
+    final forbid = <String>{};
+    if (inventoryHint.contains('NO BED')) forbid.add('BED');
+    if (inventoryHint.contains('NO SOFA')) forbid.add('SOFA');
+    if (inventoryHint.contains('NO TV_UNIT')) forbid.add('TV_UNIT');
+    if (forbid.isEmpty) return layout;
+
+    final raw = layout['furniture'];
+    if (raw is! List) return layout;
+    final kept = <dynamic>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final t = item['type']?.toString().toUpperCase() ?? '';
+      if (forbid.any((f) => t.contains(f))) continue;
+      kept.add(item);
+    }
+    final out = Map<String, dynamic>.from(layout);
+    out['furniture'] = kept;
+    return out;
   }
 
   /// Two-pass: (1) openings / wall features (2) furniture placement.

@@ -10,14 +10,38 @@ class VisionLayoutPrompts {
 
   /// System message for consumer easy scan (estimate size + full layout).
   static const consumerSystem = '''
-You map real rooms from phone photos/video for a floor-plan app.
-Estimate a realistic top-down plan in feet using multi-view cues and standard
-object sizes (doors ~2.5–3 ft, queen bed ~5×6.5 ft, sofa ~6–8 ft long).
+You map real rooms from phone photos for a floor-plan app.
+You are graded on matching the photos — not inventing a typical bedroom.
 
-LIST every clearly visible major piece of furniture (bed, sofa, wardrobe, TV unit,
-table, chairs, nightstands, bookshelf). Missing visible furniture is a failure.
-Do NOT invent pieces that are not in any frame. Prefer a complete real inventory
-over an empty list. JSON only.
+1. LIST only furniture clearly visible.
+2. NEVER invent bed/sofa/TV unit if not in photos.
+3. Sliding wardrobe/cupboard = WARDROBE (often the largest piece).
+4. Computer desk = TABLE. Mesh/glass full-height sliding = balcony.
+5. wall + fromLeft + depth for every item. JSON only.
+''';
+
+  /// Pass 1: inventory only.
+  static const inventorySystem = '''
+Strict room inventory from photos. List what exists. Do not invent. Do not place. JSON only.
+''';
+
+  static String inventoryPass() => '''
+Same room, multiple photos. Return ONLY:
+
+{
+  "hasWardrobe": true,
+  "hasDeskOrTable": true,
+  "hasBed": false,
+  "hasSofa": false,
+  "hasTvUnit": false,
+  "hasChair": false,
+  "doorCount": 2,
+  "hasMeshOrSlidingGlass": true,
+  "hasWindow": false,
+  "notes": "pink sliding wardrobe, desk with monitors, mesh doors, two openings"
+}
+
+Booleans MUST match photos. hasBed/hasSofa/hasTvUnit true only if clearly visible.
 ''';
 
   /// System for architecture-only pass.
@@ -31,17 +55,16 @@ Do NOT list freestanding furniture. JSON only. Room size is fixed by the user.
   /// System for furniture-only pass.
   static const furnitureSystem = '''
 You document freestanding furniture for a top-down layout app.
-List EVERY clearly visible major piece (bed, sofa, wardrobe, TV stand/unit, table,
-desk, chairs, nightstands, bookshelf). Missing a bed or sofa that is in the photos
-is a failure. One entry per physical object (merge multi-view of the same piece).
-Never invent a full room set that is not visible. JSON only.
+List EVERY clearly visible major piece. Wardrobe and desk are critical when present.
+Do NOT invent bed/sofa/TV if not visible. One entry per object. JSON only.
 ''';
 
   /// Consumer: size + openings + furniture in one pass.
   /// Prefer wall-anchored fields (stable) over free XY (random).
-  static String consumerLayout() => '''
+  static String consumerLayout({String inventoryHint = ''}) => '''
 Map this room from phone photos/video into a top-down plan in FEET.
 Cross-check the SAME room across all frames.
+${inventoryHint.isEmpty ? '' : '\nINVENTORY CONSTRAINT (from pass 1 — respect exactly):\n$inventoryHint\n'}
 
 Scale cues: interior door ≈ 2.5–3.0 ft; wardrobe depth ≈ 1.5–2.5 ft;
 desk/table depth ≈ 1.5–2.5 ft; queen bed ≈ 5×6.5 ft.
@@ -105,12 +128,15 @@ Return ONLY JSON:
 Rules:
 1. List ALL clearly visible major pieces. Empty furniture [] only if room is empty.
 2. Types: $furnitureTypes (desk→TABLE, closet/sliding wardrobe→WARDROBE, couch→SOFA).
-3. openings types: door | window | balcony. Use balcony for wide mesh/glass sliding openings.
+3. openings: door | window | balcony. Wide mesh/glass sliding → type "balcony".
 4. EVERY furniture item MUST include wall + fromLeft + depth + dim.
 5. EVERY opening MUST include wall + fromLeft + width.
 6. confidence ≥ 0.55 when clearly visible.
 7. Rectangular outer bounds only.
-8. Do not invent a bed/sofa that is not in the photos.
+8. NEVER invent bed/sofa/TV if not in photos.
+9. Put the long wardrobe on ONE wall (fromLeft near 0 if it fills most of the wall).
+10. Desk against a wall near monitors; openings on walls where door frames appear.
+11. Keep relative positions consistent across frames (same corner relations).
 ''';
 
   static String architecture(double w, double l) => '''

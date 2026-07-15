@@ -33,7 +33,7 @@ void main() {
     expect(out.accuracyScore!, greaterThan(0.5));
   });
 
-  test('refine snaps furniture near wall', () {
+  test('refine keeps wall-anchored piece near same wall', () {
     final input = ScanResult(
       roomWidthFt: 12,
       roomLengthFt: 14,
@@ -41,7 +41,7 @@ void main() {
       furniture: [
         const ScanFurnitureHint(
           type: FurnitureType.sofa,
-          posFt: Offset(6, 0.8), // near south wall
+          posFt: Offset(6, 0.8), // already near south wall
           widthFt: 7,
           lengthFt: 3,
         ),
@@ -49,8 +49,34 @@ void main() {
     );
     final out = ScanRefine.refine(input);
     final sofa = out.furniture.first;
-    // Should be closer to wall (small y)
+    // Must NOT be thrown to another wall (random scramble)
     expect(sofa.posFt.dy, lessThan(3.0));
+  });
+
+  test('refine pins only truly floating furniture', () {
+    final input = ScanResult(
+      roomWidthFt: 12,
+      roomLengthFt: 14,
+      walls: const [],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(6, 7), // room center — floating
+          widthFt: 3,
+          lengthFt: 2,
+        ),
+      ],
+    );
+    final out = ScanRefine.refine(input);
+    final t = out.furniture.first;
+    // Center piece should move toward a wall
+    final minD = [
+      t.posFt.dy,
+      14 - t.posFt.dy,
+      t.posFt.dx,
+      12 - t.posFt.dx,
+    ].reduce((a, b) => a < b ? a : b);
+    expect(minD, lessThan(2.5));
   });
 
   test('door width prior applied', () {

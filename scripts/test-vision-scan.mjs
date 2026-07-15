@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 /**
- * Live vision scan smoke test against real room photos (feedback 53a501e6-018).
- * Usage:
- *   ROOMCRAFT_GROQ_API_KEY=gsk_... node scripts/test-vision-scan.mjs [image...]
- *   Or CI: images from /tmp/roomcraft-feedback/53a501e6-018_preview_*.jpg
+ * Live vision smoke test — feedback room photos (5244fa22 / 53a501e6).
+ * Usage: ROOMCRAFT_GROQ_API_KEY=gsk_... node scripts/test-vision-scan.mjs [images...]
  */
 import fs from 'fs';
 import path from 'path';
@@ -18,11 +16,22 @@ const args = process.argv.slice(2);
 let images = args.filter((p) => fs.existsSync(p));
 if (images.length === 0) {
   const dir = '/tmp/roomcraft-feedback';
-  if (fs.existsSync(dir)) {
-    images = fs
-      .readdirSync(dir)
-      .filter((f) => f.startsWith('53a501e6-018_preview_') && f.endsWith('.jpg'))
-      .map((f) => path.join(dir, f));
+  const fix = 'test/fixtures/room_feedback';
+  for (const d of [dir, fix]) {
+    if (!fs.existsSync(d)) continue;
+    const found = fs
+      .readdirSync(d)
+      .filter(
+        (f) =>
+          (f.startsWith('53a501e6-018_preview_') ||
+            f.startsWith('5244fa22-4dd_preview_')) &&
+          f.endsWith('.jpg'),
+      )
+      .map((f) => path.join(d, f));
+    if (found.length) {
+      images = found;
+      break;
+    }
   }
 }
 if (images.length === 0) {
@@ -30,91 +39,87 @@ if (images.length === 0) {
   process.exit(1);
 }
 
-const system = `You map real rooms from phone photos for a floor-plan app.
-Estimate a realistic top-down plan in feet. LIST every clearly visible major piece
-(wardrobe, desk/table, chairs). Missing visible furniture is a failure.
-Use wall + fromLeft + depth for EVERY furniture/opening (not free XY). JSON only.`;
-
-const prompt = `Map this room from the photos. Same room, multiple angles.
-Scale: door ~2.8 ft, wardrobe depth ~2 ft.
-
-CRITICAL: use wall-anchored fields only:
-- wall: south|north|east|west
-- fromLeft: feet from left corner while facing that wall from inside
-- depth: feet into room from wall (furniture only)
-
-Return ONLY JSON:
-{
-  "roomWidth": 12.0,
-  "roomLength": 14.0,
-  "sizeConfidence": 0.65,
-  "openings": [
-    {"type": "door", "wall": "south", "fromLeft": 1.0, "width": 2.8, "confidence": 0.9, "evidence": "entry door"},
-    {"type": "balcony", "wall": "east", "fromLeft": 0.5, "width": 7.0, "confidence": 0.85, "evidence": "mesh sliding doors"}
-  ],
-  "furniture": [
-    {"type": "WARDROBE", "wall": "north", "fromLeft": 4.0, "depth": 1.2, "dim": {"w": 8.0, "l": 2.0}, "confidence": 0.9, "evidence": "pink/white sliding wardrobe"},
-    {"type": "TABLE", "wall": "east", "fromLeft": 3.0, "depth": 1.5, "dim": {"w": 4.0, "l": 2.0}, "confidence": 0.85, "evidence": "desk with monitors"}
-  ]
-}
-Types: BED, WARDROBE, SOFA, TABLE, CHAIR, TV_UNIT, BOOKSHELF, NIGHTSTAND`;
-
-// Human expected plan for feedback photos (study + wardrobe room)
 const expected = {
   mustHaveTypes: ['WARDROBE', 'TABLE'],
-  niceTypes: ['CHAIR', 'DOOR'],
+  forbidTypes: ['BED', 'SOFA', 'TV_UNIT'],
+  minOpenings: 1,
   description:
-    'Small room: long pink/white sliding wardrobe, mesh sliding doors/balcony, desk with monitors/laptops, 1–2 interior doors, AC. No sofa/bed required if not visible.',
+    'Study room: WARDROBE + TABLE required; no invented BED/SOFA/TV; wall-anchored.',
 };
 
-const content = [{ type: 'text', text: prompt }];
-for (const p of images) {
-  const b64 = fs.readFileSync(p).toString('base64');
-  content.push({
-    type: 'image_url',
-    image_url: { url: `data:image/jpeg;base64,${b64}` },
+async function callVision(systemMsg, userText) {
+  const content = [{ type: 'text', text: userText }];
+  for (const p of images) {
+    const b64 = fs.readFileSync(p).toString('base64');
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:image/jpeg;base64,${b64}` },
+    });
+  }
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      temperature: 0.05,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemMsg },
+        { role: 'user', content },
+      ],
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(json).slice(0, 400));
+  return JSON.parse(json.choices?.[0]?.message?.content || '{}');
+}
+
+console.log('Images:', images.map((p) => path.basename(p)).join(', '));
+console.log('Pass 1 inventory…');
+const inv = await callVision(
+  'Strict inventory. Do not invent. JSON only.',
+  `Same room photos. Return ONLY:
+{"hasWardrobe":true,"hasDeskOrTable":true,"hasBed":false,"hasSofa":false,"hasTvUnit":false,"hasChair":false,"doorCount":2,"hasMeshOrSlidingGlass":true,"notes":"..."}
+Booleans must match photos.`,
+);
+console.log('Inventory:', JSON.stringify(inv));
+
+const invHint = [
+  inv.hasWardrobe ? 'MUST include WARDROBE' : null,
+  inv.hasDeskOrTable ? 'MUST include TABLE' : null,
+  !inv.hasBed ? 'NO BED' : null,
+  !inv.hasSofa ? 'NO SOFA' : null,
+  !inv.hasTvUnit ? 'NO TV_UNIT' : null,
+  inv.hasMeshOrSlidingGlass ? 'include balcony for mesh glass' : null,
+]
+  .filter(Boolean)
+  .join('; ');
+
+console.log('Pass 2 layout…');
+let plan = await callVision(
+  'Map room to top-down plan. Match inventory. wall+fromLeft+depth. Never invent forbidden types. JSON only.',
+  `INVENTORY: ${invHint}
+Scale door~2.8ft. Return roomWidth, roomLength, openings[{type,wall,fromLeft,width,confidence,evidence}], furniture[{type,wall,fromLeft,depth,dim:{w,l},confidence,evidence}].
+Types: BED,WARDROBE,SOFA,TABLE,CHAIR,TV_UNIT,BOOKSHELF,NIGHTSTAND`,
+);
+
+const forbid = [];
+if (!inv.hasBed) forbid.push('BED');
+if (!inv.hasSofa) forbid.push('SOFA');
+if (!inv.hasTvUnit) forbid.push('TV_UNIT');
+if (Array.isArray(plan.furniture)) {
+  plan.furniture = plan.furniture.filter((f) => {
+    const t = String(f.type || '').toUpperCase();
+    return !forbid.some((x) => t.includes(x));
   });
 }
 
-const body = {
-  model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-  temperature: 0.1,
-  response_format: { type: 'json_object' },
-  messages: [
-    { role: 'system', content: system },
-    { role: 'user', content },
-  ],
-};
-
-console.log('Images:', images.map((p) => path.basename(p)).join(', '));
-console.log('Calling Groq Llama 4 Scout…');
-
-const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-  method: 'POST',
-  headers: {
-    Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify(body),
-});
-
-const json = await res.json();
-if (!res.ok) {
-  console.error('API error', res.status, JSON.stringify(json).slice(0, 500));
-  process.exit(1);
-}
-
-const text = json.choices?.[0]?.message?.content || '';
-let plan;
-try {
-  plan = JSON.parse(text);
-} catch {
-  console.error('Bad JSON', text.slice(0, 800));
-  process.exit(1);
-}
-
 const outPath = '/tmp/roomcraft-feedback/live_scan_result.json';
-fs.writeFileSync(outPath, JSON.stringify(plan, null, 2));
+fs.mkdirSync(path.dirname(outPath), { recursive: true });
+fs.writeFileSync(outPath, JSON.stringify({ inventory: inv, plan }, null, 2));
 console.log('\n=== MODEL OUTPUT ===');
 console.log(JSON.stringify(plan, null, 2));
 console.log('\nWrote', outPath);
@@ -122,18 +127,25 @@ console.log('\nWrote', outPath);
 const furn = Array.isArray(plan.furniture) ? plan.furniture : [];
 const types = furn.map((f) => String(f.type || '').toUpperCase());
 const openings = plan.openings || plan.walls || [];
-console.log('\n=== EXPECTED (human, from photos) ===');
-console.log(expected.description);
-console.log('Must have types:', expected.mustHaveTypes.join(', '));
-
 const missing = expected.mustHaveTypes.filter((t) => !types.includes(t));
+const invented = expected.forbidTypes.filter((t) =>
+  types.some((x) => x.includes(t)),
+);
+const wallAnchored =
+  furn.length > 0 && furn.every((f) => f.wall && f.fromLeft != null);
 const score = {
-  roomSize: plan.roomWidth && plan.roomLength ? 'ok' : 'missing',
   furnitureCount: furn.length,
   types,
   missingMustHave: missing,
+  inventedForbidden: invented,
   openingsCount: Array.isArray(openings) ? openings.length : 0,
-  pass: missing.length === 0 && furn.length >= 2,
+  wallAnchored,
+  pass:
+    missing.length === 0 &&
+    invented.length === 0 &&
+    furn.length >= 2 &&
+    wallAnchored &&
+    (Array.isArray(openings) ? openings.length : 0) >= expected.minOpenings,
 };
 console.log('\n=== SCORE ===');
 console.log(JSON.stringify(score, null, 2));

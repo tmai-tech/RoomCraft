@@ -197,67 +197,76 @@ class ScanRefine {
     List<String> notes,
   ) {
     var wallSnaps = 0;
+    var kept = 0;
     final out = <ScanFurnitureHint>[];
+
+    // Feedback 5244fa22: nearest-wall re-snap scrambled correct wall-anchored
+    // layouts into "random" plans. Only snap pieces floating in open floor.
+    const floatThresholdFt = 2.2;
 
     for (final raw in items) {
       if (!raw.included) continue;
       final catalog = FurnitureCatalog.entryFor(raw.type);
       var fw = raw.widthFt;
       var fl = raw.lengthFt;
-      // Prefer catalog footprints — free vision invents random sizes.
       final cw = catalog.defaultWidthFt;
       final cl = catalog.defaultLengthFt;
-      if (fw < 0.8 || fl < 0.8 || fw > cw * 1.8 || fl > cl * 1.8 ||
-          fw < cw * 0.45 || fl < cl * 0.45) {
+      // Soft size fix only for absurd values — keep vision sizes when plausible
+      // (wardrobe spans and desk depths matter for matching photos).
+      if (fw < 0.6 || fl < 0.6 || fw > w * 0.95 || fl > l * 0.95) {
+        fw = cw;
+        fl = cl;
+      } else if (fw > cw * 3.0 || fl > cl * 3.0 || fw < cw * 0.25 || fl < cl * 0.25) {
         fw = cw;
         fl = cl;
       }
 
       var pos = raw.posFt;
-      // Distance to each wall (center to wall)
-      final dS = pos.dy; // south y=0
+      var rot = raw.rotationRad;
+      final dS = pos.dy;
       final dN = l - pos.dy;
       final dW = pos.dx;
       final dE = w - pos.dx;
       final minD = [dS, dN, dW, dE].reduce(math.min);
-      // Depth against wall uses the smaller footprint axis.
       final halfDeep = math.min(fw, fl) / 2;
       final halfAlong = math.max(fw, fl) / 2;
 
-      // Always pin to nearest wall — floating freeform XY is the main
-      // source of "random" scan layouts for consumer photo mode.
-      const near = 4.5; // ft — almost whole room for typical bedrooms
-      late Offset snappedPos;
-      late double rot;
-      if (minD == dS || (minD >= near && dS <= dN && dS <= dW && dS <= dE)) {
-        snappedPos = Offset(
-          pos.dx.clamp(halfAlong + 0.1, w - halfAlong - 0.1),
-          halfDeep + 0.15,
-        );
-        rot = 0;
-      } else if (minD == dN) {
-        snappedPos = Offset(
-          pos.dx.clamp(halfAlong + 0.1, w - halfAlong - 0.1),
-          l - halfDeep - 0.15,
-        );
-        rot = math.pi;
-      } else if (minD == dW) {
-        snappedPos = Offset(
-          halfDeep + 0.15,
-          pos.dy.clamp(halfAlong + 0.1, l - halfAlong - 0.1),
-        );
-        rot = math.pi / 2;
+      final floating = minD > floatThresholdFt + halfDeep;
+      if (floating) {
+        // Truly free-floating XY from monocular guess — pin to nearest wall.
+        late Offset snappedPos;
+        if (minD == dS || (dS <= dN && dS <= dW && dS <= dE)) {
+          snappedPos = Offset(
+            pos.dx.clamp(halfAlong + 0.1, w - halfAlong - 0.1),
+            halfDeep + 0.15,
+          );
+          rot = 0;
+        } else if (minD == dN) {
+          snappedPos = Offset(
+            pos.dx.clamp(halfAlong + 0.1, w - halfAlong - 0.1),
+            l - halfDeep - 0.15,
+          );
+          rot = math.pi;
+        } else if (minD == dW) {
+          snappedPos = Offset(
+            halfDeep + 0.15,
+            pos.dy.clamp(halfAlong + 0.1, l - halfAlong - 0.1),
+          );
+          rot = math.pi / 2;
+        } else {
+          snappedPos = Offset(
+            w - halfDeep - 0.15,
+            pos.dy.clamp(halfAlong + 0.1, l - halfAlong - 0.1),
+          );
+          rot = -math.pi / 2;
+        }
+        wallSnaps++;
+        pos = snappedPos;
       } else {
-        snappedPos = Offset(
-          w - halfDeep - 0.15,
-          pos.dy.clamp(halfAlong + 0.1, l - halfAlong - 0.1),
-        );
-        rot = -math.pi / 2;
+        kept++;
+        // Already near a wall (wall-anchored scan) — keep placement/rotation.
       }
-      wallSnaps++;
-      pos = snappedPos;
 
-      // Keep fully inside
       final hx = fw / 2;
       final hy = fl / 2;
       pos = Offset(
@@ -276,7 +285,10 @@ class ScanRefine {
     }
 
     if (wallSnaps > 0) {
-      notes.add('Snapped $wallSnaps piece(s) to nearest wall (layout refine)');
+      notes.add(
+        'Pinned $wallSnaps floating piece(s) to nearest wall '
+        '($kept already wall-placed kept as-is)',
+      );
     }
     return out;
   }
