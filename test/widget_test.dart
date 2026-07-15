@@ -35,8 +35,18 @@ void main() {
     await tester.tap(find.text('New Blueprint'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(ListTile, 'Draw manually'));
+    // Manual path may prompt for room size after choosing Draw manually.
+    final draw = find.textContaining('Draw manually');
+    expect(draw, findsWidgets);
+    await tester.tap(draw.first);
     await tester.pumpAndSettle();
+
+    // Size dialog (if shown)
+    final create = find.text('Create');
+    if (create.evaluate().isNotEmpty) {
+      await tester.tap(create);
+      await tester.pumpAndSettle();
+    }
 
     expect(find.text('Pan'), findsOneWidget);
     expect(find.text('Select'), findsOneWidget);

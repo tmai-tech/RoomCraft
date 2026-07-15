@@ -98,7 +98,6 @@ class ScanParser {
         continue;
       }
       final type = _parseStrokeType(map['type']?.toString());
-      if (type == StrokeType.wall) continue;
 
       final wall = _parseWallSide(map['wall']?.toString());
       final fromLeft = _asDouble(map['fromLeft'] ?? map['from_left'] ?? map['leftFt']);
@@ -107,7 +106,11 @@ class ScanParser {
           ) ??
           _asDouble((map['dim'] is Map) ? (map['dim'] as Map)['w'] : null);
 
-      if (wall != null && fromLeft != null && widthAlong != null) {
+      // Wall-relative openings (not outline walls).
+      if (wall != null &&
+          fromLeft != null &&
+          widthAlong != null &&
+          type != StrokeType.wall) {
         wallOpenings.add(WallOpeningHint.fromLeft(
           wall: wall,
           type: type,
