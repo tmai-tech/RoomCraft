@@ -45,11 +45,14 @@ jobs:
         run: flutter test --coverage
 
       - name: Live vision smoke test (feedback room photos)
-        if: ${{ secrets.ROOMCRAFT_GROQ_API_KEY != '' }}
         continue-on-error: true
         env:
           ROOMCRAFT_GROQ_API_KEY: ${{ secrets.ROOMCRAFT_GROQ_API_KEY }}
         run: |
+          if [ -z "${ROOMCRAFT_GROQ_API_KEY:-}" ]; then
+            echo "No GROQ secret — skip vision smoke"
+            exit 0
+          fi
           mkdir -p /tmp/roomcraft-feedback
           cp test/fixtures/room_feedback/53a501e6-018_preview_*.jpg /tmp/roomcraft-feedback/
           node scripts/test-vision-scan.mjs
