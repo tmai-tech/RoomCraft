@@ -57,3 +57,4 @@ ios/Runner/GoogleService-Info.plist
 *-firebase-adminsdk-*.json
 *firebase-adminsdk*.json
 .secrets/
+dist/

@@ -87,13 +87,15 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   final _widthController = TextEditingController(text: '12');
   final _lengthController = TextEditingController(text: '14');
 
-  /// ar_guided | easy_scan | field_measure | wall_walk | free_frames | offline_only | gemini
-  /// Default easy_scan so devices without AR / camera don't crash on entry.
-  /// AR is still offered and auto-selected when available.
+  /// Primary path is always simple photo/video scan.
+  /// Advanced modes live under "More options".
   String _scanMode = 'easy_scan';
 
-  /// When false (easy scan default), size is estimated from photos.
+  /// When false (default), size is estimated from photos.
   bool _knowRoomSize = false;
+
+  /// Show AR / tape / advanced modes (hidden by default — user feedback).
+  bool _showAdvanced = false;
 
   ArAvailability? _arStatus;
   ArRoomMeasure? _arMeasure;
@@ -124,13 +126,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     try {
       final s = await ArMeasureService.isAvailable();
       if (!mounted) return;
-      setState(() {
-        _arStatus = s;
-        // Prefer AR when device supports it (higher accuracy)
-        if (s.supported && !s.installNeeded && _scanMode == 'easy_scan') {
-          _scanMode = 'ar_guided';
-        }
-      });
+      setState(() => _arStatus = s);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -142,6 +138,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       });
     }
   }
+
 
   Future<void> _runArMeasure() async {
     setState(() {
@@ -792,64 +789,188 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                Card(
-                  color: Colors.teal.shade50,
-                  child: ListTile(
-                    leading: const Icon(Icons.view_in_ar),
-                    title: const Text('Best accuracy without a tape'),
-                    subtitle: Text(
-                      _arStatus == null
-                          ? 'Checking ARCore…'
-                          : _arStatus!.supported
-                              ? 'AR guided measure uses the phone camera + floor tracking '
-                                  '(same class of tech as magicplan). Then optionally add photos for furniture.'
-                              : 'AR not available on this device — use Easy photo/video instead. '
-                                  '${_arStatus!.message}',
+                // —— Simple primary path (feedback: too many options) ——
+                if (_scanMode == 'easy_scan' && !_showAdvanced) ...[
+                  Text(
+                    'Scan room',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add photos of every wall (or a short walkaround video). '
+                    'Then tap Generate plan.',
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade800),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton.icon(
+                      onPressed: _addGalleryMultiPhotos,
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('Gallery photos'),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _addFreeFrame(camera: true),
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Camera'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              _addVideoToFreeFrames(fromCamera: true),
+                          icon: const Icon(Icons.videocam),
+                          label: const Text('Video'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () =>
+                        _addVideoToFreeFrames(fromCamera: false),
+                    child: const Text('Or pick a video from gallery'),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _freeFrames.isEmpty
+                        ? 'No photos yet'
+                        : '${_freeFrames.length} photo(s) ready',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: _freeFrames.isEmpty
+                          ? Colors.grey
+                          : Colors.teal.shade800,
+                    ),
+                  ),
+                  if (_freeFrames.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 96,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _freeFrames.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, i) => Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.file(
+                                _freeFrames[i],
+                                width: 96,
+                                height: 96,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              right: 2,
+                              top: 2,
+                              child: InkWell(
+                                onTap: () =>
+                                    setState(() => _freeFrames.removeAt(i)),
+                                child: const CircleAvatar(
+                                  radius: 12,
+                                  backgroundColor: Colors.black54,
+                                  child: Icon(Icons.close,
+                                      size: 14, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: FilledButton(
+                      onPressed: _freeFrames.isEmpty ? null : _process,
+                      child: const Text('Generate plan'),
+                    ),
+                  ),
+                  if (_freeVisionReady != true)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'AI key not ready — set Groq in Settings, or continue offline.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.orange.shade900),
+                      ),
+                    ),
+                  TextButton(
+                    onPressed: () {
+                      ref.invalidate(roomProvider);
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                            builder: (_) => const BlueprintScreen()),
+                      );
+                    },
+                    child: const Text('Skip — draw manually'),
+                  ),
+                  const Divider(height: 32),
+                  TextButton.icon(
+                    onPressed: () => setState(() {
+                      _showAdvanced = true;
+                      if (_scanMode == 'easy_scan') _scanMode = 'ar_guided';
+                    }),
+                    icon: const Icon(Icons.tune),
+                    label: const Text('More options (AR, tape measure…)'),
+                  ),
+                ] else ...[
+                // —— Advanced modes (hidden by default) ——
+                if (_showAdvanced)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() {
+                        _showAdvanced = false;
+                        _scanMode = 'easy_scan';
+                      }),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back to simple scan'),
+                    ),
+                  ),
                 InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'How do you want to scan?',
-                    border: const OutlineInputBorder(),
+                  decoration: const InputDecoration(
+                    labelText: 'Advanced scan mode',
+                    border: OutlineInputBorder(),
                     isDense: true,
-                    helperText: _freeVisionReady == true
-                        ? 'AI furniture mapping ready'
-                        : 'AI offline — AR size still works; furniture from catalog',
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       isExpanded: true,
-                      value: _scanMode,
+                      value: (_scanMode == 'easy_scan' ||
+                              _scanMode == 'free_frames' ||
+                              _scanMode == 'gemini')
+                          ? 'ar_guided'
+                          : _scanMode,
                       items: const [
                         DropdownMenuItem(
                           value: 'ar_guided',
-                          child: Text('AR measure — best phone accuracy'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'easy_scan',
-                          child: Text('Easy — photos / video only'),
+                          child: Text('AR measure'),
                         ),
                         DropdownMenuItem(
                           value: 'field_measure',
-                          child: Text('Advanced — field measure with tape'),
+                          child: Text('Field measure (tape)'),
                         ),
                         DropdownMenuItem(
                           value: 'wall_walk',
-                          child: Text('Advanced — wall photos + AI'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'free_frames',
-                          child: Text('Legacy free frames'),
+                          child: Text('Wall photos + AI'),
                         ),
                         DropdownMenuItem(
                           value: 'offline_only',
                           child: Text('Offline rectangle only'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'gemini',
-                          child: Text('Gemini (optional key)'),
                         ),
                       ],
                       onChanged: (v) {
@@ -1031,125 +1152,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       ),
                     ),
                   ],
-                ] else if (_scanMode == 'easy_scan') ...[
-                  Text(
-                    '1. Add room photos or a walkaround video',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Best: pick several photos from your gallery (every wall, doors, '
-                    'furniture). Or film a slow 15–40s walkaround. Include floor edges '
-                    'and corners.',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
-                  ),
-                  const SizedBox(height: 12),
-                  // Primary action: multi gallery pick (consumer feedback)
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _addGalleryMultiPhotos,
-                      icon: const Icon(Icons.photo_library),
-                      label: const Text('Pick photos from gallery'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () => _addVideoToFreeFrames(fromCamera: true),
-                        icon: const Icon(Icons.videocam),
-                        label: const Text('Record video'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _addVideoToFreeFrames(fromCamera: false),
-                        icon: const Icon(Icons.video_library),
-                        label: const Text('Pick video'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _addFreeFrame(camera: true),
-                        icon: const Icon(Icons.camera_alt),
-                        label: const Text('Camera photo'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _addFreeFrame(camera: false),
-                        icon: const Icon(Icons.image),
-                        label: const Text('Single photo'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Photos: ${_freeFrames.length}/8 '
-                    '(multi-select gallery or video keyframes)',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                  if (_freeFrames.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 88,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _freeFrames.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (_, i) => Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.file(
-                                _freeFrames[i],
-                                width: 88,
-                                height: 88,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: InkWell(
-                                onTap: () =>
-                                    setState(() => _freeFrames.removeAt(i)),
-                                child: const CircleAvatar(
-                                  radius: 10,
-                                  backgroundColor: Colors.black54,
-                                  child: Icon(Icons.close,
-                                      size: 12, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('I know the room size'),
-                    subtitle: const Text(
-                      'Optional: lock width × length if you measured once',
-                    ),
-                    value: _knowRoomSize,
-                    onChanged: (v) => setState(() => _knowRoomSize = v),
-                  ),
-                  Card(
-                    color: Colors.amber.shade50,
-                    child: const ListTile(
-                      dense: true,
-                      leading: Icon(Icons.info_outline),
-                      title: Text('About accuracy'),
-                      subtitle: Text(
-                        'Easy mode is for arranging furniture, not CAD. '
-                        'We estimate scale from doors (~2.8 ft) and furniture. '
-                        'ARCore depth / custom-trained models come next for higher accuracy.',
-                      ),
-                    ),
-                  ),
                 ] else if (_scanMode == 'field_measure') ...[
                   Text(
                     'Step 2 — Openings on each wall (from LEFT corner facing wall)',
@@ -1240,56 +1242,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       ),
                     ],
                   ),
-                ] else if (_scanMode == 'free_frames' || _scanMode == 'gemini') ...[
-                  Text(
-                    'Photos / video (${_freeFrames.length}/8)',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Lowest accuracy: AI guesses top-down layout from photos. Prefer Field measure.',
-                    style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: _addGalleryMultiPhotos,
-                        icon: const Icon(Icons.photo_library),
-                        label: const Text('Gallery (multi)'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _addVideoToFreeFrames(fromCamera: true),
-                        icon: const Icon(Icons.videocam),
-                        label: const Text('Record video'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _addFreeFrame(camera: true),
-                        icon: const Icon(Icons.camera_alt),
-                        label: const Text('Photo'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 88,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _freeFrames.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (_, i) => ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          _freeFrames[i],
-                          width: 88,
-                          height: 88,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                  ),
                 ] else ...[
                   const Text(
                     'Offline: creates an empty rectangle at your size. '
@@ -1307,7 +1259,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       'ar_guided' => _arMeasure == null
                           ? 'Measure with AR first'
                           : 'Build plan from AR',
-                      'easy_scan' => 'Generate plan from photos',
                       'field_measure' => 'Build plan from measurements',
                       'wall_walk' => 'Build plan from walls ($wallsDone/4)',
                       _ => 'Generate plan',
@@ -1323,6 +1274,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   },
                   child: const Text('Skip — draw manually'),
                 ),
+                ], // end advanced modes
               ],
             ),
     );

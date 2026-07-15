@@ -38,166 +38,149 @@ Never invent a full room set that is not visible. JSON only.
 ''';
 
   /// Consumer: size + openings + furniture in one pass.
+  /// Prefer wall-anchored fields (stable) over free XY (random).
   static String consumerLayout() => '''
-Map this room from phone photos/video. The user may not know measurements.
-Estimate a realistic top-down plan in FEET.
+Map this room from phone photos/video into a top-down plan in FEET.
+Cross-check the SAME room across all frames.
 
-Cross-check the SAME room across all frames. Use standard sizes as a ruler:
-- Interior door clear width ≈ 2.5–3.0 ft (primary scale cue)
-- Queen bed ≈ 5.0 × 6.5–7.0 ft, twin ≈ 3.2 × 6.5 ft
-- 3-seat sofa ≈ 6.5–8.0 ft long; wardrobe depth ≈ 1.5–2.5 ft
-- TV unit / media console often along a wall ≈ 4–7 ft wide
+Scale cues: interior door ≈ 2.5–3.0 ft; wardrobe depth ≈ 1.5–2.5 ft;
+desk/table depth ≈ 1.5–2.5 ft; queen bed ≈ 5×6.5 ft.
+
+CRITICAL: place every opening and furniture piece ON A WALL using wall + fromLeft
+(do NOT invent free floating XY). This matches how floor plans are drawn.
+
+Wall names (pick one consistent orientation for the whole plan):
+- south = near wall in plan (y=0)
+- north = far wall (y=roomLength)
+- west = left wall (x=0)
+- east = right wall (x=roomWidth)
+fromLeft = feet from the LEFT corner while facing that wall from inside the room.
+depth = how far the furniture center sits into the room from that wall face.
 
 Return ONLY JSON:
 {
-  "roomWidth": 18.0,
-  "roomLength": 17.0,
-  "sizeConfidence": 0.6,
-  "scaleCues": [
-    {"type": "door", "widthFt": 2.8, "note": "main door visible"}
-  ],
+  "roomWidth": 12.0,
+  "roomLength": 14.0,
+  "sizeConfidence": 0.65,
   "openings": [
     {
       "type": "door",
-      "start": {"x": 1.0, "y": 0},
-      "end": {"x": 3.8, "y": 0},
+      "wall": "south",
+      "fromLeft": 1.0,
+      "width": 2.8,
+      "confidence": 0.9,
+      "evidence": "entry door"
+    },
+    {
+      "type": "balcony",
+      "wall": "east",
+      "fromLeft": 1.0,
+      "width": 7.0,
       "confidence": 0.85,
-      "evidence": "door on near wall"
+      "evidence": "full-height mesh sliding doors"
     }
   ],
   "furniture": [
     {
-      "type": "BED",
-      "pos": {"x": 5.0, "y": 4.0},
-      "dim": {"w": 5.0, "l": 6.5},
-      "rot": 0,
+      "type": "WARDROBE",
+      "wall": "north",
+      "fromLeft": 4.0,
+      "depth": 1.2,
+      "dim": {"w": 8.0, "l": 2.0},
+      "confidence": 0.9,
+      "evidence": "long sliding wardrobe along wall"
+    },
+    {
+      "type": "TABLE",
+      "wall": "east",
+      "fromLeft": 3.0,
+      "depth": 1.5,
+      "dim": {"w": 4.0, "l": 2.0},
       "confidence": 0.85,
-      "evidence": "bed against wall in multiple frames"
-    },
-    {
-      "type": "SOFA",
-      "pos": {"x": 10.0, "y": 12.0},
-      "dim": {"w": 7.0, "l": 3.0},
-      "rot": 0,
-      "confidence": 0.8,
-      "evidence": "sofa facing TV wall"
-    },
-    {
-      "type": "TV_UNIT",
-      "pos": {"x": 10.0, "y": 1.0},
-      "dim": {"w": 5.0, "l": 1.5},
-      "rot": 0,
-      "confidence": 0.8,
-      "evidence": "media unit under TV"
+      "evidence": "desk with computers"
     }
   ]
 }
 
-Coordinate system:
-- roomWidth = X (left–right), roomLength = Y (near–far)
-- Origin (0,0) = one corner of the rectangle
-- Openings ON outer walls (y=0, y=roomLength, x=0, or x=roomWidth)
-- furniture pos = CENTER of piece in feet; dim = footprint feet; rot degrees
-
 Rules:
-1. furniture MUST list all clearly visible major pieces. Empty [] only if the
-   room truly has no freestanding furniture.
-2. Types: $furnitureTypes
-   (desk→TABLE, couch→SOFA, dresser/closet→WARDROBE, tv stand→TV_UNIT).
-3. openings: door | window | balcony. Max ~2 doors, ~4 windows, 1 balcony.
-4. confidence 0–1. Include items at confidence ≥ 0.55 when clearly visible.
-5. sizeConfidence 0–1 honesty about room size estimate.
-6. Place large furniture against walls when photos show that (not floating).
-7. Prefer clean rectangle outer bounds.
-8. Never invent a balcony unless outdoor railing is clearly visible.
+1. List ALL clearly visible major pieces. Empty furniture [] only if room is empty.
+2. Types: $furnitureTypes (desk→TABLE, closet/sliding wardrobe→WARDROBE, couch→SOFA).
+3. openings types: door | window | balcony. Use balcony for wide mesh/glass sliding openings.
+4. EVERY furniture item MUST include wall + fromLeft + depth + dim.
+5. EVERY opening MUST include wall + fromLeft + width.
+6. confidence ≥ 0.55 when clearly visible.
+7. Rectangular outer bounds only.
+8. Do not invent a bed/sofa that is not in the photos.
 ''';
 
   static String architecture(double w, double l) => '''
-Survey this room like an interior architect preparing a floor plan.
+Survey this room for a measured floor plan.
 
-ROOM SIZE IS FIXED (never change):
-- roomWidth = $w feet (X axis)
-- roomLength = $l feet (Y axis)
-Origin (0,0) = one corner; +x = width; +y = length.
+ROOM SIZE FIXED: roomWidth = $w ft, roomLength = $l ft.
 
-Images/video frames show the SAME room from multiple angles.
-Cross-check corners, doors, and windows across frames.
-
-Return ONLY JSON:
+Return openings with wall + fromLeft (feet from left while facing wall):
 {
   "roomWidth": $w,
   "roomLength": $l,
   "openings": [
     {
       "type": "door",
-      "start": {"x": 1.0, "y": 0},
-      "end": {"x": 3.5, "y": 0},
+      "wall": "south",
+      "fromLeft": 1.0,
+      "width": 2.8,
       "confidence": 0.9,
-      "evidence": "door on near wall in frame"
+      "evidence": "entry door"
     }
   ]
 }
 
 Rules:
-1. openings types: door | window | balcony only.
-2. Place each opening ON the perimeter (y=0, y=$l, x=0, or x=$w).
-3. Estimate position along the wall from what you see.
-4. Only report openings you can see. Empty openings: [] is valid.
-5. Sliding / French doors → type "door".
-6. confidence 0–1; omit under 0.55.
-7. No freestanding furniture in this pass.
+1. types: door | window | balcony only (wide mesh glass → balcony).
+2. wall: south|north|east|west. fromLeft + width in feet.
+3. Only openings you can see. Empty [] is valid.
+4. confidence ≥ 0.55. No freestanding furniture in this pass.
 ''';
 
   static String furniture(double w, double l) => '''
 Document freestanding furniture for a top-down layout plan.
 
-ROOM SIZE FIXED:
-- roomWidth = $w ft, roomLength = $l ft
-- Origin (0,0); pos is CENTER of each piece in feet.
+ROOM SIZE FIXED: roomWidth = $w ft, roomLength = $l ft.
 
-Use ALL frames: same object from two angles = one entry (best position).
+Use ALL frames. Place each piece ON A WALL (wall + fromLeft + depth).
+fromLeft = feet from left corner while facing that wall from inside.
 
-Return ONLY JSON with a COMPLETE inventory of visible major furniture:
+Return ONLY JSON:
 {
   "roomWidth": $w,
   "roomLength": $l,
   "furniture": [
     {
-      "type": "BED",
-      "pos": {"x": 4.0, "y": 5.0},
-      "dim": {"w": 5.0, "l": 6.5},
-      "rot": 0,
-      "confidence": 0.85,
-      "evidence": "bed against wall, visible in multiple frames"
-    },
-    {
       "type": "WARDROBE",
-      "pos": {"x": 1.0, "y": 8.0},
-      "dim": {"w": 6.0, "l": 2.0},
-      "rot": 90,
-      "confidence": 0.75,
-      "evidence": "wardrobe along side wall"
+      "wall": "north",
+      "fromLeft": 4.0,
+      "depth": 1.2,
+      "dim": {"w": 8.0, "l": 2.0},
+      "confidence": 0.9,
+      "evidence": "sliding wardrobe full wall"
     },
     {
       "type": "TABLE",
-      "pos": {"x": 8.0, "y": 9.0},
-      "dim": {"w": 3.0, "l": 2.0},
-      "rot": 0,
-      "confidence": 0.7,
-      "evidence": "table in open floor area"
+      "wall": "east",
+      "fromLeft": 3.0,
+      "depth": 1.5,
+      "dim": {"w": 4.0, "l": 2.0},
+      "confidence": 0.85,
+      "evidence": "desk with monitors"
     }
   ]
 }
 
 Rules:
 1. List ALL clearly visible major pieces. Empty [] ONLY if none visible.
-2. Types: $furnitureTypes
-   (desk→TABLE, couch→SOFA, dresser→WARDROBE, tv stand→TV_UNIT).
-3. Place relative to walls using multi-view cues.
-4. confidence ≥ 0.55 when clearly visible; include evidence string.
-5. dim = realistic footprint in feet; rot degrees (0/90/180/270 preferred).
-6. Do not invent a full bedroom/living set that is not in the photos.
-7. Prefer 3–10 real items over an empty list when the room is furnished.
+2. Types: $furnitureTypes (desk→TABLE, closet→WARDROBE, couch→SOFA).
+3. EVERY item MUST have wall (south|north|east|west), fromLeft, depth, dim.
+4. confidence ≥ 0.55 when clearly visible.
+5. Do not invent furniture not in the photos.
 ''';
 
   /// Single-pass locked-size prompt (Gemini / simple path).

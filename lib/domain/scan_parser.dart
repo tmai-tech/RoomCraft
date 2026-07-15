@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
+import 'wall_relative_scan.dart';
 
 /// Parses / validates / normalizes AI JSON and applies scale calibration.
 class ScanParser {
@@ -77,8 +78,12 @@ class ScanParser {
       warnings.add('Very small room dimensions from AI — check scale');
     }
 
-    final walls = <ScanWallSegment>[];
-    // Accept both "walls" and "openings" (precision architecture pass).
+    // Prefer wall-relative layout when model returns wall + fromLeft (stable).
+    final wallOpenings = <WallOpeningHint>[];
+    final wallFurniture = <WallFurnitureHint>[];
+    final freeWalls = <ScanWallSegment>[];
+    final freeFurniture = <ScanFurnitureHint>[];
+
     final wallsRaw = <dynamic>[
       if (raw['walls'] is List) ...raw['walls'] as List,
       if (raw['openings'] is List) ...raw['openings'] as List,
@@ -86,13 +91,35 @@ class ScanParser {
     for (final item in wallsRaw) {
       if (item is! Map) continue;
       final map = Map<String, dynamic>.from(item);
-      // Drop low-confidence openings when model provides score
       final confRaw = map['confidence'] ?? map['conf'];
-      if (confRaw is num && confRaw.toDouble() < 0.72) {
+      final conf = confRaw is num ? confRaw.toDouble() : 0.8;
+      if (conf < 0.55) {
         warnings.add('Skipped low-confidence opening (${map['type']})');
         continue;
       }
       final type = _parseStrokeType(map['type']?.toString());
+      if (type == StrokeType.wall) continue;
+
+      final wall = _parseWallSide(map['wall']?.toString());
+      final fromLeft = _asDouble(map['fromLeft'] ?? map['from_left'] ?? map['leftFt']);
+      final widthAlong = _asDouble(
+            map['width'] ?? map['widthFt'] ?? map['openingWidth'],
+          ) ??
+          _asDouble((map['dim'] is Map) ? (map['dim'] as Map)['w'] : null);
+
+      if (wall != null && fromLeft != null && widthAlong != null) {
+        wallOpenings.add(WallOpeningHint.fromLeft(
+          wall: wall,
+          type: type,
+          fromLeftFt: fromLeft,
+          widthFt: widthAlong,
+          wallLengthFt: wall.lengthFt(roomWidth, roomLength),
+          confidence: conf,
+          evidence: map['evidence']?.toString() ?? '',
+        ));
+        continue;
+      }
+
       final start = _parsePoint(map['start']);
       final end = _parsePoint(map['end']);
       if (start == null || end == null) {
@@ -103,13 +130,101 @@ class ScanParser {
         warnings.add('Skipped near-zero length wall segment');
         continue;
       }
-      walls.add(ScanWallSegment(type: type, startFt: start, endFt: end));
+      freeWalls.add(ScanWallSegment(type: type, startFt: start, endFt: end));
     }
 
+    final furnRaw = raw['furniture'];
+    if (furnRaw is List) {
+      for (final item in furnRaw) {
+        if (item is! Map) continue;
+        final map = Map<String, dynamic>.from(item);
+        final type = _parseFurnitureType(map['type']?.toString());
+        if (type == null) {
+          warnings.add('Unknown furniture type: ${map['type']}');
+          continue;
+        }
+        final confRaw = map['confidence'] ?? map['conf'];
+        final conf = confRaw is num ? confRaw.toDouble() : 0.7;
+        final dim = map['dim'] ?? map['size'];
+        double? w;
+        double? l;
+        if (dim is Map) {
+          w = _asDouble(dim['w'] ?? dim['width']);
+          l = _asDouble(dim['l'] ?? dim['length'] ?? dim['h']);
+        }
+        w ??= 3.0;
+        l ??= 3.0;
+
+        final wall = _parseWallSide(map['wall']?.toString());
+        final fromLeft = _asDouble(
+          map['fromLeft'] ?? map['from_left'] ?? map['alongWall'],
+        );
+        final depth = _asDouble(map['depth'] ?? map['depthFt'] ?? map['fromWall']) ??
+            mathMin(w, l) / 2 + 0.2;
+
+        if (wall != null && fromLeft != null) {
+          wallFurniture.add(WallFurnitureHint.fromLeft(
+            type: type,
+            wall: wall,
+            fromLeftFt: fromLeft,
+            depthFt: depth,
+            widthFt: w.clamp(0.5, 20),
+            lengthFt: l.clamp(0.5, 20),
+            wallLengthFt: wall.lengthFt(roomWidth, roomLength),
+            confidence: conf,
+            evidence: map['evidence']?.toString() ?? '',
+          ));
+          continue;
+        }
+
+        final pos = _parsePoint(map['pos'] ?? map['position']);
+        final rotDeg = _asDouble(map['rot'] ?? map['rotation']) ?? 0;
+        final posFt = pos ?? Offset(roomWidth / 2, roomLength / 2);
+        freeFurniture.add(ScanFurnitureHint(
+          type: type,
+          posFt: Offset(
+            posFt.dx.clamp(0, roomWidth),
+            posFt.dy.clamp(0, roomLength),
+          ),
+          widthFt: w.clamp(0.5, 20),
+          lengthFt: l.clamp(0.5, 20),
+          rotationRad: rotDeg * pi / 180.0,
+        ));
+      }
+    }
+
+    // Wall-relative items → stable compose (designer method).
+    if (wallOpenings.isNotEmpty || wallFurniture.isNotEmpty) {
+      warnings.add(
+        'Used wall-anchored layout '
+        '(${wallFurniture.length} furniture, ${wallOpenings.length} openings)',
+      );
+      final composed = WallRelativeComposer.compose(
+        widthFt: roomWidth,
+        lengthFt: roomLength,
+        openings: wallOpenings,
+        furniture: wallFurniture,
+        warnings: warnings,
+        overviewPhotos: 1,
+      );
+      // Merge any freeform extras that didn't have wall tags.
+      if (freeFurniture.isEmpty && freeWalls.isEmpty) {
+        return composed;
+      }
+      return composed.copyWith(
+        walls: [
+          ...composed.walls.where((s) => s.type == StrokeType.wall),
+          ...composed.walls.where((s) => s.type != StrokeType.wall),
+          ...freeWalls,
+        ],
+        furniture: [...composed.furniture, ...freeFurniture],
+      );
+    }
+
+    var walls = freeWalls;
     if (walls.isEmpty) {
-      // Synthesize a rectangular room outline so user still gets a plan.
-      warnings.add('No walls detected — created rectangular outline');
-      walls.addAll([
+      warnings.add('No openings detected — rectangular outline only');
+      walls = [
         ScanWallSegment(
           type: StrokeType.wall,
           startFt: Offset.zero,
@@ -130,57 +245,50 @@ class ScanParser {
           startFt: Offset(0, roomLength),
           endFt: Offset.zero,
         ),
-      ]);
+      ];
     }
 
-    final furniture = <ScanFurnitureHint>[];
-    final furnRaw = raw['furniture'];
-    if (furnRaw is List) {
-      for (final item in furnRaw) {
-        if (item is! Map) continue;
-        final map = Map<String, dynamic>.from(item);
-        final type = _parseFurnitureType(map['type']?.toString());
-        if (type == null) {
-          warnings.add('Unknown furniture type: ${map['type']}');
-          continue;
-        }
-        final pos = _parsePoint(map['pos'] ?? map['position']);
-        final dim = map['dim'] ?? map['size'];
-        double? w;
-        double? l;
-        if (dim is Map) {
-          w = _asDouble(dim['w'] ?? dim['width']);
-          l = _asDouble(dim['l'] ?? dim['length'] ?? dim['h']);
-        }
-        w ??= 3.0;
-        l ??= 3.0;
-        final rotDeg = _asDouble(map['rot'] ?? map['rotation']) ?? 0;
-        final posFt = pos ?? Offset(roomWidth / 2, roomLength / 2);
-        // Clamp into room
-        final clamped = Offset(
-          posFt.dx.clamp(0, roomWidth),
-          posFt.dy.clamp(0, roomLength),
-        );
-        furniture.add(ScanFurnitureHint(
-          type: type,
-          posFt: clamped,
-          widthFt: w.clamp(0.5, 20),
-          lengthFt: l.clamp(0.5, 20),
-          rotationRad: rotDeg * pi / 180.0,
-        ));
-      }
-    }
-
-    // Normalize so min corner is near origin
     return _normalize(
       ScanResult(
         roomWidthFt: roomWidth,
         roomLengthFt: roomLength,
         walls: walls,
-        furniture: furniture,
+        furniture: freeFurniture,
         warnings: warnings,
       ),
     );
+  }
+
+  static double mathMin(double a, double b) => a < b ? a : b;
+
+  static WallSide? _parseWallSide(String? raw) {
+    if (raw == null) return null;
+    switch (raw.trim().toLowerCase()) {
+      case 'south':
+      case 'a':
+      case 'wall_a':
+      case 'bottom':
+      case 'near':
+        return WallSide.south;
+      case 'east':
+      case 'b':
+      case 'wall_b':
+      case 'right':
+        return WallSide.east;
+      case 'north':
+      case 'c':
+      case 'wall_c':
+      case 'top':
+      case 'far':
+        return WallSide.north;
+      case 'west':
+      case 'd':
+      case 'wall_d':
+      case 'left':
+        return WallSide.west;
+      default:
+        return null;
+    }
   }
 
   /// Scale so a chosen wall segment matches [targetLengthFt].

@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+25 (2026-07-15)
+
+### Simple scan + less random layout (feedback 53a501e6-018)
+- **Simple Scan UI**: Gallery / Camera / Video + Generate plan only. AR/tape under “More options”.
+- **Wall-anchored layout**: vision prompts + parser use `wall` + `fromLeft` + `depth` (designer method) instead of free XY — main fix for random furniture placement.
+- Live Groq smoke test fixtures from real room photos (`test/fixtures/room_feedback`).
+
 ## 1.0.0-beta.1+24 (2026-07-15)
 
 ### Scan furniture recall (feedback: empty / random plans)
