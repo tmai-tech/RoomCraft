@@ -40,9 +40,8 @@ jobs:
       - name: Flutter analyze
         # Fail only on analyzer errors (not style infos).
         run: |
-          set -o pipefail
-          flutter analyze 2>&1 | tee /tmp/analyze.txt
-          if grep -E '^\s*error •' /tmp/analyze.txt; then
+          flutter analyze 2>&1 | tee /tmp/analyze.txt || true
+          if grep -E 'error •' /tmp/analyze.txt; then
             echo "Analyzer reported errors"
             exit 1
           fi
