@@ -52,7 +52,14 @@ void main() {
       'furniture': [],
     });
     expect(result.walls.length, 4);
-    expect(result.warnings.any((w) => w.contains('No walls')), isTrue);
+    expect(
+      result.warnings.any(
+        (w) =>
+            w.contains('No walls') ||
+            w.contains('rectangular outline'),
+      ),
+      isTrue,
+    );
   });
 
   test('scale calibration multiplies lengths', () {

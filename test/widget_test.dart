@@ -26,7 +26,7 @@ void main() {
     expect(find.text('New Blueprint'), findsOneWidget);
   });
 
-  testWidgets('Open manual blueprint editor', (tester) async {
+  testWidgets('Open scan screen from home', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: RoomCraftApp()),
     );
@@ -35,22 +35,14 @@ void main() {
     await tester.tap(find.text('New Blueprint'));
     await tester.pumpAndSettle();
 
-    // Manual path may prompt for room size after choosing Draw manually.
-    final draw = find.textContaining('Draw manually');
-    expect(draw, findsWidgets);
-    await tester.tap(draw.first);
+    // Primary path is Scan room AI → simple gallery/camera UI.
+    final scan = find.textContaining('Scan room');
+    expect(scan, findsWidgets);
+    await tester.tap(scan.first);
     await tester.pumpAndSettle();
 
-    // Size dialog (if shown)
-    final create = find.text('Create');
-    if (create.evaluate().isNotEmpty) {
-      await tester.tap(create);
-      await tester.pumpAndSettle();
-    }
-
-    expect(find.text('Pan'), findsOneWidget);
-    expect(find.text('Select'), findsOneWidget);
-    expect(find.text('Wall'), findsOneWidget);
+    expect(find.text('Gallery photos'), findsOneWidget);
+    expect(find.text('Generate plan'), findsOneWidget);
   });
 
   testWidgets('Onboarding shows when not completed', (tester) async {
