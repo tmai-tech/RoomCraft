@@ -16,6 +16,7 @@ class SecureKeyStore {
 
   static const _geminiSecureKey = 'roomcraft_gemini_api_key';
   static const _groqSecureKey = 'roomcraft_groq_api_key';
+  static const _hfSecureKey = 'roomcraft_hf_token';
   static const _migratedFlag = 'secure_keys_migrated_v1';
 
   Future<SharedPreferences> get _prefs async =>
@@ -85,5 +86,23 @@ class SecureKeyStore {
     }
     final prefs = await _prefs;
     await prefs.remove(AppConfig.groqApiKeyPrefKey);
+  }
+
+  Future<String?> loadHfToken() async {
+    await migrateFromPrefsIfNeeded();
+    final v = await _storage.read(key: _hfSecureKey);
+    if (v != null && v.trim().isNotEmpty) return v.trim();
+    return null;
+  }
+
+  Future<void> saveHfToken(String key) async {
+    final t = key.trim();
+    if (t.isEmpty) {
+      await _storage.delete(key: _hfSecureKey);
+    } else {
+      await _storage.write(key: _hfSecureKey, value: t);
+    }
+    final prefs = await _prefs;
+    await prefs.remove(AppConfig.hfTokenPrefKey);
   }
 }

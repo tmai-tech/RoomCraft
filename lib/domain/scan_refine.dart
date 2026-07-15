@@ -325,7 +325,7 @@ class ScanRefine {
     List<ScanFurnitureHint> items,
     List<String> notes,
   ) {
-    if (items.length <= 8) return items;
+    if (items.length <= 12) return items;
     // Prefer larger / more central pieces as "primary" furniture.
     final sorted = List<ScanFurnitureHint>.from(items)
       ..sort((a, b) {
@@ -333,7 +333,7 @@ class ScanRefine {
         final bb = b.widthFt * b.lengthFt;
         return bb.compareTo(aa);
       });
-    final kept = sorted.take(8).toList();
+    final kept = sorted.take(12).toList();
     notes.add(
       'Kept ${kept.length} of ${items.length} furniture items '
       '(largest pieces first — edit the rest in the editor)',
@@ -397,11 +397,18 @@ class ScanRefine {
         openings.where((o) => o.type == StrokeType.door).length;
     if (doors >= 1) s += 0.08;
     if (doors > 3) s -= 0.05; // too many doors often hallucination
-    if (furniture.isNotEmpty && furniture.length <= 12) s += 0.05;
+    if (furniture.isNotEmpty && furniture.length <= 12) {
+      s += 0.05;
+      s += (furniture.length.clamp(1, 6) / 6) * 0.08;
+    } else {
+      // Do not claim high confidence with an empty furniture list.
+      s = s.clamp(0.0, 0.52);
+    }
     if (furniture.length > 15) s -= 0.08;
     // Aspect not extreme
     final aspect = widthFt / lengthFt;
     if (aspect > 0.4 && aspect < 2.5) s += 0.03;
-    return s.clamp(0.35, 0.94);
+    final cap = furniture.isEmpty ? 0.52 : 0.94;
+    return s.clamp(0.28, cap);
   }
 }

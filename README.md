@@ -23,13 +23,17 @@ flutter run
 
 **Free accurate scan needs no API key** — enter exact width × length; the plan always matches those measurements.
 
-Optional furniture assist: set GitHub secret `ROOMCRAFT_GROQ_API_KEY` for CI builds, or run locally with:
+Optional furniture assist (tried in order): **Groq Llama 4 Scout** → **Hugging Face Qwen2.5-VL** → **Gemini Flash**.  
+CI secrets / local defines:
 
 ```bash
-flutter run --dart-define=ROOMCRAFT_GROQ_API_KEY=gsk_...
+flutter run \
+  --dart-define=ROOMCRAFT_GROQ_API_KEY=gsk_... \
+  --dart-define=ROOMCRAFT_HF_TOKEN=hf_... \
+  --dart-define=ROOMCRAFT_GEMINI_API_KEY=...
 ```
 
-Personal keys in Settings are optional advanced overrides.
+Personal keys in Settings (Groq / Hugging Face / Gemini) are optional advanced overrides.
 
 ## Docs
 

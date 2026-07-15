@@ -717,13 +717,14 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                 const SizedBox(height: 4),
                 if (_result.furniture.isEmpty)
                   Card(
-                    color: Colors.blue.shade50,
+                    color: Colors.orange.shade50,
                     child: const ListTile(
                       leading: Icon(Icons.chair_outlined),
-                      title: Text('No furniture on this plan'),
+                      title: Text('No furniture detected'),
                       subtitle: Text(
-                        'Add pieces in Field measure, or from the catalog in the editor. '
-                        'Photo AI only keeps high-confidence visible items.',
+                        'Retake with multi-gallery photos of every wall (bed/sofa/TV fully visible), '
+                        'or add pieces from the catalog in the editor. '
+                        'Optional: Hugging Face / Groq key in Settings for better free AI.',
                       ),
                     ),
                   )

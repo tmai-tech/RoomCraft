@@ -5,6 +5,7 @@ import '../config/app_config.dart';
 import '../domain/units.dart';
 import '../services/ai_scanner_service.dart';
 import '../services/free_vision_scanner.dart';
+import '../services/huggingface_vision_scanner.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/prefs_service.dart';
 import '../services/training_export_service.dart';
@@ -20,6 +21,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _geminiKeyController = TextEditingController();
   final _groqKeyController = TextEditingController();
+  final _hfKeyController = TextEditingController();
   final _prefs = PrefsService();
   UnitSystem _units = UnitSystem.feet;
   final _cloud = CloudSyncService();
@@ -35,12 +37,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadKeys() async {
     final gemini = await AIScannerService.loadApiKey();
     final groq = await FreeVisionScanner.loadApiKey();
+    final hf = await HuggingFaceVisionScanner.loadApiKey();
     final units = await _prefs.loadUnitSystem();
     await _cloud.ensureReady();
     if (!mounted) return;
     setState(() {
       _geminiKeyController.text = gemini ?? '';
       _groqKeyController.text = groq ?? '';
+      _hfKeyController.text = hf ?? '';
       _units = units;
       _cloudUserEmail = _cloud.currentUser?.email;
     });
@@ -116,6 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveKeys() async {
     await AIScannerService.saveApiKey(_geminiKeyController.text);
     await FreeVisionScanner.saveApiKey(_groqKeyController.text);
+    await HuggingFaceVisionScanner.saveApiKey(_hfKeyController.text);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Settings saved')),
@@ -127,6 +132,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _geminiKeyController.dispose();
     _groqKeyController.dispose();
+    _hfKeyController.dispose();
     super.dispose();
   }
 
@@ -236,7 +242,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               labelText: 'Groq API key (optional free furniture AI)',
-              helperText: 'console.groq.com — leave blank to use free default',
+              helperText: 'console.groq.com — Llama 4 Scout (primary)',
+            ),
+            obscureText: true,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _hfKeyController,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Hugging Face token (optional free VLM)',
+              helperText:
+                  'huggingface.co/settings/tokens — Qwen2.5-VL if Groq empty',
             ),
             obscureText: true,
           ),
@@ -246,7 +263,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               labelText: 'Gemini API key (optional)',
-              helperText: 'aistudio.google.com — not required',
+              helperText: 'aistudio.google.com — third fallback',
             ),
             obscureText: true,
           ),

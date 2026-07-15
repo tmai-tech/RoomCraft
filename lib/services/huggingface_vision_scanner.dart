@@ -15,26 +15,25 @@ import '../models/stroke_model.dart';
 import 'openai_vision_client.dart';
 import 'secure_key_store.dart';
 
-/// Free multimodal scan via Groq (Llama 4 Scout vision).
+/// Free serverless multimodal scan via Hugging Face Inference Providers.
 ///
-/// **Easy mode** ([autoScale]): no tape required — estimate room size from
-/// photos/video + door/furniture priors, then place openings/furniture.
+/// Uses OpenAI-compatible router + open VLMs (Qwen2.5-VL by default).
+/// Token: user Settings key or `ROOMCRAFT_HF_TOKEN` dart-define.
 ///
-/// **Locked mode** (default when size given): multi-frame interior-designer
-/// pass; user room size remains authoritative.
-class FreeVisionScanner {
-  /// Aligned with [FurnitureVisionFilter.minConfidence] for recall.
+/// Depth / Grounding DINO are **not** free on HF Providers — those stay
+/// dedicated endpoints. This path is VLM layout JSON only.
+class HuggingFaceVisionScanner {
   static const double minConfidence = FurnitureVisionFilter.minConfidence;
 
   static SecureKeyStore _store([SharedPreferences? prefs]) =>
       SecureKeyStore(prefs: prefs);
 
   static Future<String?> loadApiKey([SharedPreferences? prefsOverride]) async {
-    return _store(prefsOverride).loadGroqKey();
+    return _store(prefsOverride).loadHfToken();
   }
 
   static Future<void> saveApiKey(String key, [SharedPreferences? prefsOverride]) async {
-    await _store(prefsOverride).saveGroqKey(key);
+    await _store(prefsOverride).saveHfToken(key);
   }
 
   static Future<String?> resolveApiKey({
@@ -45,7 +44,7 @@ class FreeVisionScanner {
     if (explicit != null && explicit.isNotEmpty) return explicit;
     final user = await loadApiKey(prefsOverride);
     if (user != null && user.isNotEmpty) return user;
-    final bundled = AppConfig.bundledGroqApiKey.trim();
+    final bundled = AppConfig.bundledHfToken.trim();
     if (bundled.isNotEmpty) return bundled;
     return null;
   }
@@ -55,108 +54,86 @@ class FreeVisionScanner {
     return key != null && key.isNotEmpty;
   }
 
-  OpenAiVisionClient get _client => OpenAiVisionClient(
-        chatCompletionsUrl: AppConfig.groqChatCompletionsUrl,
-        model: AppConfig.groqVisionModel,
-      );
-
-  /// Full scan: architecture (openings) + furniture from many frames.
-  ///
-  /// When [autoScale] is true (or width/length are null), estimates size for
-  /// everyday users who only upload photos/video.
   Future<ScanResult> scan({
     required List<File> images,
     double? roomWidthFt,
     double? roomLengthFt,
     String? apiKey,
-    bool precisionMode = true,
     bool autoScale = false,
   }) async {
     final key = await resolveApiKey(apiKey: apiKey);
     if (key == null || key.isEmpty) {
-      throw Exception('No free vision key available');
+      throw Exception('No Hugging Face token available');
     }
     if (images.isEmpty) {
       throw Exception('Add at least one room photo or video frames.');
     }
 
-    // Prefer sharpest diverse frames for the model (token/payload limits).
-    final prepared = await ScanKeyframes.pickSharpest(images, maxKeep: 8);
-    final frames = prepared.isEmpty ? images.take(8).toList() : prepared;
+    final prepared = await ScanKeyframes.pickSharpest(images, maxKeep: 6);
+    final frames = prepared.isEmpty ? images.take(6).toList() : prepared;
 
-    final needAuto =
-        autoScale || roomWidthFt == null || roomLengthFt == null ||
-            roomWidthFt <= 0 ||
-            roomLengthFt <= 0;
+    final needAuto = autoScale ||
+        roomWidthFt == null ||
+        roomLengthFt == null ||
+        roomWidthFt <= 0 ||
+        roomLengthFt <= 0;
 
-    if (needAuto) {
-      return _consumerEasyScan(
-        key: key,
-        frames: frames,
-        frameCount: images.length,
-        userWidthFt: roomWidthFt,
-        userLengthFt: roomLengthFt,
-      );
+    Object? lastError;
+    for (final model in AppConfig.hfVisionModelCandidates) {
+      try {
+        final client = OpenAiVisionClient(
+          chatCompletionsUrl: AppConfig.hfChatCompletionsUrl,
+          model: model,
+          timeout: const Duration(seconds: 120),
+        );
+        if (needAuto) {
+          return await _easyScan(
+            client: client,
+            key: key,
+            frames: frames,
+            frameCount: images.length,
+            userWidthFt: roomWidthFt,
+            userLengthFt: roomLengthFt,
+            modelLabel: model,
+          );
+        }
+        return await _lockedScan(
+          client: client,
+          key: key,
+          frames: frames,
+          roomWidthFt: roomWidthFt!,
+          roomLengthFt: roomLengthFt!,
+          modelLabel: model,
+        );
+      } catch (e) {
+        lastError = e;
+        // Try next model on 404 / not found / provider errors.
+        continue;
+      }
     }
-
-    final lockedW = roomWidthFt!;
-    final lockedL = roomLengthFt!;
-    if (precisionMode) {
-      return _precisionScan(
-        key: key,
-        frames: frames,
-        roomWidthFt: lockedW,
-        roomLengthFt: lockedL,
-        frameCount: images.length,
-      );
-    }
-
-    return _singlePassScan(
-      key: key,
-      frames: frames,
-      roomWidthFt: lockedW,
-      roomLengthFt: lockedL,
-    );
+    throw Exception('Hugging Face vision failed: $lastError');
   }
 
-  /// Consumer path: film/photos → estimated plan without tape knowledge.
-  Future<ScanResult> _consumerEasyScan({
+  Future<ScanResult> _easyScan({
+    required OpenAiVisionClient client,
     required String key,
     required List<File> frames,
     required int frameCount,
     double? userWidthFt,
     double? userLengthFt,
+    required String modelLabel,
   }) async {
     final warnings = <String>[
-      'Easy scan: $frameCount frame(s) · no tape required',
-      'Walk every wall in the video for best doors/windows/furniture.',
+      'Easy scan: $frameCount frame(s) · Hugging Face serverless',
+      'Model: $modelLabel',
     ];
 
-    Map<String, dynamic> layoutJson = {};
-    try {
-      layoutJson = await _client.completeJson(
-        apiKey: key,
-        frames: frames,
-        prompt: VisionLayoutPrompts.consumerLayout(),
-        system: VisionLayoutPrompts.consumerSystem,
-      );
-    } catch (e) {
-      warnings.add('Layout pass failed: $e');
-      final size = AutoScale.resolve(
-        userWidthFt: userWidthFt,
-        userLengthFt: userLengthFt,
-      );
-      return AccurateScan.enforce(
-        widthFt: size.widthFt,
-        lengthFt: size.lengthFt,
-        openings: const [],
-        furniture: const [],
-        warnings: [...warnings, ...size.notes],
-        sourceLabel: 'Easy scan fallback — empty plan',
-        inventDefaultOpenings: false,
-        accuracyScore: size.confidence * 0.5,
-      );
-    }
+    final layoutJson = await client.completeJson(
+      apiKey: key,
+      frames: frames,
+      prompt: VisionLayoutPrompts.consumerLayout(),
+      system: VisionLayoutPrompts.consumerSystem,
+    );
 
     final vW = _asDouble(layoutJson['roomWidth']) ??
         _asDouble(layoutJson['room_width']);
@@ -182,27 +159,6 @@ class FreeVisionScanner {
     final parsed = ScanParser.parse(filtered.map);
 
     final doorWidths = AutoScale.doorWidthsFromWalls(parsed.walls);
-    final cues = layoutJson['scaleCues'] ?? layoutJson['scale_cues'];
-    if (cues is List) {
-      for (final c in cues) {
-        if (c is! Map) continue;
-        final type = c['type']?.toString().toLowerCase() ?? '';
-        final w = _asDouble(c['widthFt']) ?? _asDouble(c['width']);
-        if (type.contains('door') && w != null && w > 0) {
-          doorWidths.add(w);
-        }
-      }
-    }
-
-    final furnPriors = <({String type, double widthFt, double lengthFt})>[
-      for (final f in parsed.furniture)
-        (
-          type: f.type.name.toUpperCase(),
-          widthFt: f.widthFt,
-          lengthFt: f.lengthFt,
-        ),
-    ];
-
     final size = AutoScale.resolve(
       userWidthFt: userWidthFt,
       userLengthFt: userLengthFt,
@@ -210,7 +166,14 @@ class FreeVisionScanner {
       visionLengthFt: provisionalL,
       visionSizeConfidence: vConf,
       doorWidthsFt: doorWidths,
-      furniture: furnPriors,
+      furniture: [
+        for (final f in parsed.furniture)
+          (
+            type: f.type.name.toUpperCase(),
+            widthFt: f.widthFt,
+            lengthFt: f.lengthFt,
+          ),
+      ],
     );
     warnings.addAll(size.notes);
 
@@ -220,9 +183,8 @@ class FreeVisionScanner {
       openings: parsed.walls,
       furniture: parsed.furniture,
       warnings: warnings,
-      sourceLabel: 'Easy photo/video plan — Groq Llama 4 Scout',
+      sourceLabel: 'Easy plan — HF $modelLabel',
       inventDefaultOpenings: false,
-      accuracyScore: null,
     );
 
     if ((provisionalW - size.widthFt).abs() > 0.4 ||
@@ -244,7 +206,7 @@ class FreeVisionScanner {
         openings: scaled.walls,
         furniture: scaled.furniture,
         warnings: warnings,
-        sourceLabel: 'Easy photo/video plan — Groq Llama 4 Scout',
+        sourceLabel: 'Easy plan — HF $modelLabel',
         inventDefaultOpenings: false,
       );
     }
@@ -263,15 +225,8 @@ class FreeVisionScanner {
       autoScale: !size.usedUserSize,
       scaleConfidence: size.confidence,
     );
-    warnings.add(
-      'Layout confidence ~${(accuracy * 100).round()}% '
-      '(more wall coverage + clear doors improve scale)',
-    );
     if (result.furniture.isEmpty) {
-      warnings.add(
-        'No furniture detected — retake with bed/sofa/TV fully in frame, '
-        'or add pieces from the catalog',
-      );
+      warnings.add('HF returned no furniture — check photos or add from catalog');
     }
 
     return ScanRefine.refine(result.copyWith(
@@ -280,29 +235,23 @@ class FreeVisionScanner {
     ));
   }
 
-  static double? _asDouble(dynamic v) {
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v.trim());
-    return null;
-  }
-
-  /// Two-pass: (1) openings / wall features (2) furniture placement.
-  Future<ScanResult> _precisionScan({
+  Future<ScanResult> _lockedScan({
+    required OpenAiVisionClient client,
     required String key,
     required List<File> frames,
     required double roomWidthFt,
     required double roomLengthFt,
-    required int frameCount,
+    required String modelLabel,
   }) async {
     final warnings = <String>[
-      'Precision scan: $frameCount frame(s) · multi-pass interior mapping',
-      'Room size locked to your ${roomWidthFt.toStringAsFixed(1)} × '
-          '${roomLengthFt.toStringAsFixed(1)} ft measurements',
+      'HF multi-frame scan · size locked '
+          '${roomWidthFt.toStringAsFixed(1)}×${roomLengthFt.toStringAsFixed(1)} ft',
+      'Model: $modelLabel',
     ];
 
     Map<String, dynamic> archJson = {};
     try {
-      archJson = await _client.completeJson(
+      archJson = await client.completeJson(
         apiKey: key,
         frames: frames,
         prompt: VisionLayoutPrompts.architecture(roomWidthFt, roomLengthFt),
@@ -314,7 +263,7 @@ class FreeVisionScanner {
 
     Map<String, dynamic> furnJson = {};
     try {
-      furnJson = await _client.completeJson(
+      furnJson = await client.completeJson(
         apiKey: key,
         frames: frames,
         prompt: VisionLayoutPrompts.furniture(roomWidthFt, roomLengthFt),
@@ -327,11 +276,10 @@ class FreeVisionScanner {
     final merged = <String, dynamic>{
       'roomWidth': roomWidthFt,
       'roomLength': roomLengthFt,
-      'walls': archJson['walls'] ?? furnJson['walls'] ?? [],
+      'walls': archJson['walls'] ?? [],
       'furniture': furnJson['furniture'] ?? [],
       'openings': archJson['openings'] ?? archJson['walls'] ?? [],
     };
-
     if (archJson['openings'] is List &&
         (archJson['openings'] as List).isNotEmpty) {
       merged['walls'] = archJson['openings'];
@@ -343,7 +291,6 @@ class FreeVisionScanner {
         'Dropped ${filtered.dropped} low-confidence furniture guess(es)',
       );
     }
-
     final parsed = ScanParser.parse(filtered.map);
     final accuracy = _estimateAccuracy(
       frames: frames.length,
@@ -357,53 +304,15 @@ class FreeVisionScanner {
       dropped: filtered.dropped,
     );
 
-    warnings.add(
-      'Scan accuracy estimate: ${(accuracy * 100).round()}% '
-      '(more walkaround frames improve openings/furniture placement)',
-    );
-    if (parsed.furniture.isEmpty) {
-      warnings.add(
-        'No furniture detected — try Hugging Face fallback or add from catalog',
-      );
-    }
-
-    final raw = AccurateScan.enforce(
-      widthFt: roomWidthFt,
-      lengthFt: roomLengthFt,
-      openings: parsed.walls,
-      furniture: parsed.furniture,
-      warnings: warnings,
-      sourceLabel: 'Precision multi-frame scan (Groq) — size locked',
-      inventDefaultOpenings: false,
-      accuracyScore: accuracy,
-    );
-    return ScanRefine.refine(raw);
-  }
-
-  Future<ScanResult> _singlePassScan({
-    required String key,
-    required List<File> frames,
-    required double roomWidthFt,
-    required double roomLengthFt,
-  }) async {
-    final jsonMap = await _client.completeJson(
-      apiKey: key,
-      frames: frames,
-      prompt: VisionLayoutPrompts.furniture(roomWidthFt, roomLengthFt),
-      system: VisionLayoutPrompts.furnitureSystem,
-    );
-    jsonMap['roomWidth'] = roomWidthFt;
-    jsonMap['roomLength'] = roomLengthFt;
-    final filtered = _filterFurnitureMap(jsonMap);
-    final parsed = ScanParser.parse(filtered.map);
     return ScanRefine.refine(AccurateScan.enforce(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
       openings: parsed.walls,
       furniture: parsed.furniture,
-      warnings: parsed.warnings,
-      sourceLabel: 'Free AI scan — size locked',
+      warnings: warnings,
+      sourceLabel: 'HF $modelLabel — size locked',
       inventDefaultOpenings: false,
+      accuracyScore: accuracy,
     ));
   }
 
@@ -420,6 +329,12 @@ class FreeVisionScanner {
     return (map: out, dropped: result.dropped);
   }
 
+  static double? _asDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim());
+    return null;
+  }
+
   static double _estimateAccuracy({
     required int frames,
     required int furnitureCount,
@@ -428,7 +343,6 @@ class FreeVisionScanner {
     bool autoScale = false,
     double scaleConfidence = 0.5,
   }) {
-    // Heuristic for UI — not CAD / LiDAR. Empty furniture cannot score high.
     var score = autoScale ? 0.35 : 0.42;
     score += (frames.clamp(1, 8) / 8) * 0.20;
     if (openingsCount > 0) score += 0.10;
@@ -436,11 +350,9 @@ class FreeVisionScanner {
       score += 0.12;
       score += (furnitureCount.clamp(1, 6) / 6) * 0.12;
     } else {
-      // Cap when no furniture — feedback showed 78% with 0 pieces.
       score = score.clamp(0.0, 0.48);
     }
     if (dropped == 0 && furnitureCount > 0) score += 0.05;
-    if (frames >= 4) score += 0.04;
     if (autoScale) {
       score += (scaleConfidence - 0.4).clamp(0.0, 0.15);
       return score.clamp(0.28, furnitureCount == 0 ? 0.50 : 0.82);

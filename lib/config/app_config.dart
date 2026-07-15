@@ -5,7 +5,7 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 23;
+  static const int buildNumber = 24;
   static const bool isBeta = true;
 
   /// Firebase Google Sign-In Web client ID (oauth_client client_type 3).
@@ -37,6 +37,7 @@ class AppConfig {
   static const String apiKeyPrefKey = 'gemini_api_key';
   static const String apiKeyLegacyPrefKey = 'openai_api_key';
   static const String groqApiKeyPrefKey = 'groq_api_key';
+  static const String hfTokenPrefKey = 'hf_token';
   static const String unitsPrefKey = 'unit_system';
   static const String onboardingDoneKey = 'onboarding_done_v1';
   static const String betaBannerDismissedKey = 'beta_banner_dismissed_v1';
@@ -55,10 +56,22 @@ class AppConfig {
   static const String groqVisionModel =
       'meta-llama/llama-4-scout-17b-16e-instruct';
 
+  /// Hugging Face Inference Providers (OpenAI-compatible router).
+  /// Free-tier credits on HF account; open VLMs for room layout JSON.
+  static const String hfChatCompletionsUrl =
+      'https://router.huggingface.co/v1/chat/completions';
+  /// Tried in order when a model/provider is unavailable.
+  static const List<String> hfVisionModelCandidates = [
+    'Qwen/Qwen2.5-VL-3B-Instruct',
+    'Qwen/Qwen2.5-VL-7B-Instruct',
+    'Qwen/Qwen3-VL-4B-Instruct',
+  ];
+
   /// Optional app-bundled keys so testers never paste a key.
   /// Pass at build/run time:
   ///   flutter run --dart-define=ROOMCRAFT_GROQ_API_KEY=gsk_...
   ///   flutter build apk --dart-define=ROOMCRAFT_GEMINI_API_KEY=...
+  ///   flutter build apk --dart-define=ROOMCRAFT_HF_TOKEN=hf_...
   /// Empty string = not set (offline accurate plan still works).
   static const String bundledGroqApiKey = String.fromEnvironment(
     'ROOMCRAFT_GROQ_API_KEY',
@@ -68,10 +81,15 @@ class AppConfig {
     'ROOMCRAFT_GEMINI_API_KEY',
     defaultValue: '',
   );
+  static const String bundledHfToken = String.fromEnvironment(
+    'ROOMCRAFT_HF_TOKEN',
+    defaultValue: '',
+  );
 
   static bool get hasBundledFreeVision =>
       bundledGroqApiKey.trim().isNotEmpty ||
-      bundledGeminiApiKey.trim().isNotEmpty;
+      bundledGeminiApiKey.trim().isNotEmpty ||
+      bundledHfToken.trim().isNotEmpty;
 
   static const double defaultPixelsPerFoot = 20.0;
   static const double defaultRoomWidthFt = 10.0;

@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+24 (2026-07-15)
+
+### Scan furniture recall (feedback: empty / random plans)
+- **Prompts**: stop biasing models toward empty `furniture: []`; require listing all clearly visible major pieces (bed, sofa, TV, wardrobe, table, chairs).
+- **Filter**: confidence floor **0.55** (was 0.80); keep typed items even when the model omits `confidence`.
+- **Confidence UI**: score capped ~50% when furniture count is 0 (no more ~78% empty plans).
+- **Furniture cap**: keep up to 12 pieces (was 8).
+- **Hugging Face free VLM fallback**: serverless Qwen2.5-VL via Inference Providers router when Groq returns empty / fails. Token in Settings or `ROOMCRAFT_HF_TOKEN`.
+- Backend order: **Groq Scout → Hugging Face Qwen → Gemini Flash → offline**.
+
 ## 1.0.0-beta.1+23 (2026-07-14)
 
 ### Fixes from user feedback (report 1c373b54-144)
