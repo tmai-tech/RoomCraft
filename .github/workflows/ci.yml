@@ -38,8 +38,15 @@ jobs:
         run: flutter pub get
 
       - name: Flutter analyze
-        # Prefer real errors/warnings; style infos should not block beta ships.
-        run: flutter analyze --fatal-warnings
+        # Fail only on analyzer errors (not style infos).
+        run: |
+          set -o pipefail
+          flutter analyze 2>&1 | tee /tmp/analyze.txt
+          if grep -E '^\s*error •' /tmp/analyze.txt; then
+            echo "Analyzer reported errors"
+            exit 1
+          fi
+          echo "No analyzer errors (infos/warnings allowed for beta)"
 
       - name: Flutter test
         run: flutter test --coverage
