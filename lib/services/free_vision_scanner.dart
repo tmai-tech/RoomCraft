@@ -99,8 +99,9 @@ class FreeVisionScanner {
       );
     }
 
-    final lockedW = roomWidthFt!;
-    final lockedL = roomLengthFt!;
+    // After needAuto early-return, both dimensions are positive non-null.
+    final lockedW = roomWidthFt;
+    final lockedL = roomLengthFt;
     if (precisionMode) {
       return _precisionScan(
         key: key,

@@ -101,8 +101,8 @@ class HuggingFaceVisionScanner {
           client: client,
           key: key,
           frames: frames,
-          roomWidthFt: roomWidthFt!,
-          roomLengthFt: roomLengthFt!,
+          roomWidthFt: roomWidthFt,
+          roomLengthFt: roomLengthFt,
           modelLabel: model,
         );
       } catch (e) {
