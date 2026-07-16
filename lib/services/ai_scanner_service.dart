@@ -139,9 +139,14 @@ class AIScannerService {
     if (tryVision) {
       ScanResult? best;
       final notes = <String>[
-        'Scan engines +28: 4-wall multi-photo + inventory seed + best-of backends',
+        'Scan engines +29: ordered wall-by-wall (3–4 photos) + inventory + best-of',
       ];
-      if (images.length >= 3 && images.length <= 6) {
+      if (images.length >= 3 && images.length <= 4) {
+        notes.add(
+          'Ordered wall mode: photo0=south, 1=east, 2=north, 3=west '
+          '(${images.length} photos)',
+        );
+      } else if (images.length >= 3 && images.length <= 6) {
         notes.add(
           'Multi-wall mode: ${images.length} photos — cross-check walls for placement',
         );

@@ -310,7 +310,8 @@ Rules (critical for plan accuracy):
         if (item is! Map) continue;
         final m = Map<String, dynamic>.from(item);
         final conf = _num(m['confidence']) ?? 0.8;
-        if (conf < 0.68) continue;
+        // +29: align with multi-view 0.55 floor for recall on 4-wall photos
+        if (conf < 0.55) continue;
         final type = _stroke(m['type']?.toString());
         if (type == null) continue;
 
@@ -363,7 +364,8 @@ Rules (critical for plan accuracy):
         if (item is! Map) continue;
         final m = Map<String, dynamic>.from(item);
         final conf = _num(m['confidence']) ?? 0.8;
-        if (conf < 0.72) continue;
+        // +29: lower floor so wardrobe/desk on wall photos are not dropped
+        if (conf < 0.55) continue;
         final type = _type(m['type']?.toString());
         if (type == null) continue;
         final fromLeft = _num(m['from_left_ft']);

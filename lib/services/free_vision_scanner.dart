@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
@@ -10,10 +11,13 @@ import '../domain/scan_keyframes.dart';
 import '../domain/scan_parser.dart';
 import '../domain/scan_refine.dart';
 import '../domain/vision_layout_prompts.dart';
+import '../domain/wall_relative_scan.dart';
+import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'openai_vision_client.dart';
 import 'secure_key_store.dart';
+import 'wall_relative_vision.dart';
 
 /// Free multimodal scan via Groq (Llama 4 Scout vision).
 ///
@@ -149,6 +153,27 @@ class FreeVisionScanner {
       warnings.add('Inventory pass skipped: $e');
     }
 
+    // +29: 3–4 gallery photos → ordered wall-by-wall (designer method).
+    // Photo order: 0=south, 1=east, 2=north, 3=west.
+    ScanResult? wallByWall;
+    if (frames.length >= 3 && frames.length <= 4) {
+      try {
+        wallByWall = await _orderedWallByWallScan(
+          key: key,
+          frames: frames,
+          userWidthFt: userWidthFt,
+          userLengthFt: userLengthFt,
+          inventoryHint: inventoryHint,
+        );
+        warnings.add(
+          'Wall-by-wall (+29): ${wallByWall.furniture.length} piece(s), '
+          '${wallByWall.walls.where((w) => w.type != StrokeType.wall).length} opening(s)',
+        );
+      } catch (e) {
+        warnings.add('Wall-by-wall path failed: $e');
+      }
+    }
+
     Map<String, dynamic> layoutJson = {};
     try {
       layoutJson = await _client.completeJson(
@@ -162,6 +187,11 @@ class FreeVisionScanner {
       );
     } catch (e) {
       warnings.add('Layout pass failed: $e');
+      if (wallByWall != null && wallByWall.furniture.isNotEmpty) {
+        return wallByWall.copyWith(
+          warnings: [...wallByWall.warnings, ...warnings],
+        );
+      }
       final size = AutoScale.resolve(
         userWidthFt: userWidthFt,
         userLengthFt: userLengthFt,
@@ -308,9 +338,190 @@ class FreeVisionScanner {
       );
     }
 
-    return ScanRefine.refine(result.copyWith(
+    var bulk = ScanRefine.refine(result.copyWith(
       warnings: warnings,
       accuracyScore: accuracy,
+    ));
+
+    // Prefer ordered wall-by-wall when it has better inventory/placement.
+    if (wallByWall != null) {
+      final bulkScore = _easyQuality(bulk, inventoryHint);
+      final wallScore = _easyQuality(wallByWall, inventoryHint);
+      warnings.add('Bulk score=$bulkScore · wall-by-wall score=$wallScore');
+      if (wallScore > bulkScore) {
+        return wallByWall.copyWith(
+          warnings: [
+            ...wallByWall.warnings,
+            ...warnings.where((w) => !wallByWall!.warnings.contains(w)),
+            'Selected wall-by-wall plan over bulk multi-image layout',
+          ],
+        );
+      }
+    }
+    return bulk;
+  }
+
+  /// 3–4 photos mapped south→east→north→west (upload order).
+  Future<ScanResult> _orderedWallByWallScan({
+    required String key,
+    required List<File> frames,
+    double? userWidthFt,
+    double? userLengthFt,
+    required String inventoryHint,
+  }) async {
+    final size = AutoScale.resolve(
+      userWidthFt: userWidthFt,
+      userLengthFt: userLengthFt,
+    );
+    const order = [
+      WallSide.south,
+      WallSide.east,
+      WallSide.north,
+      WallSide.west,
+    ];
+    final wallPhotos = <WallSide, File>{};
+    for (var i = 0; i < frames.length && i < order.length; i++) {
+      wallPhotos[order[i]] = frames[i];
+    }
+
+    var result = await WallRelativeVision.scanWallByWall(
+      wallPhotos: wallPhotos,
+      roomWidthFt: size.widthFt,
+      roomLengthFt: size.lengthFt,
+      apiKey: key,
+    );
+
+    result = _filterScanByInventory(result, inventoryHint);
+    // Seed missing MUST types as wall-anchored on first empty wall side
+    result = _seedScanResultFromInventory(result, inventoryHint);
+
+    return result.copyWith(
+      warnings: [
+        ...result.warnings,
+        ...size.notes,
+        'Photo order: [0]=south [1]=east [2]=north [3]=west',
+        'Easy plan — Groq wall-by-wall (+29)',
+      ],
+    );
+  }
+
+  static int _easyQuality(ScanResult r, String inventoryHint) {
+    var q = r.furniture.length * 12;
+    final types = r.furniture.map((f) => f.type).toSet();
+    if (types.contains(FurnitureType.wardrobe)) q += 30;
+    if (types.contains(FurnitureType.table)) q += 30;
+    if (inventoryHint.contains('MUST include WARDROBE') &&
+        !types.contains(FurnitureType.wardrobe)) {
+      q -= 40;
+    }
+    if (inventoryHint.contains('MUST include TABLE') &&
+        !types.contains(FurnitureType.table)) {
+      q -= 40;
+    }
+    if (inventoryHint.contains('NO BED') &&
+        types.contains(FurnitureType.bed)) {
+      q -= 35;
+    }
+    if (inventoryHint.contains('NO SOFA') &&
+        types.contains(FurnitureType.sofa)) {
+      q -= 35;
+    }
+    if (inventoryHint.contains('NO TV_UNIT') &&
+        types.contains(FurnitureType.tvUnit)) {
+      q -= 35;
+    }
+    final openings = r.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .length;
+    q += openings.clamp(0, 4) * 5;
+    if (r.furniture.isEmpty) q -= 50;
+    return q;
+  }
+
+  static ScanResult _filterScanByInventory(
+    ScanResult r,
+    String inventoryHint,
+  ) {
+    if (inventoryHint.isEmpty) return r;
+    final forbid = <FurnitureType>{};
+    if (inventoryHint.contains('NO BED')) forbid.add(FurnitureType.bed);
+    if (inventoryHint.contains('NO SOFA')) forbid.add(FurnitureType.sofa);
+    if (inventoryHint.contains('NO TV_UNIT')) forbid.add(FurnitureType.tvUnit);
+    if (forbid.isEmpty) return r;
+    final kept = r.furniture.where((f) => !forbid.contains(f.type)).toList();
+    if (kept.length == r.furniture.length) return r;
+    return r.copyWith(
+      furniture: kept,
+      warnings: [
+        ...r.warnings,
+        'Filtered ${r.furniture.length - kept.length} inventory-forbidden piece(s)',
+      ],
+    );
+  }
+
+  static ScanResult _seedScanResultFromInventory(
+    ScanResult r,
+    String inventoryHint,
+  ) {
+    if (inventoryHint.isEmpty) return r;
+    final types = r.furniture.map((f) => f.type).toSet();
+    final extra = <ScanFurnitureHint>[...r.furniture];
+    final notes = <String>[...r.warnings];
+
+    void seed(FurnitureType type, String mustToken, String wallName) {
+      if (!inventoryHint.contains(mustToken)) return;
+      if (types.contains(type)) return;
+      // Approximate catalog sizes
+      final dim = switch (type) {
+        FurnitureType.wardrobe => (6.0, 2.0),
+        FurnitureType.table => (4.0, 2.0),
+        _ => (3.0, 2.0),
+      };
+      // Place via wall-relative compose fields in free XY near wall
+      final w = r.roomWidthFt;
+      final l = r.roomLengthFt;
+      double x;
+      double y;
+      switch (wallName) {
+        case 'west':
+          x = dim.$2 / 2 + 0.3;
+          y = l / 2;
+        case 'east':
+          x = w - dim.$2 / 2 - 0.3;
+          y = l / 2;
+        case 'north':
+          x = w / 2;
+          y = l - dim.$2 / 2 - 0.3;
+        default:
+          x = w / 2;
+          y = dim.$2 / 2 + 0.3;
+      }
+      extra.add(ScanFurnitureHint(
+        type: type,
+        posFt: Offset(x, y),
+        widthFt: dim.$1,
+        lengthFt: dim.$2,
+        rotationRad: 0,
+      ));
+      types.add(type);
+      notes.add('Seeded ${type.name} from inventory on $wallName wall');
+    }
+
+    seed(FurnitureType.wardrobe, 'MUST include WARDROBE', 'west');
+    seed(FurnitureType.table, 'MUST include TABLE', 'south');
+    if (extra.length == r.furniture.length) return r;
+    return ScanRefine.refine(AccurateScan.enforce(
+      widthFt: r.roomWidthFt,
+      lengthFt: r.roomLengthFt,
+      openings: r.walls,
+      furniture: extra,
+      warnings: notes,
+      sourceLabel: 'Easy plan — Groq wall-by-wall (+29) seeded',
+      inventDefaultOpenings: false,
+      accuracyScore: r.accuracyScore,
     ));
   }
 

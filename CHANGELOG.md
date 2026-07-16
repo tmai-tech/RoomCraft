@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+29 (2026-07-16)
+
+### 4-image ordered wall-by-wall (designer method)
+- When user uploads **3–4 photos**, run **ordered wall-by-wall** vision: photo0→south, 1→east, 2→north, 3→west (per-wall placement, not free-scatter bulk layout).
+- Compare bulk multi-image plan vs wall-by-wall; **keep the higher inventory-aware score**.
+- Wall-relative confidence floor **0.55** (was 0.68/0.72) so wardrobe/desk are not dropped.
+- Inventory filter + seed on wall-by-wall results.
+- Version **+29**.
+
 ## 1.0.0-beta.1+28 (2026-07-16)
 
 ### 4-image multi-wall accuracy
