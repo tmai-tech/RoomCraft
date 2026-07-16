@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+30 (2026-07-16)
+
+### 4-image size-lock then wall-by-wall
+- Run **bulk layout first** for room size (AutoScale), then **wall-by-wall** at that size (no more 12×14 default for wall placement).
+- Prefer wall-by-wall on **tie/near-tie** (more stable than free-scatter bulk).
+- **Dedupe** major furniture types (one wardrobe/table/bed/sofa/TV).
+- Simple Scan UI tip: 4-photo walk order south→east→north→west, full-res only.
+- Version **+30**.
+
 ## 1.0.0-beta.1+29 (2026-07-16)
 
 ### 4-image ordered wall-by-wall (designer method)

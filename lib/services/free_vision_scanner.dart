@@ -153,27 +153,8 @@ class FreeVisionScanner {
       warnings.add('Inventory pass skipped: $e');
     }
 
-    // +29: 3–4 gallery photos → ordered wall-by-wall (designer method).
-    // Photo order: 0=south, 1=east, 2=north, 3=west.
-    ScanResult? wallByWall;
-    if (frames.length >= 3 && frames.length <= 4) {
-      try {
-        wallByWall = await _orderedWallByWallScan(
-          key: key,
-          frames: frames,
-          userWidthFt: userWidthFt,
-          userLengthFt: userLengthFt,
-          inventoryHint: inventoryHint,
-        );
-        warnings.add(
-          'Wall-by-wall (+29): ${wallByWall.furniture.length} piece(s), '
-          '${wallByWall.walls.where((w) => w.type != StrokeType.wall).length} opening(s)',
-        );
-      } catch (e) {
-        warnings.add('Wall-by-wall path failed: $e');
-      }
-    }
-
+    // Bulk multi-image first (size estimate + layout candidate).
+    // Wall-by-wall runs after size is known (+30) so placement uses real feet.
     Map<String, dynamic> layoutJson = {};
     try {
       layoutJson = await _client.completeJson(
@@ -187,10 +168,24 @@ class FreeVisionScanner {
       );
     } catch (e) {
       warnings.add('Layout pass failed: $e');
-      if (wallByWall != null && wallByWall.furniture.isNotEmpty) {
-        return wallByWall.copyWith(
-          warnings: [...wallByWall.warnings, ...warnings],
-        );
+      // Still try wall-by-wall with fallback size when bulk fails.
+      if (frames.length >= 3 && frames.length <= 4) {
+        try {
+          final fallback = await _orderedWallByWallScan(
+            key: key,
+            frames: frames,
+            userWidthFt: userWidthFt,
+            userLengthFt: userLengthFt,
+            inventoryHint: inventoryHint,
+          );
+          if (fallback.furniture.isNotEmpty) {
+            return fallback.copyWith(
+              warnings: [...fallback.warnings, ...warnings],
+            );
+          }
+        } catch (e2) {
+          warnings.add('Wall-by-wall fallback failed: $e2');
+        }
       }
       final size = AutoScale.resolve(
         userWidthFt: userWidthFt,
@@ -342,23 +337,86 @@ class FreeVisionScanner {
       warnings: warnings,
       accuracyScore: accuracy,
     ));
+    bulk = _dedupeMajorFurniture(bulk);
 
-    // Prefer ordered wall-by-wall when it has better inventory/placement.
+    // +30: wall-by-wall AFTER bulk size lock (feet accurate enough for placement).
+    ScanResult? wallByWall;
+    if (frames.length >= 3 && frames.length <= 4) {
+      try {
+        wallByWall = await _orderedWallByWallScan(
+          key: key,
+          frames: frames,
+          userWidthFt: size.widthFt,
+          userLengthFt: size.lengthFt,
+          inventoryHint: inventoryHint,
+        );
+        // Re-lock wall plan to the same AutoScale room size as bulk.
+        if ((wallByWall.roomWidthFt - size.widthFt).abs() > 0.15 ||
+            (wallByWall.roomLengthFt - size.lengthFt).abs() > 0.15) {
+          wallByWall = AutoScale.rescaleResult(
+            wallByWall,
+            newWidthFt: size.widthFt,
+            newLengthFt: size.lengthFt,
+          );
+          wallByWall = ScanRefine.refine(wallByWall);
+        }
+        wallByWall = _dedupeMajorFurniture(wallByWall);
+        warnings.add(
+          'Wall-by-wall (+30) @ ${size.widthFt.toStringAsFixed(1)}×'
+          '${size.lengthFt.toStringAsFixed(1)} ft: '
+          '${wallByWall.furniture.length} piece(s)',
+        );
+      } catch (e) {
+        warnings.add('Wall-by-wall path failed: $e');
+      }
+    }
+
+    // Prefer wall-by-wall on tie/near-tie (designer placement is more stable).
     if (wallByWall != null) {
       final bulkScore = _easyQuality(bulk, inventoryHint);
       final wallScore = _easyQuality(wallByWall, inventoryHint);
       warnings.add('Bulk score=$bulkScore · wall-by-wall score=$wallScore');
-      if (wallScore > bulkScore) {
+      if (wallScore >= bulkScore - 5) {
         return wallByWall.copyWith(
           warnings: [
             ...wallByWall.warnings,
             ...warnings.where((w) => !wallByWall!.warnings.contains(w)),
-            'Selected wall-by-wall plan over bulk multi-image layout',
+            'Selected wall-by-wall plan (stable multi-wall placement)',
           ],
         );
       }
     }
-    return bulk;
+    return bulk.copyWith(
+      warnings: [...bulk.warnings, ...warnings.where((w) => !bulk.warnings.contains(w))],
+    );
+  }
+
+  /// Keep one of each major type (wardrobe/bed/sofa/tv) to reduce doubles.
+  static ScanResult _dedupeMajorFurniture(ScanResult r) {
+    const majors = {
+      FurnitureType.wardrobe,
+      FurnitureType.bed,
+      FurnitureType.sofa,
+      FurnitureType.tvUnit,
+      FurnitureType.table,
+    };
+    final seen = <FurnitureType>{};
+    final kept = <ScanFurnitureHint>[];
+    for (final f in r.furniture) {
+      if (majors.contains(f.type)) {
+        if (seen.contains(f.type)) continue;
+        seen.add(f.type);
+      }
+      kept.add(f);
+    }
+    if (kept.length == r.furniture.length) return r;
+    return r.copyWith(
+      furniture: kept,
+      warnings: [
+        ...r.warnings,
+        'Deduped major furniture (${r.furniture.length - kept.length} dropped)',
+      ],
+    );
   }
 
   /// 3–4 photos mapped south→east→north→west (upload order).

@@ -139,11 +139,11 @@ class AIScannerService {
     if (tryVision) {
       ScanResult? best;
       final notes = <String>[
-        'Scan engines +29: ordered wall-by-wall (3–4 photos) + inventory + best-of',
+        'Scan engines +30: size-lock then wall-by-wall (3–4 photos) + best-of',
       ];
       if (images.length >= 3 && images.length <= 4) {
         notes.add(
-          'Ordered wall mode: photo0=south, 1=east, 2=north, 3=west '
+          'Ordered walls after size lock: 0=south 1=east 2=north 3=west '
           '(${images.length} photos)',
         );
       } else if (images.length >= 3 && images.length <= 6) {

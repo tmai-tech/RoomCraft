@@ -800,7 +800,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Add photos of every wall (or a short walkaround video). '
-                    'Then tap Generate plan.',
+                    'Then tap Generate plan.\n\n'
+                    'Best accuracy (4 walls): multi-select photos in walk order — '
+                    '1 near/south wall, 2 right/east, 3 far/north, 4 left/west. '
+                    'Use full-resolution photos, not screenshots.',
                     style: TextStyle(fontSize: 15, color: Colors.grey.shade800),
                   ),
                   const SizedBox(height: 16),
@@ -1089,8 +1092,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Add photos of the room (multi-select from gallery) or a walkaround '
-                    'video so AI can place sofas, beds, etc. Skip for an empty room plan.',
+                    'Multi-select gallery photos or a walkaround video. '
+                    'For 4 walls, pick in order: south → east → north → west '
+                    '(full-res). Skip for an empty room plan.',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                   ),
                   const SizedBox(height: 8),
