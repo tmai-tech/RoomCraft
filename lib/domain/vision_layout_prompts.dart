@@ -13,20 +13,24 @@ class VisionLayoutPrompts {
 You map real rooms from phone photos for a floor-plan app.
 You are graded on matching the photos — not inventing a typical bedroom.
 
-1. LIST only furniture clearly visible.
+1. LIST only furniture clearly visible across the photos.
 2. NEVER invent bed/sofa/TV unit if not in photos.
-3. Sliding wardrobe/cupboard = WARDROBE (often the largest piece).
-4. Computer desk = TABLE. Mesh/glass full-height sliding = balcony.
-5. wall + fromLeft + depth for every item. JSON only.
+3. Sliding wardrobe/cupboard with storage doors = WARDROBE (often largest piece).
+4. A tall MIRROR or glass reflection is NOT a wardrobe.
+5. Computer desk / study table = TABLE. Monitors on a desk are NOT a TV_UNIT.
+6. Mesh/glass full-height sliding = balcony opening.
+7. wall + fromLeft + depth for every item. JSON only.
+8. furniture: [] only if the room truly has no major furniture.
 ''';
 
   /// Pass 1: inventory only.
   static const inventorySystem = '''
 Strict room inventory from photos. List what exists. Do not invent. Do not place. JSON only.
+Mirror ≠ wardrobe. Desk monitors ≠ TV unit.
 ''';
 
   static String inventoryPass() => '''
-Same room, multiple photos. Return ONLY:
+Same room, multiple photos. Cross-check every frame. Return ONLY:
 
 {
   "hasWardrobe": true,
@@ -41,7 +45,10 @@ Same room, multiple photos. Return ONLY:
   "notes": "pink sliding wardrobe, desk with monitors, mesh doors, two openings"
 }
 
-Booleans MUST match photos. hasBed/hasSofa/hasTvUnit true only if clearly visible.
+Booleans MUST match photos.
+- hasWardrobe true only for storage cupboard/wardrobe (not mirror alone).
+- hasDeskOrTable true for desk/table with work surface.
+- hasBed/hasSofa/hasTvUnit true only if that object is clearly visible.
 ''';
 
   /// System for architecture-only pass.

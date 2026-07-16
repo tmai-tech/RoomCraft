@@ -13,7 +13,9 @@ import '../domain/local_room_scanner.dart';
 import '../domain/scan_parser.dart';
 import '../domain/scan_refine.dart';
 import '../domain/vision_layout_prompts.dart';
+import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
+import '../models/stroke_model.dart';
 import 'free_vision_scanner.dart';
 import 'huggingface_vision_scanner.dart';
 import 'secure_key_store.dart';
@@ -104,10 +106,11 @@ class AIScannerService {
 
   /// Primary free path: accurate geometry + optional free vision furniture.
   ///
-  /// Backend order (first success with best furniture wins when empty):
+  /// Backend race (+27): run candidates and **pick best layout quality**, not
+  /// first non-empty only.
   /// 1. Groq Llama 4 Scout
-  /// 2. Hugging Face serverless Qwen2.5-VL (token / dart-define)
-  /// 3. Gemini Flash
+  /// 2. Hugging Face Qwen2.5-VL when empty / thin / weak score
+  /// 3. Gemini Flash when still weak
   /// 4. Offline empty rectangle
   ///
   /// When [autoScale] is true, room size is estimated from photos (everyday
@@ -135,7 +138,9 @@ class AIScannerService {
 
     if (tryVision) {
       ScanResult? best;
-      final notes = <String>[];
+      final notes = <String>[
+        'Scan engines +27: pick best of Groq / HF / Gemini by layout quality',
+      ];
 
       // 1) Groq free vision
       if (await FreeVisionScanner.isAvailable()) {
@@ -146,14 +151,18 @@ class AIScannerService {
             roomLengthFt: autoScale ? roomLengthFt : l,
             autoScale: autoScale,
           );
+          notes.add(
+            'Groq quality=${_layoutQuality(best)} '
+            'furniture=${best.furniture.length}',
+          );
         } catch (e) {
           notes.add('Groq vision unavailable: $e');
         }
       }
 
-      // 2) Hugging Face serverless VLM — always try when empty / better furniture
+      // 2) Hugging Face — not only when empty: also when thin/weak Groq plan
       if (await HuggingFaceVisionScanner.isAvailable()) {
-        final needHf = best == null || best.furniture.isEmpty;
+        final needHf = best == null || _isWeakLayout(best);
         if (needHf) {
           try {
             final hf = await HuggingFaceVisionScanner().scan(
@@ -162,28 +171,30 @@ class AIScannerService {
               roomLengthFt: autoScale ? roomLengthFt : l,
               autoScale: autoScale,
             );
-            if (best == null ||
-                hf.furniture.length > best.furniture.length) {
-              best = hf.copyWith(
-                warnings: [
-                  ...hf.warnings,
-                  if (notes.isNotEmpty) ...notes,
-                  'Used Hugging Face open VLM for furniture layout',
-                ],
-              );
-            } else {
-              notes.add(
-                'HF also ran (${hf.furniture.length} pieces) — kept prior result',
-              );
-            }
+            final hfTagged = hf.copyWith(
+              warnings: [
+                ...hf.warnings,
+                'Used Hugging Face open VLM for furniture layout',
+              ],
+            );
+            notes.add(
+              'HF quality=${_layoutQuality(hfTagged)} '
+              'furniture=${hfTagged.furniture.length}',
+            );
+            best = _preferLayout(best, hfTagged);
           } catch (e) {
             notes.add('Hugging Face vision unavailable: $e');
           }
+        } else {
+          notes.add(
+            'HF skipped — Groq layout quality=${_layoutQuality(best!)} '
+            '(furniture=${best.furniture.length})',
+          );
         }
       }
 
-      // 3) Gemini free-tier alternative when still empty
-      if (best == null || best.furniture.isEmpty) {
+      // 3) Gemini when still weak
+      if (best == null || _isWeakLayout(best)) {
         final geminiKey = await resolveGeminiApiKey();
         if (geminiKey != null && geminiKey.isNotEmpty) {
           try {
@@ -198,13 +209,14 @@ class AIScannerService {
               lengthFt: autoScale ? gemini.roomLengthFt : l,
               openings: gemini.walls,
               furniture: gemini.furniture,
-              warnings: [...gemini.warnings, ...notes],
+              warnings: gemini.warnings,
               sourceLabel: 'Free Gemini furniture assist — room size locked',
             ));
-            if (best == null ||
-                enforced.furniture.length > best.furniture.length) {
-              best = enforced;
-            }
+            notes.add(
+              'Gemini quality=${_layoutQuality(enforced)} '
+              'furniture=${enforced.furniture.length}',
+            );
+            best = _preferLayout(best, enforced);
           } catch (e) {
             notes.add('Gemini assist unavailable: $e');
           }
@@ -212,11 +224,11 @@ class AIScannerService {
       }
 
       if (best != null) {
-        if (notes.isNotEmpty &&
-            !best.warnings.any((w) => notes.any((n) => w.contains(n)))) {
-          return best.copyWith(warnings: [...best.warnings, ...notes]);
-        }
-        return best;
+        final winnerNotes = [
+          ...best.warnings,
+          ...notes.where((n) => !best!.warnings.contains(n)),
+        ];
+        return best.copyWith(warnings: winnerNotes);
       }
     }
 
@@ -389,5 +401,50 @@ class AIScannerService {
       }
     }
     throw Exception('Gemini models unavailable: $lastError');
+  }
+
+  /// +27: weak plan → try next backend (not only empty furniture).
+  static bool _isWeakLayout(ScanResult r) {
+    if (r.furniture.isEmpty) return true;
+    if (r.furniture.length < 2) return true;
+    final score = r.accuracyScore;
+    if (score != null && score < 0.48) return true;
+    return _layoutQuality(r) < 35;
+  }
+
+  /// Higher is better. Favors real inventory (wardrobe/desk) over empty/random.
+  static int _layoutQuality(ScanResult r) {
+    var q = 0;
+    final types = r.furniture.map((f) => f.type).toSet();
+    q += r.furniture.length * 10;
+    q += types.length * 6;
+    if (types.contains(FurnitureType.wardrobe)) q += 28;
+    if (types.contains(FurnitureType.table)) q += 28;
+    if (types.contains(FurnitureType.bed)) q += 8;
+    if (types.contains(FurnitureType.sofa)) q += 8;
+    final openings = r.walls
+        .where(
+          (w) =>
+              w.type == StrokeType.door ||
+              w.type == StrokeType.window ||
+              w.type == StrokeType.balcony,
+        )
+        .length;
+    q += openings.clamp(0, 4) * 6;
+    if (r.furniture.isEmpty) q -= 60;
+    // Single floating piece is often a bad guess
+    if (r.furniture.length == 1) q -= 10;
+    final acc = r.accuracyScore;
+    if (acc != null) q += (acc * 20).round();
+    return q;
+  }
+
+  /// Keep the higher-quality layout; ties keep [current].
+  static ScanResult? _preferLayout(ScanResult? current, ScanResult candidate) {
+    if (current == null) return candidate;
+    final a = _layoutQuality(current);
+    final b = _layoutQuality(candidate);
+    if (b > a) return candidate;
+    return current;
   }
 }

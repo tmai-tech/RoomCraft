@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+27 (2026-07-16)
+
+### Scan accuracy — multi-backend pick (not same as +26)
+- **Weak-layout fallback**: Hugging Face Qwen runs when Groq is empty **or thin/weak** (not only empty), then Gemini if still weak.
+- **Best-of quality score**: prefer plan with better inventory (WARDROBE/TABLE, piece count, openings) instead of always keeping first Groq result.
+- **Stronger prompts**: mirror ≠ wardrobe; desk monitors ≠ TV unit; empty furniture only if room empty.
+- **Review shows real backend**: geometry refine no longer hides “Groq / HF / Gemini” source line.
+- Version label **+27** so testers can confirm they are not on a re-upload of +26.
+
 ## 1.0.0-beta.1+26 (2026-07-15)
 
 ### Accuracy vs feedback 5244fa22 + e89c702e

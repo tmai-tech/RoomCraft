@@ -39,6 +39,9 @@ class ScanRefine {
       prior: input.accuracyScore,
     );
 
+    // Keep vision backend label (Groq / HF / Gemini) — do not hide under refine.
+    final backendLabel = _backendSourceLabel(input.warnings);
+
     // Re-enforce rectangle + catalog sizes after nudges
     final enforced = AccurateScan.enforce(
       widthFt: w,
@@ -50,9 +53,11 @@ class ScanRefine {
               !n.startsWith('Accurate plan:') &&
               !n.startsWith('Field measure') &&
               !n.startsWith('Wall-relative') &&
-              !n.startsWith('Size locked:'))
-          .toList(),
-      sourceLabel: 'Geometry refine (priors + wall snap)',
+              !n.startsWith('Size locked:') &&
+              n != backendLabel)
+          .toList()
+        ..add('Geometry refine applied (+27)'),
+      sourceLabel: backendLabel ?? 'Geometry refine (priors + wall snap)',
       inventDefaultOpenings: false,
       accuracyScore: score,
     );
@@ -64,6 +69,32 @@ class ScanRefine {
       ],
       accuracyScore: score,
     );
+  }
+
+  /// Prefer original free-vision source line so Review shows which model ran.
+  static String? _backendSourceLabel(List<String> warnings) {
+    for (final w in warnings) {
+      final s = w.trim();
+      if (s.isEmpty) continue;
+      final lower = s.toLowerCase();
+      if (lower.contains('groq') ||
+          lower.contains('llama') ||
+          lower.contains('hugging face') ||
+          lower.contains('hf ') ||
+          lower.startsWith('hf ') ||
+          lower.contains('qwen') ||
+          lower.contains('gemini') ||
+          lower.startsWith('easy photo') ||
+          lower.startsWith('easy plan') ||
+          lower.startsWith('easy scan') ||
+          lower.startsWith('precision multi-frame') ||
+          lower.startsWith('free ai scan') ||
+          lower.startsWith('free gemini') ||
+          lower.startsWith('used hugging face')) {
+        return s;
+      }
+    }
+    return null;
   }
 
   /// Rescale an existing plan to new AR/tape size (keeps relative layout).

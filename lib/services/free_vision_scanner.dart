@@ -289,8 +289,12 @@ class FreeVisionScanner {
     );
     if (result.furniture.isEmpty) {
       warnings.add(
-        'No furniture detected — retake with bed/sofa/TV fully in frame, '
-        'or add pieces from the catalog',
+        'No furniture detected — use Gallery multi-select: every wall, '
+        'wardrobe/desk fully visible, good light; or add from catalog',
+      );
+    } else {
+      warnings.add(
+        'Tip: multi-wall full-res photos improve placement. Edit on Review if needed.',
       );
     }
 
