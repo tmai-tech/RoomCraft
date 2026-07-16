@@ -142,7 +142,7 @@ class AIScannerService {
     if (tryVision) {
       ScanResult? best;
       final notes = <String>[
-        'Scan engines +31: user wall labels + size-lock + wall-by-wall + best-of',
+        'Scan engines +32: inventory on each wall + user labels + size-lock',
       ];
       if (wallPhotoMap != null && wallPhotoMap.length >= 3) {
         notes.add(

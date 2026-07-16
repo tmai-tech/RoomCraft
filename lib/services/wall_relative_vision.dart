@@ -27,6 +27,8 @@ class WallRelativeVision {
     required double roomWidthFt,
     required double roomLengthFt,
     String? apiKey,
+    /// Shared multi-view inventory constraint (MUST / NO types).
+    String inventoryHint = '',
   }) async {
     final key = await FreeVisionScanner.resolveApiKey(apiKey: apiKey);
     if (key == null || key.isEmpty) {
@@ -48,13 +50,22 @@ class WallRelativeVision {
               'You are a surveyor assisting an interior designer. '
               'This photo shows ONE wall of a rectangular room. '
               'Report only openings and freestanding furniture on or against THIS wall. '
-              'Use fractions 0–1 left-to-right as you face the wall. '
-              'Never invent items. JSON only.',
+              'Mirror is NOT a wardrobe. Desk monitors are NOT a TV unit. '
+              'Never invent bed/sofa/TV if not clearly on this wall. JSON only.',
         },
         {
           'role': 'user',
           'content': [
-            {'type': 'text', 'text': _wallPrompt(wall, wallLen, roomWidthFt, roomLengthFt)},
+            {
+              'type': 'text',
+              'text': _wallPrompt(
+                wall,
+                wallLen,
+                roomWidthFt,
+                roomLengthFt,
+                inventoryHint: inventoryHint,
+              ),
+            },
             {
               'type': 'image_url',
               'image_url': {'url': dataUrl},
@@ -89,7 +100,14 @@ class WallRelativeVision {
     if (text == null || text.isEmpty) throw Exception('Empty content');
 
     final json = _jsonMap(text);
-    return _parseWallJson(json, wall, wallLen);
+    final parsed = _parseWallJson(json, wall, wallLen);
+    // Apply inventory forbid list at wall level (+32)
+    final furn = _filterFurnitureByInventory(parsed.furniture, inventoryHint);
+    return (
+      openings: parsed.openings,
+      furniture: furn,
+      notes: parsed.notes,
+    );
   }
 
   /// Overview photo: free furniture positions as fractions of room (0–1).
@@ -193,10 +211,14 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
     required double roomLengthFt,
     List<File> overviewPhotos = const [],
     String? apiKey,
+    String inventoryHint = '',
   }) async {
     final openings = <WallOpeningHint>[];
     final furniture = <WallFurnitureHint>[];
     final notes = <String>[];
+    if (inventoryHint.isNotEmpty) {
+      notes.add('Wall inventory constraint: $inventoryHint');
+    }
 
     for (final side in WallSide.values) {
       final photo = wallPhotos[side];
@@ -211,6 +233,7 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
           roomWidthFt: roomWidthFt,
           roomLengthFt: roomLengthFt,
           apiKey: apiKey,
+          inventoryHint: inventoryHint,
         );
         openings.addAll(r.openings);
         furniture.addAll(r.furniture);
@@ -265,13 +288,21 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
     WallSide wall,
     double wallLenFt,
     double roomW,
-    double roomL,
-  ) =>
-      '''
+    double roomL, {
+    String inventoryHint = '',
+  }) {
+    final invBlock = inventoryHint.isEmpty
+        ? ''
+        : '\nROOM INVENTORY (whole room — respect when placing on THIS wall):\n$inventoryHint\n'
+            '- Only place types that appear on THIS wall in the photo.\n'
+            '- If inventory says NO BED/SOFA/TV_UNIT, never list those types.\n'
+            '- Mirror alone ≠ WARDROBE. Monitors on a desk ≠ TV_UNIT.\n';
+
+    return '''
 This photo is ${wall.shortLabel} of a rectangular room (interior designer field survey).
 Room size: ${roomW.toStringAsFixed(1)} ft (width) × ${roomL.toStringAsFixed(1)} ft (length).
 THIS wall is EXACTLY ${wallLenFt.toStringAsFixed(1)} ft long (authoritative).
-
+$invBlock
 You are facing THIS wall from inside the room.
 - Left side of the image = LEFT as you face the wall = t=0 / from_left_ft=0
 - Right side of the image = RIGHT as you face the wall = t=1 / from_left_ft=${wallLenFt.toStringAsFixed(1)}
@@ -283,7 +314,8 @@ Return ONLY JSON:
     {"type":"door","from_left_ft":2.5,"width_ft":3.0,"confidence":0.9,"evidence":"single door near left"}
   ],
   "furniture": [
-    {"type":"SOFA","from_left_ft":5.0,"depth_ft":3.0,"w_ft":7,"l_ft":3,"confidence":0.9,"evidence":"sofa centered on wall"}
+    {"type":"WARDROBE","from_left_ft":4.0,"depth_ft":1.5,"w_ft":6,"l_ft":2,"confidence":0.9,"evidence":"sliding wardrobe on this wall"},
+    {"type":"TABLE","from_left_ft":2.0,"depth_ft":1.5,"w_ft":4,"l_ft":2,"confidence":0.85,"evidence":"desk against wall"}
   ]
 }
 
@@ -291,12 +323,27 @@ Rules (critical for plan accuracy):
 1. openings type: door | window | balcony only. from_left_ft = left edge of opening from LEFT corner while facing wall.
 2. width_ft must be realistic: door 2.5–3.5 ft typical, window 2–6 ft, balcony/sliding 4–10 ft. Never a whole-wall door.
 3. Only openings ON this wall (door frame / glass / sliding track clearly on THIS wall). Empty [] if none visible.
-4. furniture only against THIS wall. from_left_ft = center of piece from left corner. depth_ft = how far it sticks into room (bed ~6–7, sofa ~3, nightstand ~1.5).
+4. furniture only against THIS wall. from_left_ft = center of piece from left corner. depth_ft = how far it sticks into room (wardrobe ~1.5–2.5, desk ~1.5–2.5).
 5. Types: BED,WARDROBE,SOFA,TABLE,CHAIR,TV_UNIT,BOOKSHELF,NIGHTSTAND
-6. Never invent. confidence < 0.75 → omit. If unsure about position, omit rather than guess.
+6. Never invent. If unsure about position, omit rather than guess. confidence ≥ 0.55 to include.
 7. Balcony = large glazed door / outdoor opening (not a normal window).
 8. If photo is not clearly this wall, return empty arrays.
+9. Sliding cupboard/wardrobe with doors = WARDROBE. Computer desk = TABLE.
 ''';
+  }
+
+  static List<WallFurnitureHint> _filterFurnitureByInventory(
+    List<WallFurnitureHint> items,
+    String inventoryHint,
+  ) {
+    if (inventoryHint.isEmpty) return items;
+    final forbid = <FurnitureType>{};
+    if (inventoryHint.contains('NO BED')) forbid.add(FurnitureType.bed);
+    if (inventoryHint.contains('NO SOFA')) forbid.add(FurnitureType.sofa);
+    if (inventoryHint.contains('NO TV_UNIT')) forbid.add(FurnitureType.tvUnit);
+    if (forbid.isEmpty) return items;
+    return items.where((f) => !forbid.contains(f.type)).toList();
+  }
 
   static ({List<WallOpeningHint> openings, List<WallFurnitureHint> furniture, List<String> notes})
       _parseWallJson(Map<String, dynamic> json, WallSide wall, double wallLen) {

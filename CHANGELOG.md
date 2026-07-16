@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+32 (2026-07-16)
+
+### Per-wall inventory constraints
+- Wall-by-wall vision gets the **same inventory MUST/NO list** as multi-image (no bed/sofa/TV invent on a single wall photo).
+- Per-wall prompts: mirror ≠ wardrobe, desk ≠ TV unit; examples use WARDROBE/TABLE not sofa.
+- When user labeled walls, **strongly prefer wall-by-wall** over bulk layout (margin 20).
+- Version **+32**.
+
 ## 1.0.0-beta.1+31 (2026-07-16)
 
 ### 4-image wall labeling UI

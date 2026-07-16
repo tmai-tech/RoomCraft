@@ -400,17 +400,26 @@ class FreeVisionScanner {
       }
     }
 
-    // Prefer wall-by-wall on tie/near-tie (designer placement is more stable).
+    // Prefer wall-by-wall: stronger bias when user labeled walls (+32).
     if (wallByWall != null) {
       final bulkScore = _easyQuality(bulk, inventoryHint);
       final wallScore = _easyQuality(wallByWall, inventoryHint);
-      warnings.add('Bulk score=$bulkScore · wall-by-wall score=$wallScore');
-      if (wallScore >= bulkScore - 5) {
+      final userLabeled =
+          wallPhotoMap != null && wallPhotoMap.length >= 3;
+      // User labels → almost always keep wall-by-wall unless bulk is much better.
+      final margin = userLabeled ? 20 : 5;
+      warnings.add(
+        'Bulk score=$bulkScore · wall-by-wall score=$wallScore '
+        '(prefer wall if ≥ bulk-$margin${userLabeled ? ", user-labeled" : ""})',
+      );
+      if (wallScore >= bulkScore - margin) {
         return wallByWall.copyWith(
           warnings: [
             ...wallByWall.warnings,
             ...warnings.where((w) => !wallByWall!.warnings.contains(w)),
-            'Selected wall-by-wall plan (stable multi-wall placement)',
+            userLabeled
+                ? 'Selected wall-by-wall plan (user wall labels + inventory)'
+                : 'Selected wall-by-wall plan (stable multi-wall placement)',
           ],
         );
       }
@@ -481,6 +490,7 @@ class FreeVisionScanner {
       roomWidthFt: size.widthFt,
       roomLengthFt: size.lengthFt,
       apiKey: key,
+      inventoryHint: inventoryHint,
     );
 
     result = _filterScanByInventory(result, inventoryHint);
