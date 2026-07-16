@@ -154,7 +154,10 @@ class FreeVisionScanner {
       layoutJson = await _client.completeJson(
         apiKey: key,
         frames: frames,
-        prompt: VisionLayoutPrompts.consumerLayout(inventoryHint: inventoryHint),
+        prompt: VisionLayoutPrompts.consumerLayout(
+          inventoryHint: inventoryHint,
+          frameCount: frameCount,
+        ),
         system: VisionLayoutPrompts.consumerSystem,
       );
     } catch (e) {
@@ -175,8 +178,15 @@ class FreeVisionScanner {
       );
     }
 
-    // Strip invented types that inventory said are absent.
+    // Strip invented types; seed MUST pieces inventory required but model omitted.
     layoutJson = _applyInventoryGate(layoutJson, inventoryHint);
+    final seeded = _seedMissingFromInventory(layoutJson, inventoryHint);
+    if (seeded.added > 0) {
+      warnings.add(
+        'Seeded ${seeded.added} inventory-required piece(s) model omitted',
+      );
+    }
+    layoutJson = seeded.map;
 
     final vW = _asDouble(layoutJson['roomWidth']) ??
         _asDouble(layoutJson['room_width']);
@@ -320,6 +330,15 @@ class FreeVisionScanner {
   ) =>
       _applyInventoryGate(layout, inventoryHint);
 
+  /// Public: gate + seed MUST furniture from inventory (used by HF path too).
+  static ({Map<String, dynamic> map, int added}) applyInventoryCompletePublic(
+    Map<String, dynamic> layout,
+    String inventoryHint,
+  ) {
+    final gated = _applyInventoryGate(layout, inventoryHint);
+    return _seedMissingFromInventory(gated, inventoryHint);
+  }
+
   static String _formatInventoryHint(Map<String, dynamic> inv) {
     bool b(String k) {
       final v = inv[k];
@@ -370,6 +389,107 @@ class FreeVisionScanner {
     final out = Map<String, dynamic>.from(layout);
     out['furniture'] = kept;
     return out;
+  }
+
+  /// If inventory required WARDROBE/TABLE but layout omitted them, place defaults.
+  static ({Map<String, dynamic> map, int added}) _seedMissingFromInventory(
+    Map<String, dynamic> layout,
+    String inventoryHint,
+  ) {
+    if (inventoryHint.isEmpty) return (map: layout, added: 0);
+    final raw = layout['furniture'];
+    final list = <Map<String, dynamic>>[
+      if (raw is List)
+        for (final item in raw)
+          if (item is Map) Map<String, dynamic>.from(item),
+    ];
+    String typesBlob() => list
+        .map((m) => m['type']?.toString().toUpperCase() ?? '')
+        .join(' ');
+
+    var added = 0;
+    void ensure({
+      required String type,
+      required bool must,
+      required String wall,
+      required double fromLeft,
+      required double depth,
+      required double w,
+      required double l,
+      required String evidence,
+    }) {
+      if (!must) return;
+      final blob = typesBlob();
+      if (blob.contains(type)) return;
+      list.add({
+        'type': type,
+        'wall': wall,
+        'fromLeft': fromLeft,
+        'depth': depth,
+        'dim': {'w': w, 'l': l},
+        'confidence': 0.62,
+        'evidence': evidence,
+      });
+      added++;
+    }
+
+    ensure(
+      type: 'WARDROBE',
+      must: inventoryHint.contains('MUST include WARDROBE'),
+      wall: 'west',
+      fromLeft: 0.5,
+      depth: 1.2,
+      w: 6.0,
+      l: 2.0,
+      evidence: 'seeded: inventory required WARDROBE',
+    );
+    ensure(
+      type: 'TABLE',
+      must: inventoryHint.contains('MUST include TABLE'),
+      wall: 'south',
+      fromLeft: 2.5,
+      depth: 1.5,
+      w: 4.0,
+      l: 2.0,
+      evidence: 'seeded: inventory required TABLE/desk',
+    );
+
+    // Opening seed for mesh/sliding glass
+    if (inventoryHint.contains('mesh') || inventoryHint.contains('glass')) {
+      final openings = <Map<String, dynamic>>[
+        if (layout['openings'] is List)
+          for (final o in layout['openings'] as List)
+            if (o is Map) Map<String, dynamic>.from(o),
+        if (layout['walls'] is List)
+          for (final o in layout['walls'] as List)
+            if (o is Map &&
+                !['wall', 'WALL'].contains(o['type']?.toString()))
+              Map<String, dynamic>.from(o),
+      ];
+      final hasBalconyOrWide = openings.any((o) {
+        final t = o['type']?.toString().toLowerCase() ?? '';
+        return t.contains('balcony') || t.contains('window') || t.contains('door');
+      });
+      if (!hasBalconyOrWide) {
+        openings.add({
+          'type': 'balcony',
+          'wall': 'east',
+          'fromLeft': 1.0,
+          'width': 5.0,
+          'confidence': 0.55,
+          'evidence': 'seeded: inventory mesh/sliding glass',
+        });
+        added++;
+      }
+      final outOpen = Map<String, dynamic>.from(layout);
+      outOpen['furniture'] = list;
+      outOpen['openings'] = openings;
+      return (map: outOpen, added: added);
+    }
+
+    final out = Map<String, dynamic>.from(layout);
+    out['furniture'] = list;
+    return (map: out, added: added);
   }
 
   /// Two-pass: (1) openings / wall features (2) furniture placement.

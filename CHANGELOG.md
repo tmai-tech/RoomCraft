@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+28 (2026-07-16)
+
+### 4-image multi-wall accuracy
+- **Multi-wall photo prompts** when 3–6 gallery photos: consistent N/S/E/W, no random scatter, must place wardrobe/desk if seen.
+- **Inventory seed**: if pass-1 says MUST include WARDROBE/TABLE but layout omits them, seed wall-anchored defaults (same for HF path).
+- **Gemini locked prompt** switched to wall-anchored furniture (removed free-XY bed/sofa examples that biased random plans).
+- Slightly higher image encode quality for vision API payloads.
+- Version **+28** — distinct from +27 re-upload confusion.
+
 ## 1.0.0-beta.1+27 (2026-07-16)
 
 ### Scan accuracy — multi-backend pick (not same as +26)

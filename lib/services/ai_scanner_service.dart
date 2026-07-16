@@ -139,8 +139,13 @@ class AIScannerService {
     if (tryVision) {
       ScanResult? best;
       final notes = <String>[
-        'Scan engines +27: pick best of Groq / HF / Gemini by layout quality',
+        'Scan engines +28: 4-wall multi-photo + inventory seed + best-of backends',
       ];
+      if (images.length >= 3 && images.length <= 6) {
+        notes.add(
+          'Multi-wall mode: ${images.length} photos — cross-check walls for placement',
+        );
+      }
 
       // 1) Groq free vision
       if (await FreeVisionScanner.isAvailable()) {

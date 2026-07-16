@@ -66,11 +66,33 @@ List EVERY clearly visible major piece. Wardrobe and desk are critical when pres
 Do NOT invent bed/sofa/TV if not visible. One entry per object. JSON only.
 ''';
 
+  /// Hint when user uploads ~4 wall photos (designer multi-view method).
+  static String multiWallPhotoHint(int frameCount) {
+    if (frameCount < 2) {
+      return 'Only $frameCount photo — coverage is limited; do not invent unseen walls.';
+    }
+    if (frameCount >= 3 && frameCount <= 6) {
+      return '''
+MULTI-WALL PHOTOS ($frameCount frames): treat as the SAME room from different walls.
+- Assign a consistent orientation: south/north/east/west for the whole plan.
+- Furniture seen on one wall stays on that wall (do not scatter randomly).
+- Cross-check: if wardrobe appears in 2+ frames, it is real — MUST place WARDROBE.
+- If desk/table appears in any frame, MUST place TABLE.
+- Do not invent bed/sofa/TV just because rooms often have them.
+''';
+    }
+    return 'Use all $frameCount frames of the same room; keep positions consistent.';
+  }
+
   /// Consumer: size + openings + furniture in one pass.
   /// Prefer wall-anchored fields (stable) over free XY (random).
-  static String consumerLayout({String inventoryHint = ''}) => '''
+  static String consumerLayout({
+    String inventoryHint = '',
+    int frameCount = 1,
+  }) => '''
 Map this room from phone photos/video into a top-down plan in FEET.
 Cross-check the SAME room across all frames.
+${multiWallPhotoHint(frameCount)}
 ${inventoryHint.isEmpty ? '' : '\nINVENTORY CONSTRAINT (from pass 1 — respect exactly):\n$inventoryHint\n'}
 
 Scale cues: interior door ≈ 2.5–3.0 ft; wardrobe depth ≈ 1.5–2.5 ft;
@@ -217,42 +239,36 @@ Rules:
 ''';
 
   /// Single-pass locked-size prompt (Gemini / simple path).
+  /// Wall-anchored (+28) — free XY examples caused random layouts.
   static String lockedSinglePass(double roomWidthFt, double roomLengthFt) => '''
-You produce a top-down floor plan assist for a measured room.
+You produce a top-down floor plan assist for a measured room from multi-wall photos.
 
 ROOM SIZE IS FIXED (do not change):
 - roomWidth = $roomWidthFt feet
 - roomLength = $roomLengthFt feet
 
-List every clearly visible major furniture piece and any clear doors/windows.
-Missing a bed/sofa/TV unit that appears in the photos is a failure.
-Do not invent a typical furniture set that is not visible.
+List every clearly visible major furniture piece and clear doors/windows.
+Do NOT invent bed/sofa/TV if not in photos. Mirror ≠ wardrobe. Desk monitors ≠ TV_UNIT.
 
 Return ONLY JSON (no markdown):
 {
   "roomWidth": $roomWidthFt,
   "roomLength": $roomLengthFt,
-  "walls": [
-    {"type": "wall", "start": {"x": 0, "y": 0}, "end": {"x": $roomWidthFt, "y": 0}},
-    {"type": "wall", "start": {"x": $roomWidthFt, "y": 0}, "end": {"x": $roomWidthFt, "y": $roomLengthFt}},
-    {"type": "wall", "start": {"x": $roomWidthFt, "y": $roomLengthFt}, "end": {"x": 0, "y": $roomLengthFt}},
-    {"type": "wall", "start": {"x": 0, "y": $roomLengthFt}, "end": {"x": 0, "y": 0}}
-  ],
   "openings": [
-    {"type": "door", "start": {"x": 1, "y": 0}, "end": {"x": 3.5, "y": 0}, "confidence": 0.85, "evidence": "entry door"}
+    {"type": "door", "wall": "south", "fromLeft": 1.0, "width": 2.8, "confidence": 0.85, "evidence": "entry door"}
   ],
   "furniture": [
-    {"type": "BED", "pos": {"x": 4, "y": 5}, "dim": {"w": 5, "l": 6.5}, "rot": 0, "confidence": 0.85, "evidence": "bed visible"},
-    {"type": "SOFA", "pos": {"x": 10, "y": 12}, "dim": {"w": 7, "l": 3}, "rot": 0, "confidence": 0.8, "evidence": "sofa visible"}
+    {"type": "WARDROBE", "wall": "west", "fromLeft": 0.5, "depth": 1.2, "dim": {"w": 6.0, "l": 2.0}, "confidence": 0.9, "evidence": "sliding wardrobe"},
+    {"type": "TABLE", "wall": "south", "fromLeft": 3.0, "depth": 1.5, "dim": {"w": 4.0, "l": 2.0}, "confidence": 0.85, "evidence": "desk"}
   ]
 }
 
 Rules:
 - ALWAYS keep roomWidth=$roomWidthFt and roomLength=$roomLengthFt.
 - Types only: $furnitureTypes.
-- Include furniture at confidence ≥ 0.55 when clearly visible.
-- pos is CENTER in feet; rot in degrees.
-- openings types: door | window | balcony on perimeter walls.
+- EVERY furniture item: wall (north|south|east|west) + fromLeft + depth + dim.
+- EVERY opening: wall + fromLeft + width. Types: door | window | balcony.
+- confidence ≥ 0.55 when clearly visible.
 - Empty furniture [] only if the room has no freestanding furniture.
 ''';
 }

@@ -145,13 +145,22 @@ class HuggingFaceVisionScanner {
     var layoutJson = await client.completeJson(
       apiKey: key,
       frames: frames,
-      prompt: VisionLayoutPrompts.consumerLayout(inventoryHint: inventoryHint),
+      prompt: VisionLayoutPrompts.consumerLayout(
+        inventoryHint: inventoryHint,
+        frameCount: frameCount,
+      ),
       system: VisionLayoutPrompts.consumerSystem,
     );
-    layoutJson = FreeVisionScanner.applyInventoryGatePublic(
+    final gated = FreeVisionScanner.applyInventoryCompletePublic(
       layoutJson,
       inventoryHint,
     );
+    layoutJson = gated.map;
+    if (gated.added > 0) {
+      warnings.add(
+        'Seeded ${gated.added} inventory-required piece(s) model omitted',
+      );
+    }
 
     final vW = _asDouble(layoutJson['roomWidth']) ??
         _asDouble(layoutJson['room_width']);

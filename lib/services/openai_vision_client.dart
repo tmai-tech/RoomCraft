@@ -12,8 +12,8 @@ class OpenAiVisionClient {
     required this.chatCompletionsUrl,
     required this.model,
     this.timeout = const Duration(seconds: 90),
-    this.maxImageSide = 1280,
-    this.jpegQuality = 88,
+    this.maxImageSide = 1400,
+    this.jpegQuality = 90,
   });
 
   final String chatCompletionsUrl;
