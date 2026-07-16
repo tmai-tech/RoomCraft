@@ -75,6 +75,8 @@ class FreeVisionScanner {
     String? apiKey,
     bool precisionMode = true,
     bool autoScale = false,
+    /// Optional explicit wall→photo map (3–4 walls). Overrides upload order.
+    Map<WallSide, File>? wallPhotoMap,
   }) async {
     final key = await resolveApiKey(apiKey: apiKey);
     if (key == null || key.isEmpty) {
@@ -85,8 +87,22 @@ class FreeVisionScanner {
     }
 
     // Prefer sharpest diverse frames for the model (token/payload limits).
-    final prepared = await ScanKeyframes.pickSharpest(images, maxKeep: 8);
-    final frames = prepared.isEmpty ? images.take(8).toList() : prepared;
+    // Keep user wall assignment order: do not re-sort assigned wall photos.
+    final List<File> frames;
+    if (wallPhotoMap != null && wallPhotoMap.length >= 3) {
+      frames = [
+        for (final s in [
+          WallSide.south,
+          WallSide.east,
+          WallSide.north,
+          WallSide.west,
+        ])
+          if (wallPhotoMap[s] != null) wallPhotoMap[s]!,
+      ];
+    } else {
+      final prepared = await ScanKeyframes.pickSharpest(images, maxKeep: 8);
+      frames = prepared.isEmpty ? images.take(8).toList() : prepared;
+    }
 
     final needAuto =
         autoScale || roomWidthFt == null || roomLengthFt == null ||
@@ -100,6 +116,7 @@ class FreeVisionScanner {
         frameCount: images.length,
         userWidthFt: roomWidthFt,
         userLengthFt: roomLengthFt,
+        wallPhotoMap: wallPhotoMap,
       );
     }
 
@@ -131,11 +148,18 @@ class FreeVisionScanner {
     required int frameCount,
     double? userWidthFt,
     double? userLengthFt,
+    Map<WallSide, File>? wallPhotoMap,
   }) async {
     final warnings = <String>[
       'Easy scan: $frameCount frame(s) · no tape required',
       'Walk every wall in the video for best doors/windows/furniture.',
     ];
+    if (wallPhotoMap != null && wallPhotoMap.length >= 3) {
+      warnings.add(
+        'User wall assignment (+31): '
+        '${wallPhotoMap.keys.map((k) => k.name).join(", ")}',
+      );
+    }
 
     // Pass 1 — inventory (what exists) so placement cannot invent beds/sofas.
     var inventoryHint = '';
@@ -169,7 +193,8 @@ class FreeVisionScanner {
     } catch (e) {
       warnings.add('Layout pass failed: $e');
       // Still try wall-by-wall with fallback size when bulk fails.
-      if (frames.length >= 3 && frames.length <= 4) {
+      if ((wallPhotoMap != null && wallPhotoMap.length >= 3) ||
+          (frames.length >= 3 && frames.length <= 4)) {
         try {
           final fallback = await _orderedWallByWallScan(
             key: key,
@@ -177,6 +202,7 @@ class FreeVisionScanner {
             userWidthFt: userWidthFt,
             userLengthFt: userLengthFt,
             inventoryHint: inventoryHint,
+            wallPhotoMap: wallPhotoMap,
           );
           if (fallback.furniture.isNotEmpty) {
             return fallback.copyWith(
@@ -339,9 +365,11 @@ class FreeVisionScanner {
     ));
     bulk = _dedupeMajorFurniture(bulk);
 
-    // +30: wall-by-wall AFTER bulk size lock (feet accurate enough for placement).
+    // +30/+31: wall-by-wall AFTER bulk size lock (feet accurate enough for placement).
     ScanResult? wallByWall;
-    if (frames.length >= 3 && frames.length <= 4) {
+    final useWallPath = (wallPhotoMap != null && wallPhotoMap.length >= 3) ||
+        (frames.length >= 3 && frames.length <= 4);
+    if (useWallPath) {
       try {
         wallByWall = await _orderedWallByWallScan(
           key: key,
@@ -349,6 +377,7 @@ class FreeVisionScanner {
           userWidthFt: size.widthFt,
           userLengthFt: size.lengthFt,
           inventoryHint: inventoryHint,
+          wallPhotoMap: wallPhotoMap,
         );
         // Re-lock wall plan to the same AutoScale room size as bulk.
         if ((wallByWall.roomWidthFt - size.widthFt).abs() > 0.15 ||
@@ -419,13 +448,14 @@ class FreeVisionScanner {
     );
   }
 
-  /// 3–4 photos mapped south→east→north→west (upload order).
+  /// 3–4 photos mapped to walls (explicit map or south→east→north→west order).
   Future<ScanResult> _orderedWallByWallScan({
     required String key,
     required List<File> frames,
     double? userWidthFt,
     double? userLengthFt,
     required String inventoryHint,
+    Map<WallSide, File>? wallPhotoMap,
   }) async {
     final size = AutoScale.resolve(
       userWidthFt: userWidthFt,
@@ -438,8 +468,12 @@ class FreeVisionScanner {
       WallSide.west,
     ];
     final wallPhotos = <WallSide, File>{};
-    for (var i = 0; i < frames.length && i < order.length; i++) {
-      wallPhotos[order[i]] = frames[i];
+    if (wallPhotoMap != null && wallPhotoMap.length >= 3) {
+      wallPhotos.addAll(wallPhotoMap);
+    } else {
+      for (var i = 0; i < frames.length && i < order.length; i++) {
+        wallPhotos[order[i]] = frames[i];
+      }
     }
 
     var result = await WallRelativeVision.scanWallByWall(
@@ -453,12 +487,16 @@ class FreeVisionScanner {
     // Seed missing MUST types as wall-anchored on first empty wall side
     result = _seedScanResultFromInventory(result, inventoryHint);
 
+    final assignNote = wallPhotoMap != null && wallPhotoMap.length >= 3
+        ? 'Walls from user labels: ${wallPhotos.keys.map((k) => k.name).join(", ")}'
+        : 'Photo order default: [0]=south [1]=east [2]=north [3]=west';
+
     return result.copyWith(
       warnings: [
         ...result.warnings,
         ...size.notes,
-        'Photo order: [0]=south [1]=east [2]=north [3]=west',
-        'Easy plan — Groq wall-by-wall (+29)',
+        assignNote,
+        'Easy plan — Groq wall-by-wall (+31)',
       ],
     );
   }

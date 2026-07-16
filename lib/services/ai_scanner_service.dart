@@ -13,6 +13,7 @@ import '../domain/local_room_scanner.dart';
 import '../domain/scan_parser.dart';
 import '../domain/scan_refine.dart';
 import '../domain/vision_layout_prompts.dart';
+import '../domain/wall_relative_scan.dart';
 import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
@@ -123,6 +124,8 @@ class AIScannerService {
     double? roomLengthFt,
     bool tryVision = true,
     bool autoScale = false,
+    /// User-labeled wall photos (3–4 walls). Improves exact 4-image plans.
+    Map<WallSide, File>? wallPhotoMap,
   }) async {
     if (images.isEmpty) {
       throw Exception('Add at least one room photo.');
@@ -139,11 +142,15 @@ class AIScannerService {
     if (tryVision) {
       ScanResult? best;
       final notes = <String>[
-        'Scan engines +30: size-lock then wall-by-wall (3–4 photos) + best-of',
+        'Scan engines +31: user wall labels + size-lock + wall-by-wall + best-of',
       ];
-      if (images.length >= 3 && images.length <= 4) {
+      if (wallPhotoMap != null && wallPhotoMap.length >= 3) {
         notes.add(
-          'Ordered walls after size lock: 0=south 1=east 2=north 3=west '
+          'User wall map: ${wallPhotoMap.keys.map((k) => k.name).join(", ")}',
+        );
+      } else if (images.length >= 3 && images.length <= 4) {
+        notes.add(
+          'Default wall order: 0=south 1=east 2=north 3=west '
           '(${images.length} photos)',
         );
       } else if (images.length >= 3 && images.length <= 6) {
@@ -160,6 +167,7 @@ class AIScannerService {
             roomWidthFt: autoScale ? roomWidthFt : w,
             roomLengthFt: autoScale ? roomLengthFt : l,
             autoScale: autoScale,
+            wallPhotoMap: wallPhotoMap,
           );
           notes.add(
             'Groq quality=${_layoutQuality(best)} '

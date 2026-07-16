@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+31 (2026-07-16)
+
+### 4-image wall labeling UI
+- Before Generate plan with **3–4 photos**, show **Label each wall photo** sheet (south/east/north/west).
+- Wall-by-wall vision uses **user labels** instead of blind upload order.
+- Higher gallery capture resolution (2048 / q95).
+- Version **+31**.
+
 ## 1.0.0-beta.1+30 (2026-07-16)
 
 ### 4-image size-lock then wall-by-wall

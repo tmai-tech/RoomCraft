@@ -291,9 +291,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     }
     try {
       final picked = await _picker.pickMultiImage(
-        maxWidth: 1600,
-        maxHeight: 1600,
-        imageQuality: 92,
+        // Keep more detail for wall furniture (+31)
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 95,
         limit: room,
       );
       if (picked.isEmpty || !mounted) return;
@@ -498,6 +499,154 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     );
   }
 
+  /// Assign each of 3–4 photos to a wall (south/east/north/west).
+  /// Returns null if the user cancels.
+  Future<Map<WallSide, File>?> _promptWallAssignments(List<File> frames) async {
+    const order = [
+      WallSide.south,
+      WallSide.east,
+      WallSide.north,
+      WallSide.west,
+    ];
+    // Default: walk order by index
+    final assign = <int, WallSide>{
+      for (var i = 0; i < frames.length && i < order.length; i++) i: order[i],
+    };
+
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 8,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Label each wall photo',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Match photos to walls as you stand inside the room. '
+                    'Defaults assume walk order: near → right → far → left.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 220,
+                    child: ListView.separated(
+                      itemCount: frames.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (_, i) {
+                        final side = assign[i] ?? order[i % 4];
+                        return Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(
+                                frames[i],
+                                width: 72,
+                                height: 72,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Photo ${i + 1}',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 4),
+                                  DropdownButtonFormField<WallSide>(
+                                    value: side,
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                    items: [
+                                      for (final s in order)
+                                        DropdownMenuItem(
+                                          value: s,
+                                          child: Text(
+                                            '${s.name[0].toUpperCase()}${s.name.substring(1)} wall'
+                                            '${s == WallSide.south ? " (near)" : s == WallSide.north ? " (far)" : s == WallSide.east ? " (right)" : " (left)"}',
+                                          ),
+                                        ),
+                                    ],
+                                    onChanged: (v) {
+                                      if (v == null) return;
+                                      setLocal(() => assign[i] = v);
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: () {
+                          final used = assign.values.toSet();
+                          if (used.length < frames.length) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Each photo needs a different wall',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          Navigator.pop(ctx, true);
+                        },
+                        child: const Text('Continue'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (ok != true) return null;
+    final map = <WallSide, File>{};
+    for (final e in assign.entries) {
+      if (e.key < frames.length) map[e.value] = frames[e.key];
+    }
+    if (map.length < 3) return null;
+    return map;
+  }
+
   Future<void> _process() async {
     final needsExactSize =
         _scanMode == 'ar_guided' ||
@@ -596,6 +745,18 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     });
 
     final mode = _scanMode;
+    // +31: for 3–4 easy-scan photos, confirm wall labels before vision.
+    Map<WallSide, File>? easyWallMap;
+    if ((mode == 'easy_scan' || mode == 'free_frames') &&
+        _freeFrames.length >= 3 &&
+        _freeFrames.length <= 4) {
+      easyWallMap = await _promptWallAssignments(_freeFrames);
+      if (easyWallMap == null) {
+        // User cancelled assignment
+        return;
+      }
+    }
+
     await AnalyticsService.instance.scanStart(mode: mode);
 
     try {
@@ -693,6 +854,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           roomLengthFt: _knowRoomSize ? resolvedSize?.$2 : null,
           tryVision: true,
           autoScale: !_knowRoomSize,
+          wallPhotoMap: easyWallMap,
         );
       } else {
         result = await _aiService.scanRoomAccurateFree(
@@ -702,6 +864,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           roomLengthFt: resolvedSize?.$2,
           tryVision: true,
           autoScale: resolvedSize == null,
+          wallPhotoMap: easyWallMap,
         );
       }
 
