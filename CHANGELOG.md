@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+34 (2026-07-16)
+
+### Labeled 4-wall clean path (no bulk scatter)
+- When user **labels 3–4 walls**, skip bulk free-scatter multi-image layout.
+- Path: inventory → **size-only** estimate → wall-by-wall place → MUST fill → door-prior resize.
+- Cleaner, more exact plans for the intended 4-image workflow.
+- Version **+34**.
+
 ## 1.0.0-beta.1+33 (2026-07-16)
 
 ### MUST inventory fill for 4-wall plans

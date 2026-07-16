@@ -142,7 +142,7 @@ class AIScannerService {
     if (tryVision) {
       ScanResult? best;
       final notes = <String>[
-        'Scan engines +33: MUST inventory fill after wall-by-wall + user labels',
+        'Scan engines +34: labeled walls skip bulk scatter; size+per-wall only',
       ];
       if (wallPhotoMap != null && wallPhotoMap.length >= 3) {
         notes.add(

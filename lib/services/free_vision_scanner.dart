@@ -177,6 +177,21 @@ class FreeVisionScanner {
       warnings.add('Inventory pass skipped: $e');
     }
 
+    final userLabeled = wallPhotoMap != null && wallPhotoMap.length >= 3;
+
+    // +34: labeled 4-wall path — skip bulk free-scatter layout entirely.
+    if (userLabeled) {
+      return _labeledWallsEasyScan(
+        key: key,
+        frames: frames,
+        wallPhotoMap: wallPhotoMap!,
+        inventoryHint: inventoryHint,
+        userWidthFt: userWidthFt,
+        userLengthFt: userLengthFt,
+        priorWarnings: warnings,
+      );
+    }
+
     // Bulk multi-image first (size estimate + layout candidate).
     // Wall-by-wall runs after size is known (+30) so placement uses real feet.
     Map<String, dynamic> layoutJson = {};
@@ -193,8 +208,7 @@ class FreeVisionScanner {
     } catch (e) {
       warnings.add('Layout pass failed: $e');
       // Still try wall-by-wall with fallback size when bulk fails.
-      if ((wallPhotoMap != null && wallPhotoMap.length >= 3) ||
-          (frames.length >= 3 && frames.length <= 4)) {
+      if (frames.length >= 3 && frames.length <= 4) {
         try {
           final fallback = await _orderedWallByWallScan(
             key: key,
@@ -400,9 +414,8 @@ class FreeVisionScanner {
       }
     }
 
-    final userLabeled = wallPhotoMap != null && wallPhotoMap.length >= 3;
-
     // +33: fill MUST inventory pieces missing from wall plan (merge bulk, then place).
+    // (userLabeled already handled by early return on labeled path +34)
     if (wallByWall != null && inventoryHint.isNotEmpty) {
       wallByWall = await _ensureMustFurniture(
         key: key,
@@ -421,10 +434,9 @@ class FreeVisionScanner {
       final bulkScore = _easyQuality(bulk, inventoryHint);
       final wallScore = _easyQuality(wallByWall, inventoryHint);
       warnings.add(
-        'Bulk score=$bulkScore · wall-by-wall score=$wallScore'
-        '${userLabeled ? " (user-labeled → prefer wall)" : ""}',
+        'Bulk score=$bulkScore · wall-by-wall score=$wallScore',
       );
-      if (userLabeled || wallScore >= bulkScore - 5) {
+      if (wallScore >= bulkScore - 5) {
         // Prefer wall openings; if none, keep bulk openings.
         final wallOpenings = wallByWall.walls
             .where((w) => w.type != StrokeType.wall)
@@ -445,13 +457,9 @@ class FreeVisionScanner {
           warnings: [
             ...wallByWall.warnings,
             ...warnings.where((w) => !wallByWall!.warnings.contains(w)),
-            userLabeled
-                ? 'Selected wall-by-wall (+33, user labels + MUST inventory fill)'
-                : 'Selected wall-by-wall plan (stable multi-wall placement)',
+            'Selected wall-by-wall plan (stable multi-wall placement)',
           ],
-          sourceLabel: userLabeled
-              ? 'Easy plan — labeled walls + inventory (+33)'
-              : 'Easy plan — wall-by-wall (+33)',
+          sourceLabel: 'Easy plan — wall-by-wall (+34)',
           inventDefaultOpenings: false,
           accuracyScore: wallByWall.accuracyScore ?? bulk.accuracyScore,
         ));
@@ -469,6 +477,156 @@ class FreeVisionScanner {
         ...warnings.where((w) => !bulk.warnings.contains(w)),
       ],
     );
+  }
+
+  /// User labeled 3–4 walls: inventory → size only → wall-by-wall → MUST fill.
+  /// Avoids bulk free-scatter layout that fights wall placement (+34).
+  Future<ScanResult> _labeledWallsEasyScan({
+    required String key,
+    required List<File> frames,
+    required Map<WallSide, File> wallPhotoMap,
+    required String inventoryHint,
+    double? userWidthFt,
+    double? userLengthFt,
+    required List<String> priorWarnings,
+  }) async {
+    final warnings = <String>[
+      ...priorWarnings,
+      'Labeled-walls fast path (+34): no bulk free-scatter layout',
+    ];
+
+    double? visionW;
+    double? visionL;
+    var visionConf = 0.45;
+    final doorWidths = <double>[];
+
+    try {
+      final sizeJson = await _client.completeJson(
+        apiKey: key,
+        frames: frames,
+        temperature: 0.0,
+        system:
+            'Estimate rectangular room size in feet from wall photos. JSON only.',
+        prompt: '''
+These photos are the four walls of ONE room (user labeled).
+Return ONLY:
+{"roomWidth":12.0,"roomLength":14.0,"sizeConfidence":0.6,"typicalDoorWidthFt":2.8,"notes":"..."}
+
+Rules:
+- roomWidth = distance between left and right walls (east-west span).
+- roomLength = distance between near and far walls (south-north span).
+- Use door ~2.5–3.0 ft and furniture depths as scale cues.
+- sizeConfidence 0–1. Do not invent furniture here.
+''',
+      );
+      visionW = _asDouble(sizeJson['roomWidth']) ?? _asDouble(sizeJson['width']);
+      visionL =
+          _asDouble(sizeJson['roomLength']) ?? _asDouble(sizeJson['length']);
+      visionConf = _asDouble(sizeJson['sizeConfidence']) ??
+          _asDouble(sizeJson['size_confidence']) ??
+          0.5;
+      final door = _asDouble(sizeJson['typicalDoorWidthFt']) ??
+          _asDouble(sizeJson['doorWidthFt']);
+      if (door != null && door > 0) doorWidths.add(door);
+      warnings.add(
+        'Size estimate: '
+        '${visionW?.toStringAsFixed(1) ?? "?"}×${visionL?.toStringAsFixed(1) ?? "?"} '
+        'conf=${visionConf.toStringAsFixed(2)}',
+      );
+    } catch (e) {
+      warnings.add('Size-only pass failed: $e — using fallback scale');
+    }
+
+    final size = AutoScale.resolve(
+      userWidthFt: userWidthFt,
+      userLengthFt: userLengthFt,
+      visionWidthFt: visionW,
+      visionLengthFt: visionL,
+      visionSizeConfidence: visionConf,
+      doorWidthsFt: doorWidths,
+    );
+    warnings.addAll(size.notes);
+
+    var wallPlan = await _orderedWallByWallScan(
+      key: key,
+      frames: frames,
+      userWidthFt: size.widthFt,
+      userLengthFt: size.lengthFt,
+      inventoryHint: inventoryHint,
+      wallPhotoMap: wallPhotoMap,
+    );
+
+    if ((wallPlan.roomWidthFt - size.widthFt).abs() > 0.15 ||
+        (wallPlan.roomLengthFt - size.lengthFt).abs() > 0.15) {
+      wallPlan = AutoScale.rescaleResult(
+        wallPlan,
+        newWidthFt: size.widthFt,
+        newLengthFt: size.lengthFt,
+      );
+      wallPlan = ScanRefine.refine(wallPlan);
+    }
+
+    // Refine scale again using doors found on walls
+    final wallDoors = AutoScale.doorWidthsFromWalls(wallPlan.walls);
+    if (wallDoors.isNotEmpty && userWidthFt == null && userLengthFt == null) {
+      final refined = AutoScale.resolve(
+        visionWidthFt: size.widthFt,
+        visionLengthFt: size.lengthFt,
+        visionSizeConfidence: (size.confidence + 0.1).clamp(0.0, 0.95),
+        doorWidthsFt: wallDoors,
+      );
+      if ((refined.widthFt - size.widthFt).abs() > 0.25 ||
+          (refined.lengthFt - size.lengthFt).abs() > 0.25) {
+        wallPlan = AutoScale.rescaleResult(
+          wallPlan,
+          newWidthFt: refined.widthFt,
+          newLengthFt: refined.lengthFt,
+        );
+        wallPlan = ScanRefine.refine(wallPlan);
+        warnings.add(
+          'Door-prior resize → '
+          '${refined.widthFt.toStringAsFixed(1)}×${refined.lengthFt.toStringAsFixed(1)} ft',
+        );
+      }
+    }
+
+    wallPlan = await _ensureMustFurniture(
+      key: key,
+      frames: frames,
+      base: wallPlan,
+      bulk: wallPlan, // no bulk scatter — placement pass / seed only
+      inventoryHint: inventoryHint,
+      roomWidthFt: wallPlan.roomWidthFt,
+      roomLengthFt: wallPlan.roomLengthFt,
+    );
+    wallPlan = _dedupeMajorFurniture(wallPlan);
+
+    final openings = wallPlan.walls
+        .where((w) => w.type != StrokeType.wall)
+        .toList();
+    final acc = _estimateAccuracy(
+      frames: frames.length,
+      furnitureCount: wallPlan.furniture.length,
+      openingsCount: openings.length,
+      dropped: 0,
+      autoScale: !size.usedUserSize,
+      scaleConfidence: size.confidence,
+    );
+
+    return ScanRefine.refine(AccurateScan.enforce(
+      widthFt: wallPlan.roomWidthFt,
+      lengthFt: wallPlan.roomLengthFt,
+      openings: openings,
+      furniture: wallPlan.furniture,
+      warnings: [
+        ...wallPlan.warnings,
+        ...warnings.where((w) => !wallPlan.warnings.contains(w)),
+        'Labeled 4-wall clean path (+34) — inventory + size + per-wall place',
+      ],
+      sourceLabel: 'Easy plan — labeled walls clean path (+34)',
+      inventDefaultOpenings: false,
+      accuracyScore: acc,
+    ));
   }
 
   /// Ensure MUST inventory types exist: copy from bulk if wall-anchored, else vision place, else seed.
