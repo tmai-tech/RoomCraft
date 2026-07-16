@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+33 (2026-07-16)
+
+### MUST inventory fill for 4-wall plans
+- After wall-by-wall: if inventory requires WARDROBE/TABLE but missing, **merge from bulk**, then **placement-only vision pass**, then seed.
+- User-labeled 4 walls → **always prefer wall plan** (with openings from bulk if wall openings empty).
+- Version **+33**.
+
 ## 1.0.0-beta.1+32 (2026-07-16)
 
 ### Per-wall inventory constraints

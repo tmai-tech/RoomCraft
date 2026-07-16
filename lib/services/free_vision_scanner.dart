@@ -391,7 +391,7 @@ class FreeVisionScanner {
         }
         wallByWall = _dedupeMajorFurniture(wallByWall);
         warnings.add(
-          'Wall-by-wall (+30) @ ${size.widthFt.toStringAsFixed(1)}×'
+          'Wall-by-wall (+33) @ ${size.widthFt.toStringAsFixed(1)}×'
           '${size.lengthFt.toStringAsFixed(1)} ft: '
           '${wallByWall.furniture.length} piece(s)',
         );
@@ -400,33 +400,191 @@ class FreeVisionScanner {
       }
     }
 
-    // Prefer wall-by-wall: stronger bias when user labeled walls (+32).
+    final userLabeled = wallPhotoMap != null && wallPhotoMap.length >= 3;
+
+    // +33: fill MUST inventory pieces missing from wall plan (merge bulk, then place).
+    if (wallByWall != null && inventoryHint.isNotEmpty) {
+      wallByWall = await _ensureMustFurniture(
+        key: key,
+        frames: frames,
+        base: wallByWall,
+        bulk: bulk,
+        inventoryHint: inventoryHint,
+        roomWidthFt: size.widthFt,
+        roomLengthFt: size.lengthFt,
+      );
+      wallByWall = _dedupeMajorFurniture(wallByWall);
+    }
+
+    // Prefer wall-by-wall; user labels → always wall path when available.
     if (wallByWall != null) {
       final bulkScore = _easyQuality(bulk, inventoryHint);
       final wallScore = _easyQuality(wallByWall, inventoryHint);
-      final userLabeled =
-          wallPhotoMap != null && wallPhotoMap.length >= 3;
-      // User labels → almost always keep wall-by-wall unless bulk is much better.
-      final margin = userLabeled ? 20 : 5;
       warnings.add(
-        'Bulk score=$bulkScore · wall-by-wall score=$wallScore '
-        '(prefer wall if ≥ bulk-$margin${userLabeled ? ", user-labeled" : ""})',
+        'Bulk score=$bulkScore · wall-by-wall score=$wallScore'
+        '${userLabeled ? " (user-labeled → prefer wall)" : ""}',
       );
-      if (wallScore >= bulkScore - margin) {
-        return wallByWall.copyWith(
+      if (userLabeled || wallScore >= bulkScore - 5) {
+        // Prefer wall openings; if none, keep bulk openings.
+        final wallOpenings = wallByWall.walls
+            .where((w) => w.type != StrokeType.wall)
+            .toList();
+        final bulkOpenings = bulk.walls
+            .where((w) => w.type != StrokeType.wall)
+            .toList();
+        final useOpenings =
+            wallOpenings.isNotEmpty ? wallOpenings : bulkOpenings;
+        final outline = wallByWall.walls
+            .where((w) => w.type == StrokeType.wall)
+            .toList();
+        final merged = ScanRefine.refine(AccurateScan.enforce(
+          widthFt: size.widthFt,
+          lengthFt: size.lengthFt,
+          openings: useOpenings,
+          furniture: wallByWall.furniture,
           warnings: [
             ...wallByWall.warnings,
             ...warnings.where((w) => !wallByWall!.warnings.contains(w)),
             userLabeled
-                ? 'Selected wall-by-wall plan (user wall labels + inventory)'
+                ? 'Selected wall-by-wall (+33, user labels + MUST inventory fill)'
                 : 'Selected wall-by-wall plan (stable multi-wall placement)',
           ],
-        );
+          sourceLabel: userLabeled
+              ? 'Easy plan — labeled walls + inventory (+33)'
+              : 'Easy plan — wall-by-wall (+33)',
+          inventDefaultOpenings: false,
+          accuracyScore: wallByWall.accuracyScore ?? bulk.accuracyScore,
+        ));
+        // Preserve rectangle walls if enforce rebuilds them
+        if (outline.isNotEmpty &&
+            merged.walls.where((w) => w.type == StrokeType.wall).isEmpty) {
+          return merged.copyWith(walls: [...outline, ...useOpenings]);
+        }
+        return merged;
       }
     }
     return bulk.copyWith(
-      warnings: [...bulk.warnings, ...warnings.where((w) => !bulk.warnings.contains(w))],
+      warnings: [
+        ...bulk.warnings,
+        ...warnings.where((w) => !bulk.warnings.contains(w)),
+      ],
     );
+  }
+
+  /// Ensure MUST inventory types exist: copy from bulk if wall-anchored, else vision place, else seed.
+  Future<ScanResult> _ensureMustFurniture({
+    required String key,
+    required List<File> frames,
+    required ScanResult base,
+    required ScanResult bulk,
+    required String inventoryHint,
+    required double roomWidthFt,
+    required double roomLengthFt,
+  }) async {
+    final need = <FurnitureType>[];
+    if (inventoryHint.contains('MUST include WARDROBE')) {
+      need.add(FurnitureType.wardrobe);
+    }
+    if (inventoryHint.contains('MUST include TABLE')) {
+      need.add(FurnitureType.table);
+    }
+    if (need.isEmpty) return base;
+
+    final have = base.furniture.map((f) => f.type).toSet();
+    final missing = need.where((t) => !have.contains(t)).toList();
+    if (missing.isEmpty) return base;
+
+    final notes = <String>[
+      ...base.warnings,
+      'MUST fill missing: ${missing.map((t) => t.name).join(", ")}',
+    ];
+    var furniture = List<ScanFurnitureHint>.from(base.furniture);
+
+    // 1) Steal wall-anchored-looking pieces from bulk (same type, inside room)
+    for (final t in List<FurnitureType>.from(missing)) {
+      final fromBulk = bulk.furniture.where((f) => f.type == t).toList();
+      if (fromBulk.isEmpty) continue;
+      furniture.add(fromBulk.first);
+      missing.remove(t);
+      notes.add('Merged ${t.name} from bulk multi-image layout');
+    }
+
+    // 2) Placement-only vision pass for still-missing MUST types
+    if (missing.isNotEmpty) {
+      try {
+        final placed = await _client.completeJson(
+          apiKey: key,
+          frames: frames,
+          system:
+              'Place ONLY the listed furniture on walls. JSON only. Never invent other types.',
+          prompt: '''
+Room ${roomWidthFt.toStringAsFixed(1)} × ${roomLengthFt.toStringAsFixed(1)} ft.
+Inventory: $inventoryHint
+Place ONLY these missing pieces (each on a wall): ${missing.map((t) => t.name.toUpperCase()).join(", ")}.
+
+Return ONLY:
+{"furniture":[{"type":"WARDROBE","wall":"west","fromLeft":1.0,"depth":1.2,"dim":{"w":6,"l":2},"confidence":0.8,"evidence":"..."}]}
+
+Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unless listed; empty array not allowed if list non-empty.
+''',
+          temperature: 0.0,
+        );
+        final list = placed['furniture'];
+        if (list is List) {
+          for (final item in list) {
+            if (item is! Map) continue;
+            final typeStr = item['type']?.toString().toUpperCase() ?? '';
+            FurnitureType? match;
+            for (final m in missing) {
+              if (typeStr.contains(m.name.toUpperCase()) ||
+                  (m == FurnitureType.table && typeStr.contains('DESK')) ||
+                  (m == FurnitureType.wardrobe &&
+                      (typeStr.contains('CLOSET') ||
+                          typeStr.contains('CUPBOARD')))) {
+                match = m;
+                break;
+              }
+            }
+            if (match == null) continue;
+            if (furniture.any((f) => f.type == match)) continue;
+            // Parse via ScanParser fragment
+            final fragment = {
+              'roomWidth': roomWidthFt,
+              'roomLength': roomLengthFt,
+              'furniture': [item],
+              'openings': <dynamic>[],
+            };
+            final parsed = ScanParser.parse(fragment);
+            if (parsed.furniture.isEmpty) continue;
+            furniture.add(parsed.furniture.first);
+            missing.remove(match);
+            notes.add('Placement-pass added ${match.name}');
+          }
+        }
+      } catch (e) {
+        notes.add('Placement-only pass failed: $e');
+      }
+    }
+
+    // 3) Seed remaining MUST types
+    if (missing.isNotEmpty) {
+      final seeded = _seedScanResultFromInventory(
+        base.copyWith(furniture: furniture, warnings: notes),
+        inventoryHint,
+      );
+      return seeded;
+    }
+
+    return ScanRefine.refine(AccurateScan.enforce(
+      widthFt: roomWidthFt,
+      lengthFt: roomLengthFt,
+      openings: base.walls,
+      furniture: furniture,
+      warnings: notes,
+      sourceLabel: 'Wall plan + MUST inventory fill (+33)',
+      inventDefaultOpenings: false,
+      accuracyScore: base.accuracyScore,
+    ));
   }
 
   /// Keep one of each major type (wardrobe/bed/sofa/tv) to reduce doubles.
