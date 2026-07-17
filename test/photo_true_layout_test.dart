@@ -159,6 +159,44 @@ void main() {
       isTrue,
     );
   });
+
+  test('+43 keeps wardrobe on east wall (does not force west)', () {
+    final base = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(2, 0),
+          endFt: Offset(5, 0),
+        ),
+      ],
+      furniture: [
+        // Against east wall (x near 16)
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(14.5, 7),
+          widthFt: 6.5,
+          lengthFt: 1.5,
+          rotationRad: 1.5708,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(8, 2),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.5,
+    );
+    final polished = PhotoTrueLayout.polish(base);
+    expect(PhotoTrueLayout.isPhotoTrue(polished), isTrue);
+    final wardrobe =
+        polished.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // Still on east half of room (not forced to west x≈1)
+    expect(wardrobe.posFt.dx, greaterThan(10));
+  });
 }
 
 double mathMax(double a, double b) => a > b ? a : b;

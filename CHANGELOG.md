@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+43 (2026-07-17)
+
+### Preserve wall placement (stop scrambling gold plans)
+- Polish no longer **always** puts wardrobe on west / desk on south.
+- **Keeps vision wall** for existing wardrobe/table; seeds only missing pieces on free walls.
+- Already photo-true plans are **not reshuffled** (score bar only).
+- Version **+43**.
+
 ## 1.0.0-beta.1+42 (2026-07-17)
 
 ### Multi-wall reliability + readable gold plan preview

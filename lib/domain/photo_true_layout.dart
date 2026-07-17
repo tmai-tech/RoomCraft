@@ -57,6 +57,20 @@ class PhotoTrueLayout {
     final l = input.roomLengthFt;
     if (w <= 0 || l <= 0) return input;
 
+    // +43: already gold-quality → only ensure score bar, do not reshuffle walls
+    if (isPhotoTrue(input)) {
+      final score = math.max(input.accuracyScore ?? 0, goldQualityScore)
+          .clamp(goldQualityScore, 0.90);
+      return input.copyWith(
+        accuracyScore: score,
+        warnings: [
+          ...input.warnings,
+          if (!input.warnings.any((n) => n.contains('gold-quality')))
+            'Photo-true gold-quality preserved (+43)',
+        ],
+      );
+    }
+
     final notes = <String>[...input.warnings];
     final invBlob = notes.join(' ').toLowerCase();
 
@@ -144,15 +158,16 @@ class PhotoTrueLayout {
       notes.add('Photo-true (+41): default entry door (plan had none)');
     }
 
-    // Furniture: prefer wall-anchored compose for wardrobe/table
+    // Furniture: +43 preserve wall-by-wall placement; only seed missing pieces.
+    // Older polish always forced west wardrobe / south desk and scrambled correct plans.
     final furnHints = <WallFurnitureHint>[];
     final keepOther = <ScanFurnitureHint>[];
+    final usedWalls = <WallSide>{};
 
     for (final f in input.furniture) {
       if (f.type == FurnitureType.bed ||
           f.type == FurnitureType.sofa ||
           f.type == FurnitureType.tvUnit) {
-        // Drop invented types when inventory forbids (default photo-true)
         if (invBlob.contains('no bed') ||
             invBlob.contains('no sofa') ||
             invBlob.contains('no tv') ||
@@ -162,13 +177,33 @@ class PhotoTrueLayout {
         }
       }
       if (f.type == FurnitureType.wardrobe || f.type == FurnitureType.table) {
-        continue; // re-place below
+        final hint = _hintFromExisting(f, w, l);
+        if (hint != null) {
+          furnHints.add(hint);
+          if (hint.wall != null) usedWalls.add(hint.wall!);
+          notes.add(
+            'Kept ${f.type.name} on ${hint.wall?.name ?? "wall"} (+43)',
+          );
+        }
+        continue;
       }
       keepOther.add(f);
     }
 
-    if (needWardrobe || input.furniture.any((f) => f.type == FurnitureType.wardrobe)) {
-      final side = WallSide.west;
+    final hasWardrobe =
+        furnHints.any((h) => h.type == FurnitureType.wardrobe);
+    final hasTable = furnHints.any((h) => h.type == FurnitureType.table);
+
+    if (!hasWardrobe &&
+        (needWardrobe ||
+            input.furniture.any((f) => f.type == FurnitureType.wardrobe))) {
+      final side = _pickFreeWall(
+        prefer: [WallSide.west, WallSide.north, WallSide.east, WallSide.south],
+        used: usedWalls,
+        roomW: w,
+        roomL: l,
+        preferLong: true,
+      );
       final wl = side.lengthFt(w, l);
       final along = math.min(6.7, wl * 0.75);
       furnHints.add(WallFurnitureHint.fromLeft(
@@ -180,12 +215,22 @@ class PhotoTrueLayout {
         lengthFt: 1.5,
         wallLengthFt: wl,
         confidence: 0.92,
-        evidence: 'photo-true wall wardrobe (+41)',
+        evidence: 'photo-true seed wardrobe (+43)',
       ));
+      usedWalls.add(side);
+      notes.add('Seeded WARDROBE on ${side.name} (+43)');
     }
 
-    if (needTable || input.furniture.any((f) => f.type == FurnitureType.table)) {
-      final side = WallSide.south;
+    if (!hasTable &&
+        (needTable ||
+            input.furniture.any((f) => f.type == FurnitureType.table))) {
+      final side = _pickFreeWall(
+        prefer: [WallSide.south, WallSide.east, WallSide.north, WallSide.west],
+        used: usedWalls,
+        roomW: w,
+        roomL: l,
+        preferLong: false,
+      );
       final wl = side.lengthFt(w, l);
       furnHints.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
@@ -196,8 +241,10 @@ class PhotoTrueLayout {
         lengthFt: 2.0,
         wallLengthFt: wl,
         confidence: 0.92,
-        evidence: 'photo-true wall desk (+41)',
+        evidence: 'photo-true seed desk (+43)',
       ));
+      usedWalls.add(side);
+      notes.add('Seeded TABLE on ${side.name} (+43)');
     }
 
     // Compose wall-anchored pieces
@@ -306,6 +353,101 @@ class PhotoTrueLayout {
       rotationRad: f.rotationRad,
       included: f.included,
     );
+  }
+
+  /// Map existing feet placement back to wall-relative (preserve vision wall).
+  static WallFurnitureHint? _hintFromExisting(
+    ScanFurnitureHint f,
+    double w,
+    double l,
+  ) {
+    final side = _nearestWall(f.posFt, w, l);
+    final wl = side.lengthFt(w, l);
+    var along = math.max(f.widthFt, f.lengthFt);
+    var deep = math.min(f.widthFt, f.lengthFt);
+    if (f.type == FurnitureType.wardrobe) {
+      if (along < 5.5) along = 6.5;
+      if (deep < 1.2 || deep > 2.5) deep = 1.5;
+      along = along.clamp(5.5, wl * 0.9);
+    } else if (f.type == FurnitureType.table) {
+      if (along < 2.5) along = 4.0;
+      if (deep < 1.2) deep = 2.0;
+      along = along.clamp(2.5, wl * 0.6);
+      deep = deep.clamp(1.5, 2.5);
+    }
+    final fromLeft = _fromLeftOnWall(f.posFt, side, w, l, along)
+        .clamp(0.3, math.max(0.3, wl - along - 0.3))
+        .toDouble();
+    return WallFurnitureHint.fromLeft(
+      type: f.type,
+      wall: side,
+      fromLeftFt: fromLeft,
+      depthFt: deep,
+      widthFt: along,
+      lengthFt: deep,
+      wallLengthFt: wl,
+      confidence: 0.9,
+      evidence: 'preserved wall placement (+43)',
+    );
+  }
+
+  static WallSide _nearestWall(Offset pos, double w, double l) {
+    final dS = pos.dy;
+    final dN = l - pos.dy;
+    final dW = pos.dx;
+    final dE = w - pos.dx;
+    final minD = [dS, dN, dW, dE].reduce(math.min);
+    if (minD == dS) return WallSide.south;
+    if (minD == dN) return WallSide.north;
+    if (minD == dW) return WallSide.west;
+    return WallSide.east;
+  }
+
+  static double _fromLeftOnWall(
+    Offset pos,
+    WallSide side,
+    double w,
+    double l,
+    double along,
+  ) {
+    // Center along wall → fromLeft = center - along/2 (facing L→R)
+    switch (side) {
+      case WallSide.south:
+        // facing: left = east, x decreases with t → fromLeft ≈ w - x - along/2
+        return (w - pos.dx - along / 2).clamp(0.0, w);
+      case WallSide.north:
+        return (pos.dx - along / 2).clamp(0.0, w);
+      case WallSide.east:
+        return (l - pos.dy - along / 2).clamp(0.0, l);
+      case WallSide.west:
+        return (pos.dy - along / 2).clamp(0.0, l);
+    }
+  }
+
+  static WallSide _pickFreeWall({
+    required List<WallSide> prefer,
+    required Set<WallSide> used,
+    required double roomW,
+    required double roomL,
+    required bool preferLong,
+  }) {
+    for (final s in prefer) {
+      if (!used.contains(s)) return s;
+    }
+    // All used — pick longest or first prefer
+    if (preferLong) {
+      WallSide best = prefer.first;
+      var bestLen = 0.0;
+      for (final s in prefer) {
+        final len = s.lengthFt(roomW, roomL);
+        if (len > bestLen) {
+          bestLen = len;
+          best = s;
+        }
+      }
+      return best;
+    }
+    return prefer.first;
   }
 
   static ScanFurnitureHint _hugNearestWall(
