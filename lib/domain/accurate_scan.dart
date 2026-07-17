@@ -123,6 +123,9 @@ class AccurateScan {
   }
 
   /// Snap opening segments onto the nearest outer wall edge.
+  ///
+  /// +59: mesh/balcony may span most of a wall (gold plan); do not crush to
+  /// 50% of the short room side like a normal door.
   static List<ScanWallSegment> _projectOpeningsOntoWalls(
     List<ScanWallSegment> openings,
     double w,
@@ -134,13 +137,17 @@ class AccurateScan {
         (o.startFt.dx + o.endFt.dx) / 2,
         (o.startFt.dy + o.endFt.dy) / 2,
       );
-      final len = o.lengthFt.clamp(1.5, math.min(w, l) * 0.5);
       // Distance to each wall (top y=0, right x=w, bottom y=l, left x=0)
       final dTop = mid.dy.abs();
       final dRight = (w - mid.dx).abs();
       final dBottom = (l - mid.dy).abs();
       final dLeft = mid.dx.abs();
       final minD = [dTop, dRight, dBottom, dLeft].reduce(math.min);
+
+      // Wall length for the edge we snap to
+      final wallLen =
+          (minD == dTop || minD == dBottom) ? w : l;
+      final len = _clampOpeningLen(o.type, o.lengthFt, wallLen);
 
       late Offset a;
       late Offset b;
@@ -164,6 +171,25 @@ class AccurateScan {
       out.add(ScanWallSegment(type: o.type, startFt: a, endFt: b));
     }
     return out;
+  }
+
+  static double _clampOpeningLen(
+    StrokeType type,
+    double raw,
+    double wallLen,
+  ) {
+    final maxOnWall = math.max(2.0, wallLen * 0.92);
+    switch (type) {
+      case StrokeType.door:
+        return raw.clamp(2.0, math.min(4.0, maxOnWall));
+      case StrokeType.window:
+        return raw.clamp(1.5, math.min(10.0, maxOnWall));
+      case StrokeType.balcony:
+        // Gold mesh/sliding glass often 5–10+ ft
+        return raw.clamp(3.5, math.min(14.0, maxOnWall));
+      case StrokeType.wall:
+        return raw.clamp(1.0, maxOnWall);
+    }
   }
 
   static List<ScanFurnitureHint> _sanitizeFurniture(

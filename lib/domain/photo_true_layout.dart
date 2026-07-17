@@ -101,20 +101,22 @@ class PhotoTrueLayout {
         ],
       );
     }
-    // +54/58: full gold uses vision wall roles + keeps vision openings
+    // +54/58/59: full gold keeps vision openings + vision wardrobe/desk walls
     final roles = inferStudyWallRoles(cur);
     final gold = composeStudyGold(
       widthFt: cur.roomWidthFt > 0 ? cur.roomWidthFt : goldRoomWidthFt,
       lengthFt: cur.roomLengthFt > 0 ? cur.roomLengthFt : goldRoomLengthFt,
       warnings: [
         ...cur.warnings,
-        'ensureGoldQuality: full study gold with vision wall roles (+58) '
+        'ensureGoldQuality: full study gold with vision wall roles (+59) '
             'wardrobe=${roles.wardrobe.name}',
       ],
       includeChair: includeChair,
       roles: roles,
     );
-    return resolveWallClearances(preferVisionOpenings(gold, cur));
+    return resolveWallClearances(
+      preferVisionFurniture(preferVisionOpenings(gold, cur), cur),
+    );
   }
 
   /// Slide wall furniture off openings that share the same wall (+57).
@@ -711,7 +713,110 @@ class PhotoTrueLayout {
       includeChair: includeChair,
       roles: roles,
     );
-    return resolveWallClearances(preferVisionOpenings(fullGold, partial));
+    return resolveWallClearances(
+      preferVisionFurniture(
+        preferVisionOpenings(fullGold, partial),
+        partial,
+      ),
+    );
+  }
+
+  /// Prefer vision wardrobe/desk placement over template when solid (+59).
+  ///
+  /// Full gold used to always replace with template positions even when
+  /// wall-by-wall already found a long wardrobe on the correct wall.
+  static ScanResult preferVisionFurniture(
+    ScanResult gold,
+    ScanResult vision,
+  ) {
+    final w = gold.roomWidthFt;
+    final l = gold.roomLengthFt;
+    ScanFurnitureHint? vWardrobe;
+    ScanFurnitureHint? vTable;
+    for (final f in vision.furniture.where((x) => x.included)) {
+      if (f.type == FurnitureType.wardrobe) {
+        final along = math.max(f.widthFt, f.lengthFt);
+        if (along >= 4.5 &&
+            (vWardrobe == null ||
+                along > math.max(vWardrobe.widthFt, vWardrobe.lengthFt))) {
+          vWardrobe = f;
+        }
+      } else if (f.type == FurnitureType.table) {
+        if (vTable == null ||
+            f.widthFt * f.lengthFt >
+                vTable.widthFt * vTable.lengthFt) {
+          vTable = f;
+        }
+      }
+    }
+    if (vWardrobe == null && vTable == null) return gold;
+
+    final furniture = <ScanFurnitureHint>[];
+    var usedVision = false;
+    for (final g in gold.furniture) {
+      if (g.type == FurnitureType.wardrobe && vWardrobe != null) {
+        // Grow short vision unit to gold-like span on same wall
+        final side = _nearestWall(vWardrobe.posFt, w, l);
+        final wl = side.lengthFt(w, l);
+        var along = math.max(vWardrobe.widthFt, vWardrobe.lengthFt);
+        if (along < 6.5) along = math.max(6.5, wl * 0.55);
+        along = along.clamp(6.5, wl * 0.92);
+        final deep = 1.6;
+        final center = _centerFromLeftOnWall(vWardrobe.posFt, side, w, l)
+            .clamp(along / 2 + 0.3, wl - along / 2 - 0.3)
+            .toDouble();
+        final hint = WallFurnitureHint.fromLeft(
+          type: FurnitureType.wardrobe,
+          wall: side,
+          fromLeftFt: center,
+          depthFt: deep,
+          widthFt: along,
+          lengthFt: deep,
+          wallLengthFt: wl,
+          confidence: 0.94,
+          evidence: 'vision wardrobe preferred over template (+59)',
+        );
+        final composed = WallRelativeComposer.compose(
+          widthFt: w,
+          lengthFt: l,
+          openings: const [],
+          furniture: [hint],
+          warnings: const [],
+        );
+        furniture.add(
+          composed.furniture.isNotEmpty ? composed.furniture.first : vWardrobe,
+        );
+        usedVision = true;
+        continue;
+      }
+      if (g.type == FurnitureType.table && vTable != null) {
+        furniture.add(vTable);
+        usedVision = true;
+        continue;
+      }
+      furniture.add(g);
+    }
+
+    if (!usedVision) return gold;
+    final openings = gold.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
+    return AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: openings,
+      furniture: furniture,
+      warnings: [
+        ...gold.warnings,
+        'Prefer vision furniture over template (+59)',
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: math.max(gold.accuracyScore ?? 0, goldVisionScore)
+          .clamp(goldVisionScore, 0.92),
+    );
   }
 
   /// Keep vision door/mesh segments when full gold would wipe them (+58).

@@ -528,6 +528,61 @@ void main() {
     expect(out.furniture.any((f) => f.type == FurnitureType.wardrobe), isTrue);
   });
 
+  test('+59 preferVisionFurniture keeps east wardrobe through full gold', () {
+    final vision = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(2, 0),
+          endFt: Offset(5, 0),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(18.5, 8.5),
+          widthFt: 7.0,
+          lengthFt: 1.6,
+          rotationRad: 1.5708,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(4, 2),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    );
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final out = PhotoTrueLayout.preferVisionFurniture(gold, vision);
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dx, greaterThan(14)); // east, not north template
+  });
+
+  test('+59 wide mesh balcony not crushed by AccurateScan', () {
+    // Gold plan mesh is often 7–10 ft; old clamp was min(w,l)*0.5 wrong for doors only
+    final r = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 1),
+          endFt: Offset(20, 11), // 10 ft mesh on east
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.5,
+    );
+    final mesh = r.walls.firstWhere((w) => w.type == StrokeType.balcony);
+    expect(mesh.lengthFt, greaterThanOrEqualTo(8.0));
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
