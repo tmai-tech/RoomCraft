@@ -163,6 +163,45 @@ void main() {
     expect(OpeningPriors.clampWidth(StrokeType.door, 20, 12), lessThanOrEqualTo(4.0));
   });
 
+  test('+68 long wardrobe left-edge fromLeft converts to mid-wall center', () {
+    // Vision often returns fromLeft≈0.5 as left edge of 8ft unit on 20ft wall
+    final hint = WallFurnitureHint.fromLeft(
+      type: FurnitureType.wardrobe,
+      wall: WallSide.south,
+      fromLeftFt: 0.5,
+      depthFt: 1.6,
+      widthFt: 8.0,
+      lengthFt: 1.6,
+      wallLengthFt: 20.0,
+    );
+    // Center ~4.5 (0.5+4), t≈0.225 — not stuck at t≈0.025 (raw left edge)
+    expect(hint.t, greaterThan(0.15));
+    expect(hint.t, lessThan(0.35));
+    final composed = WallRelativeComposer.compose(
+      widthFt: 20,
+      lengthFt: 17,
+      furniture: [hint],
+    );
+    final w =
+        composed.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // South facing: left=east → fromLeft 4.5 places near x=15.5, not x≈0.5
+    expect(w.posFt.dx, greaterThan(13.0));
+    expect(w.posFt.dx, lessThan(18.0));
+  });
+
+  test('+68 center fromLeft for wardrobe is preserved', () {
+    final hint = WallFurnitureHint.fromLeft(
+      type: FurnitureType.wardrobe,
+      wall: WallSide.south,
+      fromLeftFt: 10.0, // true center on 20ft wall
+      depthFt: 1.6,
+      widthFt: 11.0,
+      lengthFt: 1.6,
+      wallLengthFt: 20.0,
+    );
+    expect(hint.t, closeTo(0.5, 0.08));
+  });
+
   test('+37 wall-anchored conf 0.55 is kept (was dropped at 0.70)', () {
     final result = WallRelativeComposer.compose(
       widthFt: 12,

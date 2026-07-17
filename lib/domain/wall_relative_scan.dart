@@ -186,6 +186,9 @@ class WallFurnitureHint {
   ///
   /// Do not pass the left edge of the piece — that shifts long wardrobes
   /// toward one corner (gold-plan position error). Openings still use left edge.
+  ///
+  /// +68: if a long unit is reported with a near-zero fromLeft that only makes
+  /// sense as the LEFT edge, convert to center so the unit sits mid-wall.
   factory WallFurnitureHint.fromLeft({
     required FurnitureType type,
     required WallSide wall,
@@ -198,11 +201,23 @@ class WallFurnitureHint {
     String evidence = 'tape measure',
   }) {
     final wl = wallLengthFt <= 0 ? 1.0 : wallLengthFt;
+    final along = math.max(widthFt, lengthFt).clamp(0.5, wl * 0.98);
+    var center = fromLeftFt;
+    // Long wall units: models often send left-edge feet (0.3–2.5) not center
+    if (along >= 5.0) {
+      final looksLeftEdge =
+          fromLeftFt < along * 0.4 && fromLeftFt + along <= wl + 0.8;
+      final looksCenter = (fromLeftFt - wl / 2).abs() < wl * 0.22;
+      if (looksLeftEdge && !looksCenter) {
+        center = fromLeftFt + along / 2;
+      }
+    }
+    center = center.clamp(along / 2 + 0.1, math.max(along / 2 + 0.1, wl - along / 2 - 0.1));
     // Keep long units from clamping hard to 0.05/0.95 midpoints
-    final halfAlong = math.max(widthFt, lengthFt) / (2 * wl);
+    final halfAlong = along / (2 * wl);
     final lo = math.min(0.12, 0.05 + halfAlong * 0.15);
     final hi = math.max(0.88, 0.95 - halfAlong * 0.15);
-    final t = (fromLeftFt / wl).clamp(lo, hi);
+    final t = (center / wl).clamp(lo, hi);
     return WallFurnitureHint(
       type: type,
       wall: wall,
