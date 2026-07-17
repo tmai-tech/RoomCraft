@@ -95,9 +95,9 @@ void main() {
       inventoryHint:
           'MUST include WARDROBE; MUST include mesh balcony; about 2 door opening(s)',
     );
-    // +45 dense floor raised toward gold-plan scale
-    expect(min.widthFt, greaterThanOrEqualTo(18));
-    expect(min.lengthFt, greaterThanOrEqualTo(16));
+    // +53 dense floor matches gold-plan ~20×17
+    expect(min.widthFt, greaterThanOrEqualTo(20));
+    expect(min.lengthFt, greaterThanOrEqualTo(17));
   });
 
   test('+41 caps confidence when plan is table-only (feedback 443cf0c3)', () {
@@ -193,6 +193,79 @@ void main() {
         gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
     // North wall furniture sits near y≈length
     expect(wardrobe.posFt.dy, greaterThan(12 - 3));
+  });
+
+  test('+53 ensureGoldQuality upgrades 12×10.5 thin plan to gold density', () {
+    // Feedback 32ffdc65/443cf0c3: tiny room + empty/thin plan must become gold-like
+    final thin = AccurateScan.enforce(
+      widthFt: 12,
+      lengthFt: 10.5,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(3, 2),
+          widthFt: 3,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.74,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+        'Multi-wall study inventory',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(thin);
+    expect(out.roomWidthFt, greaterThanOrEqualTo(20));
+    expect(out.roomLengthFt, greaterThanOrEqualTo(17));
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.74));
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(
+      mathMax(wardrobe.widthFt, wardrobe.lengthFt),
+      greaterThanOrEqualTo(6.5),
+    );
+    final opens = out.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .length;
+    expect(opens, greaterThanOrEqualTo(2));
+  });
+
+  test('+53 isPhotoTrue rejects single-opening or short wardrobe', () {
+    final weak = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(1, 0),
+          endFt: Offset(4, 0),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(1, 7),
+          widthFt: 5.2,
+          lengthFt: 1.5,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(8, 2),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.7,
+    );
+    expect(PhotoTrueLayout.isPhotoTrue(weak), isFalse);
   });
 
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
