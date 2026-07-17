@@ -1550,7 +1550,11 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       inventDefaultOpenings: false,
       accuracyScore: accuracy,
     );
-    return ScanRefine.refine(raw);
+    // +61: gold path for locked-size precision (was refine-only)
+    return PhotoTrueLayout.ensureGoldQuality(
+      ScanRefine.refine(raw),
+      includeChair: true,
+    );
   }
 
   Future<ScanResult> _singlePassScan({
@@ -1569,15 +1573,19 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
     jsonMap['roomLength'] = roomLengthFt;
     final filtered = _filterFurnitureMap(jsonMap);
     final parsed = ScanParser.parse(filtered.map);
-    return ScanRefine.refine(AccurateScan.enforce(
-      widthFt: roomWidthFt,
-      lengthFt: roomLengthFt,
-      openings: parsed.walls,
-      furniture: parsed.furniture,
-      warnings: parsed.warnings,
-      sourceLabel: 'Free AI scan — size locked',
-      inventDefaultOpenings: false,
-    ));
+    // +61: gold path for single-pass locked size
+    return PhotoTrueLayout.ensureGoldQuality(
+      ScanRefine.refine(AccurateScan.enforce(
+        widthFt: roomWidthFt,
+        lengthFt: roomLengthFt,
+        openings: parsed.walls,
+        furniture: parsed.furniture,
+        warnings: parsed.warnings,
+        sourceLabel: 'Free AI scan — size locked',
+        inventDefaultOpenings: false,
+      )),
+      includeChair: true,
+    );
   }
 
   static ({Map<String, dynamic> map, int dropped}) _filterFurnitureMap(

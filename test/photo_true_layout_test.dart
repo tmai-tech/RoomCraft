@@ -627,6 +627,27 @@ void main() {
     expect(PhotoTrueLayout.isStudyLike(living), isFalse);
   });
 
+  test('+61 ensureGoldQuality on empty locked-size plan still photo-true', () {
+    // Precision/single-pass used to skip gold — empty inventory plan must upgrade
+    final empty = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.25,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+        'Precision multi-frame scan',
+      ],
+    );
+    expect(PhotoTrueLayout.isStudyLike(empty), isTrue);
+    final out = PhotoTrueLayout.ensureGoldQuality(empty);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.74));
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,

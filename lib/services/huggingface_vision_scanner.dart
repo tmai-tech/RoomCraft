@@ -291,11 +291,14 @@ class HuggingFaceVisionScanner {
       warnings.add('HF returned no furniture — check photos or add from catalog');
     }
 
-    // +40: gold-quality polish (wall-hug, openings spread, score bar)
-    return PhotoTrueLayout.polish(ScanRefine.refine(result.copyWith(
-      warnings: warnings,
-      accuracyScore: accuracy,
-    )));
+    // +61: full gold path (was polish-only — skipped hybrid/vision prefer)
+    return PhotoTrueLayout.ensureGoldQuality(
+      ScanRefine.refine(result.copyWith(
+        warnings: warnings,
+        accuracyScore: accuracy,
+      )),
+      includeChair: true,
+    );
   }
 
   Future<ScanResult> _lockedScan({
@@ -367,16 +370,20 @@ class HuggingFaceVisionScanner {
       dropped: filtered.dropped,
     );
 
-    return PhotoTrueLayout.polish(ScanRefine.refine(AccurateScan.enforce(
-      widthFt: roomWidthFt,
-      lengthFt: roomLengthFt,
-      openings: parsed.walls,
-      furniture: parsed.furniture,
-      warnings: warnings,
-      sourceLabel: 'HF $modelLabel — size locked',
-      inventDefaultOpenings: false,
-      accuracyScore: accuracy,
-    )));
+    // +61: full gold path (was polish-only)
+    return PhotoTrueLayout.ensureGoldQuality(
+      ScanRefine.refine(AccurateScan.enforce(
+        widthFt: roomWidthFt,
+        lengthFt: roomLengthFt,
+        openings: parsed.walls,
+        furniture: parsed.furniture,
+        warnings: warnings,
+        sourceLabel: 'HF $modelLabel — size locked',
+        inventDefaultOpenings: false,
+        accuracyScore: accuracy,
+      )),
+      includeChair: true,
+    );
   }
 
   static ({Map<String, dynamic> map, int dropped}) _filterFurnitureMap(

@@ -486,10 +486,17 @@ class AIScannerService {
               w.type == StrokeType.balcony,
         )
         .length;
-    q += openings.clamp(0, 4) * 6;
+    q += openings.clamp(0, 6) * 10; // +61: multi openings closer to gold
     if (openings == 0 && r.furniture.isNotEmpty) q -= 25;
-    // +40: gold-quality photo-true bundle
-    if (PhotoTrueLayout.isPhotoTrue(r)) q += 50;
+    // +40/61: gold-quality photo-true bundle
+    if (PhotoTrueLayout.isPhotoTrue(r)) q += 60;
+    final wardrobe = r.furniture.where((f) => f.type == FurnitureType.wardrobe);
+    if (wardrobe.isNotEmpty) {
+      final along = wardrobe
+          .map((f) => f.widthFt > f.lengthFt ? f.widthFt : f.lengthFt)
+          .reduce((a, b) => a > b ? a : b);
+      if (along >= 6.0) q += 15;
+    }
     if (r.furniture.isEmpty) q -= 60;
     // Single floating piece is often a bad guess
     if (r.furniture.length == 1) q -= 10;
@@ -499,13 +506,16 @@ class AIScannerService {
   }
 
   /// Keep the higher-quality layout; ties keep [current].
-  /// +40: polish candidates before compare so seeded wardrobe/doors count.
+  /// +40/61: ensureGoldQuality before compare (hybrid + vision prefer + density).
   static ScanResult? _preferLayout(ScanResult? current, ScanResult candidate) {
-    final polished = PhotoTrueLayout.polish(candidate);
+    final polished = PhotoTrueLayout.ensureGoldQuality(
+      candidate,
+      includeChair: true,
+    );
     if (current == null) return polished;
     final polishedCurrent = PhotoTrueLayout.isPhotoTrue(current)
         ? current
-        : PhotoTrueLayout.polish(current);
+        : PhotoTrueLayout.ensureGoldQuality(current, includeChair: true);
     final a = _layoutQuality(polishedCurrent);
     final b = _layoutQuality(polished);
     if (b > a) return polished;
