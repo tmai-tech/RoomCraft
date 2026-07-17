@@ -327,6 +327,60 @@ void main() {
     expect(wardrobe.posFt.dx, greaterThan(16)); // east wall
   });
 
+  test('+55 default roles: dual doors on entry, mesh adjacent wardrobe', () {
+    // Wide room → wardrobe north, mesh west (clockwise), entry south
+    final roles = PhotoTrueLayout.defaultStudyWallRoles(20, 17);
+    expect(roles.wardrobe, WallSide.north);
+    expect(roles.mesh, WallSide.west);
+    expect(roles.doorPrimary, WallSide.south);
+    expect(roles.doorSecondary, WallSide.south);
+    final gold = PhotoTrueLayout.composeStudyGold(
+      widthFt: 20,
+      lengthFt: 17,
+      roles: roles,
+    );
+    expect(PhotoTrueLayout.isPhotoTrue(gold), isTrue);
+    final doors = gold.walls.where((w) => w.type == StrokeType.door).toList();
+    expect(doors.length, greaterThanOrEqualTo(2));
+    // Both doors near south (y≈0)
+    for (final d in doors) {
+      final midY = (d.startFt.dy + d.endFt.dy) / 2;
+      expect(midY, lessThan(3.0));
+    }
+    final mesh = gold.walls.firstWhere((w) => w.type == StrokeType.balcony);
+    final meshMidX = (mesh.startFt.dx + mesh.endFt.dx) / 2;
+    expect(meshMidX, lessThan(3.0)); // west wall x≈0
+  });
+
+  test('+55 polish dual doors not on wardrobe storage wall', () {
+    final base = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 15.5),
+          widthFt: 8,
+          lengthFt: 1.6,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final polished = PhotoTrueLayout.polish(base);
+    final doors = polished.walls.where((w) => w.type == StrokeType.door);
+    for (final d in doors) {
+      final midY = (d.startFt.dy + d.endFt.dy) / 2;
+      // Doors must not sit on north storage wall (y≈17)
+      expect(midY, lessThan(14));
+    }
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,

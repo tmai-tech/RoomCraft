@@ -115,19 +115,50 @@ class PhotoTrueLayout {
   }
 
   /// Wall roles for study gold (vision-driven when available).
+  ///
+  /// +55 gold geometry (feedback 32ffdc65 manual plan):
+  /// - long wardrobe on longest storage wall
+  /// - mesh/glass on wall adjacent to wardrobe
+  /// - two walk-through doors on opposite entry wall (often same wall)
+  /// - desk near mesh wall
   static StudyWallRoles defaultStudyWallRoles(double w, double l) {
-    // Longest wall for wardrobe; opposite for desk; remaining for mesh/doors
     final wardrobe = w >= l ? WallSide.north : WallSide.west;
-    final desk = w >= l ? WallSide.south : WallSide.east;
-    final mesh = w >= l ? WallSide.east : WallSide.north;
-    final door2 = w >= l ? WallSide.west : WallSide.south;
+    final mesh = _adjacentClockwise(wardrobe);
+    final entry = _opposite(wardrobe);
     return StudyWallRoles(
       wardrobe: wardrobe,
-      desk: desk,
+      desk: mesh, // desk near mesh/wardrobe corner (study photos)
       mesh: mesh,
-      doorPrimary: desk,
-      doorSecondary: door2,
+      doorPrimary: entry,
+      doorSecondary: entry, // dual doors on entry wall (gold hallway style)
     );
+  }
+
+  static WallSide _opposite(WallSide s) {
+    switch (s) {
+      case WallSide.south:
+        return WallSide.north;
+      case WallSide.north:
+        return WallSide.south;
+      case WallSide.east:
+        return WallSide.west;
+      case WallSide.west:
+        return WallSide.east;
+    }
+  }
+
+  /// Walk order S→E→N→W (designer multi-wall).
+  static WallSide _adjacentClockwise(WallSide s) {
+    switch (s) {
+      case WallSide.south:
+        return WallSide.east;
+      case WallSide.east:
+        return WallSide.north;
+      case WallSide.north:
+        return WallSide.west;
+      case WallSide.west:
+        return WallSide.south;
+    }
   }
 
   /// Infer study wall roles from partial vision placements (+54).
@@ -169,42 +200,34 @@ class PhotoTrueLayout {
     }
 
     var ww = wardrobeWall ?? def.wardrobe;
-    var dw = deskWall ?? def.desk;
-    if (dw == ww) {
-      // Desk should not share storage wall when we can avoid it
-      for (final s in [def.desk, WallSide.south, WallSide.east, WallSide.north, WallSide.west]) {
-        if (s != ww) {
-          dw = s;
-          break;
-        }
-      }
+    // +55: invent mesh on wall adjacent to wardrobe (photo: wardrobe then mesh corner)
+    var mw = meshWall ?? _adjacentClockwise(ww);
+    if (mw == ww) {
+      mw = _adjacentClockwise(ww);
     }
-    var mw = meshWall ?? def.mesh;
-    // Prefer mesh not on pure door-only wall if default free
-    if (mw == ww && meshWall == null) {
-      for (final s in [def.mesh, WallSide.east, WallSide.north, WallSide.south, WallSide.west]) {
-        if (s != ww && s != dw) {
-          mw = s;
-          break;
-        }
-      }
+    var dw = deskWall ?? mw; // desk near mesh by default
+    if (dw == ww) {
+      dw = mw != ww ? mw : def.desk;
     }
 
-    WallSide d1 = doorWalls.isNotEmpty ? doorWalls.first : def.doorPrimary;
-    WallSide d2 = doorWalls.length > 1 ? doorWalls[1] : def.doorSecondary;
-    if (d1 == d2) {
-      for (final s in WallSide.values) {
-        if (s != d1 && s != ww) {
-          d2 = s;
-          break;
-        }
-      }
+    // Doors: keep vision walls; invent both on entry wall opposite wardrobe
+    final entry = _opposite(ww);
+    WallSide d1;
+    WallSide d2;
+    if (doorWalls.isEmpty) {
+      d1 = entry;
+      d2 = entry; // dual doors same entry wall (+55 gold)
+    } else if (doorWalls.length == 1) {
+      d1 = doorWalls.first;
+      // second door on same wall if it's not the wardrobe wall, else entry
+      d2 = d1 != ww ? d1 : entry;
+    } else {
+      d1 = doorWalls.first;
+      d2 = doorWalls[1];
     }
-    // Prefer doors off wardrobe wall when inventing
-    if (doorWalls.isEmpty && d1 == ww) d1 = def.doorPrimary != ww ? def.doorPrimary : dw;
-    if (doorWalls.length < 2 && d2 == ww) {
-      d2 = def.doorSecondary != ww ? def.doorSecondary : mw;
-    }
+    // Never invent a door on full storage wall
+    if (doorWalls.isEmpty && d1 == ww) d1 = entry;
+    if (doorWalls.isEmpty && d2 == ww) d2 = entry;
 
     return StudyWallRoles(
       wardrobe: ww,
@@ -280,24 +303,32 @@ class PhotoTrueLayout {
         .min(9.5, math.max(7.0, wardrobeWallLen * 0.58))
         .clamp(6.5, wardrobeWallLen * 0.92);
 
+    // +55: dual doors may share entry wall (gold hallway) — stagger fromLeft
+    final d1Len = door1Wall.lengthFt(w, l);
+    final d2Len = door2Wall.lengthFt(w, l);
+    final door2FromLeft = door1Wall == door2Wall
+        ? math.min(d2Len - 3.2, math.max(5.0, d2Len * 0.48))
+        : 1.0;
     final openings = <WallOpeningHint>[
       WallOpeningHint.fromLeft(
         wall: door1Wall,
         type: StrokeType.door,
         fromLeftFt: 1.2,
         widthFt: 2.8,
-        wallLengthFt: door1Wall.lengthFt(w, l),
+        wallLengthFt: d1Len,
         confidence: 0.95,
-        evidence: 'study gold door primary (+54)',
+        evidence: 'study gold door primary (+55)',
       ),
       WallOpeningHint.fromLeft(
         wall: door2Wall,
         type: StrokeType.door,
-        fromLeftFt: 1.0,
+        fromLeftFt: door2FromLeft,
         widthFt: 2.8,
-        wallLengthFt: door2Wall.lengthFt(w, l),
+        wallLengthFt: d2Len,
         confidence: 0.9,
-        evidence: 'study gold door secondary (+54)',
+        evidence: door1Wall == door2Wall
+            ? 'study gold door secondary same entry wall (+55)'
+            : 'study gold door secondary (+55)',
       ),
       WallOpeningHint.fromLeft(
         wall: meshWall,
@@ -306,7 +337,7 @@ class PhotoTrueLayout {
         widthFt: math.min(8.0, meshWall.lengthFt(w, l) * 0.55),
         wallLengthFt: meshWall.lengthFt(w, l),
         confidence: 0.92,
-        evidence: 'study gold mesh (+54)',
+        evidence: 'study gold mesh adjacent wardrobe (+55)',
       ),
     ];
 
@@ -700,51 +731,85 @@ class PhotoTrueLayout {
       ));
     }
 
-    // Seed doors / mesh on distinct walls (gold-plan multi-opening layout) (+47)
+    // Seed doors / mesh (+47/55 gold geometry)
     final usedOpenWalls = <WallSide>{
       for (final o in openingHints) o.wall,
     };
     final haveDoors =
         openingHints.where((o) => o.type == StrokeType.door).length +
             rawOpeningsKept.where((o) => o.type == StrokeType.door).length;
+    // Infer storage wall so we don't put doors through the wardrobe
+    WallSide? storageWall;
+    for (final f in input.furniture.where((x) => x.included)) {
+      if (f.type == FurnitureType.wardrobe) {
+        storageWall = _nearestWall(f.posFt, w, l);
+        break;
+      }
+    }
+    storageWall ??= needWardrobe
+        ? (w >= l ? WallSide.north : WallSide.west)
+        : null;
+    final entryWall =
+        storageWall != null ? _opposite(storageWall) : WallSide.south;
+
     if (wantDoors > haveDoors) {
-      final sides = [
-        WallSide.south,
-        WallSide.west,
-        WallSide.east,
-        WallSide.north,
-      ];
-      var added = 0;
-      for (final side in sides) {
-        if (haveDoors + added >= wantDoors) break;
-        if (usedOpenWalls.contains(side) && added > 0) continue;
+      final need = wantDoors - haveDoors;
+      // +55: invent dual doors on entry wall opposite wardrobe (gold hallway)
+      if (haveDoors == 0 && need >= 2) {
+        final eLen = entryWall.lengthFt(w, l);
         openingHints.add(WallOpeningHint.fromLeft(
-          wall: side,
+          wall: entryWall,
           type: StrokeType.door,
-          fromLeftFt: 1.0 + added * 0.5,
+          fromLeftFt: 1.2,
           widthFt: 2.8,
-          wallLengthFt: side.lengthFt(w, l),
-          confidence: 0.85,
-          evidence: 'photo-true door seed (+47)',
+          wallLengthFt: eLen,
+          confidence: 0.88,
+          evidence: 'photo-true dual door A entry wall (+55)',
         ));
-        usedOpenWalls.add(side);
-        added++;
-      }
-      // If still short (all walls used), place remaining anyway
-      for (var i = added; haveDoors + i < wantDoors; i++) {
-        final side = sides[i % sides.length];
         openingHints.add(WallOpeningHint.fromLeft(
-          wall: side,
+          wall: entryWall,
           type: StrokeType.door,
-          fromLeftFt: 2.0 + i,
+          fromLeftFt: math.min(eLen - 3.2, math.max(5.0, eLen * 0.48)),
           widthFt: 2.8,
-          wallLengthFt: side.lengthFt(w, l),
-          confidence: 0.8,
-          evidence: 'photo-true door seed extra (+47)',
+          wallLengthFt: eLen,
+          confidence: 0.88,
+          evidence: 'photo-true dual door B entry wall (+55)',
         ));
-        usedOpenWalls.add(side);
+        usedOpenWalls.add(entryWall);
+        notes.add(
+          'Photo-true (+55): dual doors on ${entryWall.name} entry wall',
+        );
+      } else {
+        final sides = [
+          entryWall,
+          WallSide.south,
+          WallSide.west,
+          WallSide.east,
+          WallSide.north,
+        ];
+        var added = 0;
+        for (final side in sides) {
+          if (haveDoors + added >= wantDoors) break;
+          if (storageWall != null && side == storageWall) continue;
+          if (usedOpenWalls.contains(side) && added > 0) {
+            // allow second door on same entry wall
+            if (side != entryWall) continue;
+          }
+          final wl = side.lengthFt(w, l);
+          openingHints.add(WallOpeningHint.fromLeft(
+            wall: side,
+            type: StrokeType.door,
+            fromLeftFt: 1.0 + added * math.max(3.5, wl * 0.35),
+            widthFt: 2.8,
+            wallLengthFt: wl,
+            confidence: 0.85,
+            evidence: 'photo-true door seed (+55)',
+          ));
+          usedOpenWalls.add(side);
+          added++;
+        }
+        notes.add('Photo-true (+55): seeded door openings');
       }
-      notes.add('Photo-true (+47): seeded door openings on distinct walls');
     }
     final hasWide = openingHints.any((o) =>
             o.type == StrokeType.balcony ||
@@ -756,16 +821,20 @@ class PhotoTrueLayout {
             o.type == StrokeType.window ||
             (o.type == StrokeType.door && o.lengthFt >= 4.5));
     if (forceMesh && !hasWide) {
-      // Prefer free wall for mesh (gold plan spreads openings)
-      final meshPrefer = [
+      // +55: mesh adjacent to wardrobe (photo: sliding unit then mesh corner)
+      final meshPrefer = <WallSide>[
+        if (storageWall != null) _adjacentClockwise(storageWall),
         WallSide.east,
         WallSide.north,
         WallSide.south,
         WallSide.west,
       ];
       final meshWall = meshPrefer.firstWhere(
-        (s) => !usedOpenWalls.contains(s),
-        orElse: () => WallSide.east,
+        (s) => s != storageWall && (!usedOpenWalls.contains(s) || s != entryWall),
+        orElse: () => meshPrefer.firstWhere(
+          (s) => s != storageWall,
+          orElse: () => WallSide.east,
+        ),
       );
       final mLen = meshWall.lengthFt(w, l);
       openingHints.add(WallOpeningHint.fromLeft(
@@ -775,10 +844,10 @@ class PhotoTrueLayout {
         widthFt: math.min(8.0, mLen * 0.55),
         wallLengthFt: mLen,
         confidence: 0.85,
-        evidence: 'photo-true mesh seed (+53)',
+        evidence: 'photo-true mesh adjacent wardrobe (+55)',
       ));
       usedOpenWalls.add(meshWall);
-      notes.add('Photo-true (+53): seeded mesh on ${meshWall.name}');
+      notes.add('Photo-true (+55): seeded mesh on ${meshWall.name}');
     }
     // At least one door if we have furniture but zero openings
     if (openingHints.isEmpty &&

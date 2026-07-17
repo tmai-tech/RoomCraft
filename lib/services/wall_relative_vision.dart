@@ -511,16 +511,18 @@ Return ONLY JSON:
   ]
 }
 
-Rules (critical for plan accuracy):
+Rules (critical for plan accuracy — gold-plan match):
 1. openings type: door | window | balcony only. from_left_ft = left edge of opening from LEFT corner while facing wall.
 2. width_ft must be realistic: door 2.5–3.5 ft typical, window 2–6 ft, balcony/sliding 4–10 ft. Never a whole-wall door.
 3. Only openings ON this wall (door frame / glass / sliding track clearly on THIS wall). Empty [] if none visible.
-4. furniture only against THIS wall. from_left_ft = center of piece from left corner. depth_ft = how far it sticks into room (wardrobe ~1.5–2.5, desk ~1.5–2.5).
-5. Types: BED,WARDROBE,SOFA,TABLE,CHAIR,TV_UNIT,BOOKSHELF,NIGHTSTAND
-6. Never invent. If unsure about position, omit rather than guess. confidence ≥ 0.55 to include.
-7. Balcony = large glazed door / outdoor opening (not a normal window).
-8. If photo is not clearly this wall, return empty arrays.
-9. Sliding cupboard/wardrobe with doors = WARDROBE. Computer desk = TABLE.
+4. TWO separate walk-through door frames on THIS wall → list TWO door openings with different from_left_ft (not wardrobe shutters).
+5. Full-height mesh/glass sliding next to cupboard → type "balcony" with wide width_ft (5–10).
+6. furniture only against THIS wall. from_left_ft = center of piece from left corner. depth_ft into room (wardrobe ~1.5–2.5, desk ~1.5–2.5).
+7. Long sliding wardrobe spanning most of wall: set w_ft ≈ 55–90% of wall length (${wallLenFt.toStringAsFixed(1)} ft), depth_ft 1.5–2.0.
+8. Types: BED,WARDROBE,SOFA,TABLE,CHAIR,TV_UNIT,BOOKSHELF,NIGHTSTAND
+9. Never invent. If unsure about position, omit rather than guess. confidence ≥ 0.55 to include.
+10. Sliding cupboard/wardrobe panels = WARDROBE (not door openings). Computer desk = TABLE.
+11. If photo is not clearly this wall, return empty arrays.
 ''';
   }
 

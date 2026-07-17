@@ -196,9 +196,11 @@ Rules:
 6. confidence ≥ 0.55 when clearly visible.
 7. Rectangular outer bounds only.
 8. NEVER invent bed/sofa/TV if not in photos.
-9. Put the long wardrobe on ONE wall (fromLeft near 0 if it fills most of the wall).
-10. Desk against a wall near monitors; openings on walls where door frames appear.
+9. Put the long wardrobe on ONE wall (fromLeft near 0 if it fills most of the wall; dim.w ≈ 55–90% of that wall).
+10. Desk against a wall near monitors / mesh — often adjacent to wardrobe corner.
 11. Keep relative positions consistent across frames (same corner relations).
+12. Two walk-through doors on the same wall → two door openings (not wardrobe shutters).
+13. Full-height mesh/glass next to wardrobe → balcony opening on that wall, wide width.
 ''';
 
   static String architecture(double w, double l) => '''
