@@ -70,6 +70,49 @@ void main() {
     final w = result.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
     expect(mathMax(w.widthFt, w.lengthFt), greaterThanOrEqualTo(5.5));
   });
+
+  test('+70 accurate scan keeps gold full-wall wardrobe on 20x17', () {
+    // composeStudyGold ~14.4ft unit must survive sanitize (old code crushed to 6.5)
+    final result = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 1.5),
+          widthFt: 14.4,
+          lengthFt: 1.6,
+        ),
+      ],
+      inventDefaultOpenings: false,
+    );
+    final w =
+        result.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(mathMax(w.widthFt, w.lengthFt), greaterThanOrEqualTo(12.0));
+    expect(mathMin(w.widthFt, w.lengthFt), lessThanOrEqualTo(2.5));
+  });
+
+  test('+70 accurate scan keeps long wardrobe when along exceeds short side', () {
+    // Wide room 18×12: wardrobe along south can be ~13ft > length 12
+    final result = AccurateScan.enforce(
+      widthFt: 18,
+      lengthFt: 12,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(9, 1.5),
+          widthFt: 13.0,
+          lengthFt: 1.6,
+        ),
+      ],
+      inventDefaultOpenings: false,
+    );
+    final w =
+        result.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(mathMax(w.widthFt, w.lengthFt), greaterThanOrEqualTo(11.0));
+  });
 }
+
+double mathMin(double a, double b) => a < b ? a : b;
 
 double mathMax(double a, double b) => a > b ? a : b;

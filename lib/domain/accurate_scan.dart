@@ -213,36 +213,45 @@ class AccurateScan {
       // Keep scanned sizes when realistic; fall back to catalog defaults.
       var fw = raw.widthFt;
       var fl = raw.lengthFt;
-      if (fw < 0.5 || fl < 0.5 || fw > roomW || fl > roomL) {
-        fw = catalog.defaultWidthFt;
-        fl = catalog.defaultLengthFt;
-      } else {
-        // Soft clamp extreme AI sizes toward catalog
-        final cw = catalog.defaultWidthFt;
-        final cl = catalog.defaultLengthFt;
-        // Wardrobe: allow long sliding units up to wall span (don't force 4 ft)
-        if (raw.type == FurnitureType.wardrobe) {
-          if (fw > roomW * 0.95 || fl > roomL * 0.95) {
-            fw = catalog.defaultWidthFt;
-            fl = catalog.defaultLengthFt;
-          } else if (math.max(fw, fl) < 4.0 && math.min(fw, fl) < 1.0) {
-            fw = catalog.defaultWidthFt;
-            fl = catalog.defaultLengthFt;
+      final cw = catalog.defaultWidthFt;
+      final cl = catalog.defaultLengthFt;
+
+      if (raw.type == FurnitureType.wardrobe) {
+        // +70: long sliding wardrobes span most of a wall (gold ~72% of 20ft).
+        // Old checks used min(room) and fw>roomW which crushed N/S units when
+        // along was stored in width on a room where width < along (or vice versa).
+        final maxAlong = math.max(roomW, roomL) * 0.92;
+        var along = math.max(fw, fl);
+        var deep = math.min(fw, fl);
+        if (fw < 0.5 || fl < 0.5) {
+          along = cw;
+          deep = cl;
+        } else {
+          if (along > maxAlong) along = maxAlong;
+          if (along < 4.0 && deep < 1.0) {
+            along = cw;
+            deep = cl;
           }
-          // Keep depth ~1.2–2.5 for wardrobes
-          final deep = math.min(fw, fl);
-          final along = math.max(fw, fl);
-          if (deep > 2.8 || deep < 1.0) {
-            fl = 1.5;
-            fw = along.clamp(4.0, math.min(roomW, roomL) * 0.85);
-          }
-        } else if (fw > cw * 2.5 ||
-            fl > cl * 2.5 ||
-            fw < cw * 0.35 ||
-            fl < cl * 0.35) {
-          fw = cw;
-          fl = cl;
+          if (deep > 2.8 || deep < 1.0) deep = 1.5;
+          along = along.clamp(4.0, maxAlong);
         }
+        // Preserve which axis was long (rotation handles wall alignment)
+        if (raw.widthFt >= raw.lengthFt) {
+          fw = along;
+          fl = deep;
+        } else {
+          fw = deep;
+          fl = along;
+        }
+      } else if (fw < 0.5 || fl < 0.5 || fw > roomW || fl > roomL) {
+        fw = cw;
+        fl = cl;
+      } else if (fw > cw * 2.5 ||
+          fl > cl * 2.5 ||
+          fw < cw * 0.35 ||
+          fl < cl * 0.35) {
+        fw = cw;
+        fl = cl;
       }
 
       // Snap rotation to 45° (matches editor).
