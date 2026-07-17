@@ -533,6 +533,134 @@ void main() {
     expect(out.furniture.any((f) => f.type == FurnitureType.wardrobe), isTrue);
   });
 
+  test('+76 drops vision doors on south wardrobe wall; gold W+N doors win', () {
+    // Bad pre-+75 seeds: two doors through the storage wall
+    final vision = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(2, 0),
+          endFt: Offset(5, 0),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(12, 0),
+          endFt: Offset(15, 0),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 0.8),
+          widthFt: 14,
+          lengthFt: 1.6,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    );
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final out = PhotoTrueLayout.preferVisionOpenings(gold, vision);
+    final doors = out.walls.where((w) => w.type == StrokeType.door).toList();
+    expect(doors.length, greaterThanOrEqualTo(2));
+    // No door midpoints on south edge (y≈0)
+    expect(
+      doors.every((d) {
+        final my = (d.startFt.dy + d.endFt.dy) / 2;
+        return my > 1.5; // not on south wall
+      }),
+      isTrue,
+      reason: 'doors must not cut through south wardrobe',
+    );
+    // Gold doors on west and/or north remain
+    expect(
+      doors.any((d) {
+        final mx = (d.startFt.dx + d.endFt.dx) / 2;
+        final my = (d.startFt.dy + d.endFt.dy) / 2;
+        return mx < 1.5 || my > 15.5;
+      }),
+      isTrue,
+    );
+  });
+
+  test('+76 ensureGoldQuality recovers from doors-on-wardrobe bad seed', () {
+    final bad = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(3, 0),
+          endFt: Offset(6, 0),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(10, 0),
+          endFt: Offset(13, 0),
+        ),
+      ],
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.25,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(bad);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(out), isTrue);
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, lessThan(4)); // south storage
+    final doors = out.walls.where((w) => w.type == StrokeType.door).toList();
+    expect(
+      doors.every((d) {
+        final my = (d.startFt.dy + d.endFt.dy) / 2;
+        return my > 1.5;
+      }),
+      isTrue,
+    );
+  });
+
+  test('+76 inferStudyWallRoles remaps doors off wardrobe wall', () {
+    final partial = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(2, 0),
+          endFt: Offset(5, 0),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(14, 0),
+          endFt: Offset(17, 0),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 0.8),
+          widthFt: 14,
+          lengthFt: 1.6,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    );
+    final roles = PhotoTrueLayout.inferStudyWallRoles(partial);
+    expect(roles.wardrobe, WallSide.south);
+    expect(roles.doorPrimary, isNot(WallSide.south));
+    expect(roles.doorSecondary, isNot(WallSide.south));
+    expect(roles.doorPrimary, WallSide.west);
+    expect(roles.doorSecondary, WallSide.north);
+  });
+
   test('+59 preferVisionFurniture keeps east wardrobe through full gold', () {
     final vision = AccurateScan.enforce(
       widthFt: 20,
@@ -1130,4 +1258,3 @@ void main() {
 }
 
 double mathMax(double a, double b) => a > b ? a : b;
-

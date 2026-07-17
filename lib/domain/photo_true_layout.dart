@@ -91,14 +91,30 @@ class PhotoTrueLayout {
     // +53: raise undersized study plans to gold-plan room floor before polish
     if (isStudyLike(cur)) {
       cur = _ensureGoldRoomSize(cur);
+      // +76: free gold storage wall before polish invents wardrobe elsewhere
+      cur = clearStorageWallOpenings(cur);
     }
     cur = polish(cur);
+    // +76: doors/mesh on wardrobe wall break gold density — strip before accept
+    if (isStudyLike(cur)) {
+      cur = dropOpeningsOnWardrobeWall(cur);
+    }
     if (isPhotoTrue(cur)) {
-      return _finalizePhotoTrue(
-        resolveWallClearances(cur),
-        vision: visionSnapshot,
-        path: 'polish',
-      );
+      // Accept polish early only if gold orientation OR solid vision wardrobe
+      // (preserves +54 east wardrobe). Empty + bad south doors must fall through.
+      final visionWardrobe = visionSnapshot.furniture.any((f) {
+        if (f.type != FurnitureType.wardrobe || !f.included) return false;
+        return math.max(f.widthFt, f.lengthFt) >= 4.5;
+      });
+      if (!isStudyLike(cur) ||
+          visionWardrobe ||
+          matchesDefaultGoldOrientation(cur)) {
+        return _finalizePhotoTrue(
+          resolveWallClearances(cur),
+          vision: visionSnapshot,
+          path: 'polish',
+        );
+      }
     }
     if (!isStudyLike(cur)) {
       return resolveWallClearances(cur.copyWith(
@@ -109,12 +125,21 @@ class PhotoTrueLayout {
       ));
     }
     cur = mergeWithStudyGold(cur, includeChair: includeChair);
+    if (isStudyLike(cur)) {
+      cur = dropOpeningsOnWardrobeWall(cur);
+    }
     if (isPhotoTrue(cur)) {
-      return _finalizePhotoTrue(
-        resolveWallClearances(cur),
-        vision: visionSnapshot,
-        path: 'hybrid',
-      );
+      final visionWardrobe = visionSnapshot.furniture.any((f) {
+        if (f.type != FurnitureType.wardrobe || !f.included) return false;
+        return math.max(f.widthFt, f.lengthFt) >= 4.5;
+      });
+      if (visionWardrobe || matchesDefaultGoldOrientation(cur)) {
+        return _finalizePhotoTrue(
+          resolveWallClearances(cur),
+          vision: visionSnapshot,
+          path: 'hybrid',
+        );
+      }
     }
     // +54/58/59: full gold keeps vision openings + vision wardrobe/desk walls
     final roles = inferStudyWallRoles(cur);
@@ -473,24 +498,41 @@ class PhotoTrueLayout {
       dw = mw != ww ? mw : def.desk;
     }
 
-    // Doors: keep vision walls; invent both on entry wall opposite wardrobe
+    // Doors: keep vision walls but NEVER on full storage (wardrobe) wall (+76).
+    // Old inventory seeds put doors on south wardrobe → gold dual doors W+N never won.
     final entry = _opposite(ww);
+    final freeDoors = doorWalls.where((d) => d != ww).toList();
     WallSide d1;
     WallSide d2;
-    if (doorWalls.isEmpty) {
-      d1 = entry;
-      d2 = entry; // dual doors same entry wall (+55 gold)
-    } else if (doorWalls.length == 1) {
-      d1 = doorWalls.first;
-      // second door on same wall if it's not the wardrobe wall, else entry
-      d2 = d1 != ww ? d1 : entry;
+    if (freeDoors.isEmpty) {
+      // Prefer default gold door walls when vision only hit storage wall
+      d1 = def.doorPrimary != ww ? def.doorPrimary : entry;
+      d2 = def.doorSecondary != ww && def.doorSecondary != d1
+          ? def.doorSecondary
+          : (entry != d1 ? entry : _adjacentClockwise(ww));
+    } else if (freeDoors.length == 1) {
+      d1 = freeDoors.first;
+      if (def.doorSecondary != ww && def.doorSecondary != d1) {
+        d2 = def.doorSecondary;
+      } else if (def.doorPrimary != ww && def.doorPrimary != d1) {
+        d2 = def.doorPrimary;
+      } else {
+        d2 = entry != d1 ? entry : _adjacentClockwise(ww);
+      }
     } else {
-      d1 = doorWalls.first;
-      d2 = doorWalls[1];
+      d1 = freeDoors.first;
+      d2 = freeDoors[1];
     }
-    // Never invent a door on full storage wall
-    if (doorWalls.isEmpty && d1 == ww) d1 = entry;
-    if (doorWalls.isEmpty && d2 == ww) d2 = entry;
+    // Final safety: never seed doors through sliding wardrobe span
+    if (d1 == ww) d1 = entry != ww ? entry : _adjacentClockwise(ww);
+    if (d2 == ww) {
+      d2 = def.doorSecondary != ww && def.doorSecondary != d1
+          ? def.doorSecondary
+          : (entry != d1 && entry != ww ? entry : _adjacentClockwise(ww));
+    }
+    if (d2 == ww && d1 != _adjacentClockwise(ww)) {
+      d2 = _adjacentClockwise(ww);
+    }
 
     return StudyWallRoles(
       wardrobe: ww,
@@ -965,16 +1007,37 @@ class PhotoTrueLayout {
   /// Keep vision door/mesh segments when full gold would wipe them (+58).
   ///
   /// Gold template openings fill only missing types; real photo openings win.
+  /// +76: drop vision openings on the wardrobe storage wall so gold W+N doors /
+  /// E mesh are not blocked by bad south-wall door seeds.
   static ScanResult preferVisionOpenings(ScanResult gold, ScanResult vision) {
     final w = gold.roomWidthFt;
     final l = gold.roomLengthFt;
-    final vOpens = vision.walls
+    final wardrobeWall = _wardrobeWallOf(gold) ?? _wardrobeWallOf(vision);
+
+    final rawVision = vision.walls
         .where((s) =>
             s.type == StrokeType.door ||
             s.type == StrokeType.window ||
             s.type == StrokeType.balcony)
         .toList();
-    if (vOpens.isEmpty) return gold;
+    final vOpens = rawVision.where((o) {
+      if (wardrobeWall == null) return true;
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field == null) return true;
+      // Full-wall sliding wardrobe owns this wall — openings must not cut through
+      return field.wall != wardrobeWall;
+    }).toList();
+    final dropped = rawVision.length - vOpens.length;
+    if (vOpens.isEmpty) {
+      if (dropped == 0) return gold;
+      // All vision openings were on storage wall — keep pure gold openings
+      return gold.copyWith(
+        warnings: [
+          ...gold.warnings,
+          'Dropped $dropped vision opening(s) on wardrobe wall (+76); gold openings kept',
+        ],
+      );
+    }
 
     final openings = <ScanWallSegment>[...vOpens];
     int doorCount() =>
@@ -986,6 +1049,11 @@ class PhotoTrueLayout {
 
     for (final g in gold.walls) {
       if (g.type == StrokeType.wall) continue;
+      // Never pull gold openings onto wardrobe wall either
+      if (wardrobeWall != null) {
+        final gf = WallRelativeComposer.openingToField(g, w, l);
+        if (gf != null && gf.wall == wardrobeWall) continue;
+      }
       if (g.type == StrokeType.door && doorCount() >= 2) continue;
       if ((g.type == StrokeType.balcony || g.type == StrokeType.window) &&
           hasMesh()) {
@@ -1012,11 +1080,85 @@ class PhotoTrueLayout {
       furniture: gold.furniture,
       warnings: [
         ...gold.warnings,
-        'Prefer vision openings over template (+58): ${vOpens.length} kept',
+        'Prefer vision openings over template (+58): ${vOpens.length} kept'
+            '${dropped > 0 ? " · dropped $dropped on wardrobe wall (+76)" : ""}',
       ],
       inventDefaultOpenings: false,
       accuracyScore: gold.accuracyScore,
     ).copyWith(accuracyScore: gold.accuracyScore);
+  }
+
+  /// Wall that hosts the long wardrobe, if any.
+  static WallSide? _wardrobeWallOf(ScanResult r) {
+    final w = r.roomWidthFt;
+    final l = r.roomLengthFt;
+    if (w <= 0 || l <= 0) return null;
+    ScanFurnitureHint? best;
+    for (final f in r.furniture.where((x) => x.included)) {
+      if (f.type != FurnitureType.wardrobe) continue;
+      if (best == null ||
+          math.max(f.widthFt, f.lengthFt) >
+              math.max(best.widthFt, best.lengthFt)) {
+        best = f;
+      }
+    }
+    if (best == null) return null;
+    return _nearestWall(best.posFt, w, l);
+  }
+
+  /// Remove door/mesh that cut through the wardrobe storage wall (+76).
+  static ScanResult dropOpeningsOnWardrobeWall(ScanResult r) {
+    final ww = _wardrobeWallOf(r);
+    if (ww == null) return r;
+    return dropOpeningsOnWall(r, ww);
+  }
+
+  /// Free the wall that should host the long wardrobe before invent/polish (+76).
+  ///
+  /// When vision already placed a solid wardrobe on a non-default wall, only that
+  /// wall is cleared. Otherwise the default gold storage wall is cleared so
+  /// polish does not push wardrobe onto west to dodge south doors.
+  static ScanResult clearStorageWallOpenings(ScanResult r) {
+    final w = r.roomWidthFt;
+    final l = r.roomLengthFt;
+    if (w <= 0 || l <= 0) return r;
+    final def = defaultStudyWallRoles(w, l);
+    final vw = _wardrobeWallOf(r);
+    final target = (vw != null && vw != def.wardrobe) ? vw : def.wardrobe;
+    return dropOpeningsOnWall(r, target);
+  }
+
+  /// Remove door/window/balcony openings that sit on [wall].
+  static ScanResult dropOpeningsOnWall(ScanResult r, WallSide wall) {
+    final w = r.roomWidthFt;
+    final l = r.roomLengthFt;
+    if (w <= 0 || l <= 0) return r;
+    final kept = <ScanWallSegment>[];
+    var dropped = 0;
+    for (final o in r.walls.where((s) =>
+        s.type == StrokeType.door ||
+        s.type == StrokeType.window ||
+        s.type == StrokeType.balcony)) {
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field != null && field.wall == wall) {
+        dropped++;
+        continue;
+      }
+      kept.add(o);
+    }
+    if (dropped == 0) return r;
+    return AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: kept,
+      furniture: r.furniture,
+      warnings: [
+        ...r.warnings,
+        'Dropped $dropped opening(s) on ${wall.name} storage wall (+76)',
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: r.accuracyScore,
+    ).copyWith(accuracyScore: r.accuracyScore);
   }
 
   static bool isPhotoTrue(ScanResult r) {
