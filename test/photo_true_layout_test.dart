@@ -932,6 +932,113 @@ void main() {
     expect(out.roomWidthFt, greaterThanOrEqualTo(18));
   });
 
+  test('+81 vision desk under mesh replaced by gold west work desk', () {
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final vision = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: const [],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 0.8),
+          widthFt: 14,
+          lengthFt: 1.6,
+        ),
+        // Desk wrongly under east mesh
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(18.5, 8.5),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    );
+    final out = PhotoTrueLayout.preferVisionFurniture(gold, vision);
+    final desk =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    expect(desk.posFt.dx, lessThan(4), reason: 'gold west desk, not under mesh');
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, lessThan(4)); // vision south kept
+  });
+
+  test('+81 free-floating vision desk does not beat gold work wall', () {
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final vision = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: const [],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(10, 8.5), // room center
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    );
+    final out = PhotoTrueLayout.preferVisionFurniture(gold, vision);
+    final desk =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    expect(desk.posFt.dx, lessThan(4));
+  });
+
+  test('+81 ensureGoldQuality: desk under mesh → gold orientation', () {
+    final bad = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 4),
+          endFt: Offset(20, 14),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0, 2),
+          endFt: Offset(0, 5),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(8, 17),
+          endFt: Offset(11, 17),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 0.8),
+          widthFt: 14,
+          lengthFt: 1.6,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(18.5, 8.5),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(bad);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    final desk =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    expect(desk.posFt.dx, lessThan(4));
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(out), isTrue);
+  });
+
   test('+59 preferVisionFurniture keeps east wardrobe through full gold', () {
     final vision = AccurateScan.enforce(
       widthFt: 20,

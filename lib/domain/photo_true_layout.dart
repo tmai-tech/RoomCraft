@@ -100,15 +100,10 @@ class PhotoTrueLayout {
       cur = dropOpeningsOnWardrobeWall(cur);
     }
     if (isPhotoTrue(cur)) {
-      // Accept polish early only if gold orientation OR solid vision wardrobe
-      // (preserves +54 east wardrobe). Empty + bad south doors must fall through.
-      final visionWardrobe = visionSnapshot.furniture.any((f) {
-        if (f.type != FurnitureType.wardrobe || !f.included) return false;
-        return math.max(f.widthFt, f.lengthFt) >= 4.5;
-      });
-      if (!isStudyLike(cur) ||
-          visionWardrobe ||
-          matchesDefaultGoldOrientation(cur)) {
+      // +81: only early-accept polish when gold-oriented (or non-study).
+      // Prior visionWardrobe shortcut kept desk-under-mesh plans as "done".
+      // East-vision wardrobe (+54) falls through → hybrid/full gold keeps wall.
+      if (!isStudyLike(cur) || matchesDefaultGoldOrientation(cur)) {
         return _finalizePhotoTrue(
           resolveWallClearances(cur),
           vision: visionSnapshot,
@@ -129,11 +124,8 @@ class PhotoTrueLayout {
       cur = dropOpeningsOnWardrobeWall(cur);
     }
     if (isPhotoTrue(cur)) {
-      final visionWardrobe = visionSnapshot.furniture.any((f) {
-        if (f.type != FurnitureType.wardrobe || !f.included) return false;
-        return math.max(f.widthFt, f.lengthFt) >= 4.5;
-      });
-      if (visionWardrobe || matchesDefaultGoldOrientation(cur)) {
+      // +81: hybrid early-accept only for gold orientation (desk on work wall)
+      if (matchesDefaultGoldOrientation(cur)) {
         return _finalizePhotoTrue(
           resolveWallClearances(cur),
           vision: visionSnapshot,
@@ -801,7 +793,8 @@ class PhotoTrueLayout {
     final w = partial.roomWidthFt > 0 ? partial.roomWidthFt : goldRoomWidthFt;
     final l = partial.roomLengthFt > 0 ? partial.roomLengthFt : goldRoomLengthFt;
 
-    if (isPhotoTrue(partial)) {
+    // +81: skip merge only when already gold-oriented (not just photo-true)
+    if (isPhotoTrue(partial) && matchesDefaultGoldOrientation(partial)) {
       final score = math.max(partial.accuracyScore ?? 0, goldQualityScore)
           .clamp(goldQualityScore, 0.90);
       return partial.copyWith(
@@ -874,6 +867,15 @@ class PhotoTrueLayout {
         continue;
       }
       if (f.type == FurnitureType.table) {
+        // +81: drop vision desk under mesh / on storage / free-floating —
+        // gold template fills the work wall instead.
+        final roles = defaultStudyWallRoles(w, l);
+        final side = _nearestWall(f.posFt, w, l);
+        final depth = _depthFromWall(f.posFt, side, w, l);
+        final storage = roles.wardrobe;
+        if (side == storage || side == roles.mesh || depth > 3.2) {
+          continue; // let gold table fill
+        }
         furniture.add(f);
         keptTypes.add(FurnitureType.table);
         continue;
@@ -1068,7 +1070,59 @@ class PhotoTrueLayout {
         continue;
       }
       if (g.type == FurnitureType.table && vTable != null) {
-        furniture.add(vTable);
+        // +81: only prefer vision desk when wall-anchored on a work wall —
+        // not under mesh glass, not through wardrobe, not free-floating mid-room.
+        final roles = defaultStudyWallRoles(w, l);
+        WallSide storage = roles.wardrobe;
+        if (vWardrobe != null) {
+          storage = _nearestWall(vWardrobe.posFt, w, l);
+        } else {
+          for (final x in gold.furniture) {
+            if (x.type == FurnitureType.wardrobe) {
+              storage = _nearestWall(x.posFt, w, l);
+              break;
+            }
+          }
+        }
+        final side = _nearestWall(vTable.posFt, w, l);
+        final depth = _depthFromWall(vTable.posFt, side, w, l);
+        final conflict = side == storage ||
+            side == roles.mesh ||
+            depth > 3.2; // free-floating center → gold NW desk
+        if (conflict) {
+          furniture.add(g); // gold template desk on work wall
+          usedVision = true;
+          continue;
+        }
+        // Snap vision desk to wall with gold-like dimensions
+        final wl = side.lengthFt(w, l);
+        final center = _centerFromLeftOnWall(vTable.posFt, side, w, l)
+            .clamp(2.0, wl - 2.0)
+            .toDouble();
+        final deskCenter = side == WallSide.west
+            ? math.max(wl * 0.65, wl - 3.5)
+            : center;
+        final hint = WallFurnitureHint.fromLeft(
+          type: FurnitureType.table,
+          wall: side,
+          fromLeftFt: deskCenter,
+          depthFt: 1.6,
+          widthFt: 4.0,
+          lengthFt: 2.0,
+          wallLengthFt: wl,
+          confidence: 0.93,
+          evidence: 'vision desk preferred on ${side.name} (+81)',
+        );
+        final composed = WallRelativeComposer.compose(
+          widthFt: w,
+          lengthFt: l,
+          openings: const [],
+          furniture: [hint],
+          warnings: const [],
+        );
+        furniture.add(
+          composed.furniture.isNotEmpty ? composed.furniture.first : vTable,
+        );
         usedVision = true;
         continue;
       }
@@ -1882,6 +1936,20 @@ class PhotoTrueLayout {
     if (minD == dN) return WallSide.north;
     if (minD == dW) return WallSide.west;
     return WallSide.east;
+  }
+
+  /// Distance from [pos] into the room from [side] (ft).
+  static double _depthFromWall(Offset pos, WallSide side, double w, double l) {
+    switch (side) {
+      case WallSide.south:
+        return pos.dy;
+      case WallSide.north:
+        return l - pos.dy;
+      case WallSide.west:
+        return pos.dx;
+      case WallSide.east:
+        return w - pos.dx;
+    }
   }
 
   /// Center of piece along wall, feet from LEFT while facing wall (+56).
