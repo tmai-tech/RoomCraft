@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../catalog/furniture_catalog.dart';
+import '../domain/photo_true_layout.dart';
 import '../domain/scan_parser.dart';
 import '../domain/units.dart';
 import '../domain/wall_relative_scan.dart';
@@ -119,6 +120,12 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   }
 
   Future<void> _openEditor() async {
+    // +48: final photo-true polish so editor matches gold-quality review plan
+    final polished = PhotoTrueLayout.polish(_result);
+    if (PhotoTrueLayout.isPhotoTrue(polished) ||
+        polished.furniture.length >= _result.furniture.length) {
+      setState(() => _result = polished);
+    }
     final pxf = ref.read(roomProvider).pixelsPerFoot;
     final converted = ScanParser.toEditor(_result, pxf);
     ref.read(roomProvider.notifier).initFromScan(
@@ -886,15 +893,38 @@ class _ScanPreviewPainter extends CustomPainter {
       final p1 = Offset(w.startFt.dx * scale, w.startFt.dy * scale);
       final p2 = Offset(w.endFt.dx * scale, w.endFt.dy * scale);
       final paint = Paint()
-        ..strokeWidth = w.type == StrokeType.wall ? 4 : 2.5
+        ..strokeWidth = w.type == StrokeType.wall ? 4 : 3.5
         ..strokeCap = StrokeCap.round
         ..color = switch (w.type) {
           StrokeType.wall => Colors.black87,
           StrokeType.door => Colors.orange,
           StrokeType.window => Colors.blue,
-          StrokeType.balcony => Colors.green,
+          StrokeType.balcony => Colors.green.shade700,
         };
       canvas.drawLine(p1, p2, paint);
+      // +48: opening labels like gold plan
+      if (w.type != StrokeType.wall) {
+        final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+        final name = switch (w.type) {
+          StrokeType.door => 'Door',
+          StrokeType.window => 'Window',
+          StrokeType.balcony => 'Mesh',
+          StrokeType.wall => '',
+        };
+        final lenFt = w.lengthFt;
+        final tp = TextPainter(
+          text: TextSpan(
+            text: '$name ${lenFt.toStringAsFixed(1)}′',
+            style: TextStyle(
+              color: paint.color,
+              fontSize: 8,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(mid.dx - tp.width / 2, mid.dy - tp.height - 2));
+      }
     }
 
     for (final f in result.furniture.where((e) => e.included)) {

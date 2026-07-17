@@ -254,8 +254,25 @@ class PhotoTrueLayout {
     if (!hasWardrobe &&
         (needWardrobe ||
             input.furniture.any((f) => f.type == FurnitureType.wardrobe))) {
+      // +48: prefer long wall without doors (storage wall, gold-plan style)
+      final doorWalls = {
+        for (final o in openingHints)
+          if (o.type == StrokeType.door) o.wall,
+      };
       final side = _pickFreeWall(
-        prefer: [WallSide.west, WallSide.north, WallSide.east, WallSide.south],
+        prefer: [
+          for (final s in [
+            WallSide.west,
+            WallSide.north,
+            WallSide.east,
+            WallSide.south,
+          ])
+            if (!doorWalls.contains(s) && !usedWalls.contains(s)) s,
+          WallSide.west,
+          WallSide.north,
+          WallSide.east,
+          WallSide.south,
+        ],
         used: usedWalls,
         roomW: w,
         roomL: l,

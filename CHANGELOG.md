@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+48 (2026-07-17)
+
+### Gold-plan editor handoff + opening labels
+- Review preview labels **doors/mesh** with widths; thicker opening strokes.
+- **Open editor** re-runs photo-true polish so blueprint matches review.
+- Wardrobe prefers **long wall without doors** (storage wall).
+- Labeled multi-wall: offline **deterministic photo-true guarantee** if vision still incomplete.
+- Version **+48**.
+
 ## 1.0.0-beta.1+47 (2026-07-17)
 
 ### Gold-plan density: distinct openings + size labels
