@@ -330,29 +330,48 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
 
     if (inventoryHint.contains('MUST include WARDROBE') &&
         !types.contains(FurnitureType.wardrobe)) {
-      // Prefer west/north (long storage walls in study-room feedback)
-      final side = pickSide([
-        WallSide.west,
-        WallSide.north,
-        WallSide.east,
-        WallSide.south,
-      ]);
+      // +54: prefer longest photo wall free of doors (storage wall, gold style)
+      final doorWalls = {
+        for (final o in opens)
+          if (o.type == StrokeType.door) o.wall,
+      };
+      WallSide side = sidesWithPhoto.first;
+      var bestLen = -1.0;
+      for (final s in sidesWithPhoto) {
+        if (doorWalls.contains(s) && sidesWithPhoto.any((x) => !doorWalls.contains(x))) {
+          continue;
+        }
+        final len = s.lengthFt(roomWidthFt, roomLengthFt);
+        if (len > bestLen) {
+          bestLen = len;
+          side = s;
+        }
+      }
+      // Fallback prefer west/north if pickSide style needed
+      if (bestLen < 0) {
+        side = pickSide([
+          WallSide.west,
+          WallSide.north,
+          WallSide.east,
+          WallSide.south,
+        ]);
+      }
       final wl = side.lengthFt(roomWidthFt, roomLengthFt);
       final along =
-          math.min(7.5, math.max(6.5, wl * 0.38)).clamp(6.0, wl * 0.85);
+          math.min(9.5, math.max(6.5, wl * 0.58)).clamp(6.5, wl * 0.92);
       furn.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
         fromLeftFt: math.max(0.3, (wl - along) / 2),
-        depthFt: 1.5,
+        depthFt: 1.6,
         widthFt: along.toDouble(),
-        lengthFt: 1.5,
+        lengthFt: 1.6,
         wallLengthFt: wl,
         confidence: 0.88,
-        evidence: 'photo-true inventory seed WARDROBE (+47)',
+        evidence: 'photo-true inventory seed WARDROBE (+54)',
       ));
       types.add(FurnitureType.wardrobe);
-      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+47)');
+      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+54)');
     }
 
     if (inventoryHint.contains('MUST include TABLE') &&

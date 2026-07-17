@@ -58,7 +58,7 @@ class PhotoTrueLayout {
     return false;
   }
 
-  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51–53).
+  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51–54).
   /// Study-gold template only when [isStudyLike] — never wipe a bedroom scan.
   static ScanResult ensureGoldQuality(
     ScanResult input, {
@@ -78,7 +78,7 @@ class PhotoTrueLayout {
         warnings: [
           ...cur.warnings,
           if (!cur.warnings.any((w) => w.contains('ensureGoldQuality')))
-            'ensureGoldQuality: polish complete (+53)',
+            'ensureGoldQuality: polish complete (+54)',
         ],
       );
     }
@@ -95,18 +95,123 @@ class PhotoTrueLayout {
       return cur.copyWith(
         warnings: [
           ...cur.warnings,
-          'ensureGoldQuality: hybrid complete (+53)',
+          'ensureGoldQuality: hybrid complete (+54)',
         ],
       );
     }
+    // +54: full gold uses vision wall roles when partial has any placement signal
+    final roles = inferStudyWallRoles(cur);
     return composeStudyGold(
       widthFt: cur.roomWidthFt > 0 ? cur.roomWidthFt : goldRoomWidthFt,
       lengthFt: cur.roomLengthFt > 0 ? cur.roomLengthFt : goldRoomLengthFt,
       warnings: [
         ...cur.warnings,
-        'ensureGoldQuality: full study gold (+53)',
+        'ensureGoldQuality: full study gold with vision wall roles (+54) '
+            'wardrobe=${roles.wardrobe.name}',
       ],
       includeChair: includeChair,
+      roles: roles,
+    );
+  }
+
+  /// Wall roles for study gold (vision-driven when available).
+  static StudyWallRoles defaultStudyWallRoles(double w, double l) {
+    // Longest wall for wardrobe; opposite for desk; remaining for mesh/doors
+    final wardrobe = w >= l ? WallSide.north : WallSide.west;
+    final desk = w >= l ? WallSide.south : WallSide.east;
+    final mesh = w >= l ? WallSide.east : WallSide.north;
+    final door2 = w >= l ? WallSide.west : WallSide.south;
+    return StudyWallRoles(
+      wardrobe: wardrobe,
+      desk: desk,
+      mesh: mesh,
+      doorPrimary: desk,
+      doorSecondary: door2,
+    );
+  }
+
+  /// Infer study wall roles from partial vision placements (+54).
+  ///
+  /// Keeps photo wall assignment (e.g. east wardrobe stays east) instead of
+  /// always forcing longest-wall template — closer to gold-plan match.
+  static StudyWallRoles inferStudyWallRoles(ScanResult r) {
+    final w = r.roomWidthFt > 0 ? r.roomWidthFt : goldRoomWidthFt;
+    final l = r.roomLengthFt > 0 ? r.roomLengthFt : goldRoomLengthFt;
+    final def = defaultStudyWallRoles(w, l);
+
+    WallSide? wardrobeWall;
+    WallSide? deskWall;
+    WallSide? meshWall;
+    final doorWalls = <WallSide>[];
+
+    for (final f in r.furniture.where((x) => x.included)) {
+      if (f.type == FurnitureType.wardrobe) {
+        wardrobeWall = _nearestWall(f.posFt, w, l);
+      } else if (f.type == FurnitureType.table) {
+        deskWall = _nearestWall(f.posFt, w, l);
+      }
+    }
+
+    for (final o in r.walls.where((s) =>
+        s.type == StrokeType.door ||
+        s.type == StrokeType.window ||
+        s.type == StrokeType.balcony)) {
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field == null) continue;
+      final isWide = o.type == StrokeType.balcony ||
+          o.type == StrokeType.window ||
+          o.lengthFt >= 4.5;
+      if (isWide) {
+        meshWall ??= field.wall;
+      } else if (o.type == StrokeType.door) {
+        if (!doorWalls.contains(field.wall)) doorWalls.add(field.wall);
+      }
+    }
+
+    var ww = wardrobeWall ?? def.wardrobe;
+    var dw = deskWall ?? def.desk;
+    if (dw == ww) {
+      // Desk should not share storage wall when we can avoid it
+      for (final s in [def.desk, WallSide.south, WallSide.east, WallSide.north, WallSide.west]) {
+        if (s != ww) {
+          dw = s;
+          break;
+        }
+      }
+    }
+    var mw = meshWall ?? def.mesh;
+    // Prefer mesh not on pure door-only wall if default free
+    if (mw == ww && meshWall == null) {
+      for (final s in [def.mesh, WallSide.east, WallSide.north, WallSide.south, WallSide.west]) {
+        if (s != ww && s != dw) {
+          mw = s;
+          break;
+        }
+      }
+    }
+
+    WallSide d1 = doorWalls.isNotEmpty ? doorWalls.first : def.doorPrimary;
+    WallSide d2 = doorWalls.length > 1 ? doorWalls[1] : def.doorSecondary;
+    if (d1 == d2) {
+      for (final s in WallSide.values) {
+        if (s != d1 && s != ww) {
+          d2 = s;
+          break;
+        }
+      }
+    }
+    // Prefer doors off wardrobe wall when inventing
+    if (doorWalls.isEmpty && d1 == ww) d1 = def.doorPrimary != ww ? def.doorPrimary : dw;
+    if (doorWalls.length < 2 && d2 == ww) {
+      d2 = def.doorSecondary != ww ? def.doorSecondary : mw;
+    }
+
+    return StudyWallRoles(
+      wardrobe: ww,
+      desk: dw,
+      mesh: mw,
+      doorPrimary: d1,
+      doorSecondary: d2,
     );
   }
 
@@ -151,20 +256,24 @@ class PhotoTrueLayout {
   ///
   /// Matches gold-plan *quality*: long wardrobe, desk+chair, multi-wall openings,
   /// ~74% score. Used as offline multi-wall guarantee (+49).
+  ///
+  /// [roles] (+54): when set from vision, wardrobe/mesh/doors follow photo walls.
   static ScanResult composeStudyGold({
     required double widthFt,
     required double lengthFt,
     List<String> warnings = const [],
     bool includeChair = true,
+    StudyWallRoles? roles,
   }) {
     // +53 defaults match gold-plan feedback room (~20×17)
     final w = widthFt > 0 ? widthFt : goldRoomWidthFt;
     final l = lengthFt > 0 ? lengthFt : goldRoomLengthFt;
-    // +52: wardrobe on longest wall (N/S length=w, E/W length=l)
-    final wardrobeWall = w >= l ? WallSide.north : WallSide.west;
-    final deskWall = w >= l ? WallSide.south : WallSide.east;
-    final meshWall = w >= l ? WallSide.east : WallSide.north;
-    final door2Wall = w >= l ? WallSide.west : WallSide.south;
+    final r = roles ?? defaultStudyWallRoles(w, l);
+    final wardrobeWall = r.wardrobe;
+    final deskWall = r.desk;
+    final meshWall = r.mesh;
+    final door1Wall = r.doorPrimary;
+    final door2Wall = r.doorSecondary;
     final wardrobeWallLen = wardrobeWall.lengthFt(w, l);
     // +53: near full-wall sliding wardrobe (photos span most of storage wall)
     final wardrobeAlong = math
@@ -173,13 +282,13 @@ class PhotoTrueLayout {
 
     final openings = <WallOpeningHint>[
       WallOpeningHint.fromLeft(
-        wall: deskWall,
+        wall: door1Wall,
         type: StrokeType.door,
         fromLeftFt: 1.2,
         widthFt: 2.8,
-        wallLengthFt: deskWall.lengthFt(w, l),
+        wallLengthFt: door1Wall.lengthFt(w, l),
         confidence: 0.95,
-        evidence: 'study gold door primary (+53)',
+        evidence: 'study gold door primary (+54)',
       ),
       WallOpeningHint.fromLeft(
         wall: door2Wall,
@@ -188,7 +297,7 @@ class PhotoTrueLayout {
         widthFt: 2.8,
         wallLengthFt: door2Wall.lengthFt(w, l),
         confidence: 0.9,
-        evidence: 'study gold door secondary (+53)',
+        evidence: 'study gold door secondary (+54)',
       ),
       WallOpeningHint.fromLeft(
         wall: meshWall,
@@ -197,7 +306,7 @@ class PhotoTrueLayout {
         widthFt: math.min(8.0, meshWall.lengthFt(w, l) * 0.55),
         wallLengthFt: meshWall.lengthFt(w, l),
         confidence: 0.92,
-        evidence: 'study gold mesh (+53)',
+        evidence: 'study gold mesh (+54)',
       ),
     ];
 
@@ -211,7 +320,7 @@ class PhotoTrueLayout {
         lengthFt: 1.6,
         wallLengthFt: wardrobeWallLen,
         confidence: 0.95,
-        evidence: 'study gold full-wall wardrobe (+53)',
+        evidence: 'study gold full-wall wardrobe (+54 on ${wardrobeWall.name})',
       ),
       WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
@@ -225,7 +334,7 @@ class PhotoTrueLayout {
         lengthFt: 2.0,
         wallLengthFt: deskWall.lengthFt(w, l),
         confidence: 0.95,
-        evidence: 'study gold desk (+53)',
+        evidence: 'study gold desk (+54 on ${deskWall.name})',
       ),
     ];
     if (includeChair) {
@@ -239,7 +348,7 @@ class PhotoTrueLayout {
         lengthFt: 1.8,
         wallLengthFt: dwl,
         confidence: 0.9,
-        evidence: 'study gold chair (+53)',
+        evidence: 'study gold chair (+54)',
       ));
     }
 
@@ -250,7 +359,8 @@ class PhotoTrueLayout {
       furniture: furniture,
       warnings: [
         ...warnings,
-        'Deterministic study gold layout (+53): full-wall wardrobe + desk + multi openings',
+        'Deterministic study gold layout (+54): wardrobe@${wardrobeWall.name} '
+            'desk@${deskWall.name} mesh@${meshWall.name}',
       ],
       wallPhotos: 4,
       fromTapeMeasure: false,
@@ -276,15 +386,17 @@ class PhotoTrueLayout {
     ).copyWith(accuracyScore: goldQualityScore);
   }
 
-  /// Hybrid: keep vision wall placements; fill only missing gold pieces (+50).
+  /// Hybrid: keep vision wall placements; fill only missing gold pieces (+50/54).
   ///
   /// Better than full template replace when wall-by-wall already found wardrobe/desk.
+  /// +54: gold fill uses [inferStudyWallRoles]; short vision wardrobe is grown on
+  /// the same wall (not discarded for longest-wall template).
   static ScanResult mergeWithStudyGold(
     ScanResult partial, {
     bool includeChair = true,
   }) {
-    final w = partial.roomWidthFt > 0 ? partial.roomWidthFt : 18.0;
-    final l = partial.roomLengthFt > 0 ? partial.roomLengthFt : 16.0;
+    final w = partial.roomWidthFt > 0 ? partial.roomWidthFt : goldRoomWidthFt;
+    final l = partial.roomLengthFt > 0 ? partial.roomLengthFt : goldRoomLengthFt;
 
     if (isPhotoTrue(partial)) {
       final score = math.max(partial.accuracyScore ?? 0, goldQualityScore)
@@ -298,11 +410,13 @@ class PhotoTrueLayout {
       );
     }
 
+    final roles = inferStudyWallRoles(partial);
     final gold = composeStudyGold(
       widthFt: w,
       lengthFt: l,
       includeChair: includeChair,
       warnings: partial.warnings,
+      roles: roles,
     );
 
     final keptTypes = <FurnitureType>{};
@@ -316,8 +430,7 @@ class PhotoTrueLayout {
         continue;
       }
       if (f.type == FurnitureType.wardrobe) {
-        final along = math.max(f.widthFt, f.lengthFt);
-        if (along < 5.0) continue; // too small — take gold wardrobe
+        // +54: keep vision wall even if short — polish grows length on same wall
         furniture.add(f);
         keptTypes.add(FurnitureType.wardrobe);
         continue;
@@ -390,7 +503,7 @@ class PhotoTrueLayout {
       furniture: furniture,
       warnings: [
         ...partial.warnings,
-        'Hybrid merge vision + study gold (+50)',
+        'Hybrid merge vision + study gold (+54 roles wardrobe=${roles.wardrobe.name})',
       ],
       inventDefaultOpenings: false,
       accuracyScore: partial.accuracyScore,
@@ -407,10 +520,9 @@ class PhotoTrueLayout {
     ));
 
     if (isPhotoTrue(polished)) {
-      // +51: vision-kept wardrobe → higher confidence (closer to gold plan trust)
-      final visionWardrobe = partial.furniture.any((f) =>
-          f.type == FurnitureType.wardrobe &&
-          math.max(f.widthFt, f.lengthFt) >= 5.0);
+      // +51/54: vision-kept wardrobe → higher confidence (closer to gold plan trust)
+      final visionWardrobe = partial.furniture
+          .any((f) => f.type == FurnitureType.wardrobe && f.included);
       final bar = visionWardrobe ? goldVisionScore : goldQualityScore;
       return polished.copyWith(
         accuracyScore:
@@ -418,21 +530,22 @@ class PhotoTrueLayout {
         warnings: [
           ...polished.warnings,
           visionWardrobe
-              ? 'Hybrid photo-true + vision wardrobe (+51) score ${(bar * 100).round()}%'
-              : 'Hybrid photo-true gold quality (+50)',
+              ? 'Hybrid photo-true + vision wardrobe wall (+54) score ${(bar * 100).round()}%'
+              : 'Hybrid photo-true gold quality (+54)',
         ],
       );
     }
 
-    // Absolute fallback
+    // Absolute fallback still respects vision wall roles
     return composeStudyGold(
       widthFt: w,
       lengthFt: l,
       warnings: [
         ...polished.warnings,
-        'Hybrid incomplete → full study gold (+50)',
+        'Hybrid incomplete → full study gold with vision roles (+54)',
       ],
       includeChair: includeChair,
+      roles: roles,
     );
   }
 
@@ -938,9 +1051,10 @@ class PhotoTrueLayout {
     var along = math.max(f.widthFt, f.lengthFt);
     var deep = math.min(f.widthFt, f.lengthFt);
     if (f.type == FurnitureType.wardrobe) {
-      if (along < 5.5) along = 6.5;
-      if (deep < 1.2 || deep > 2.5) deep = 1.5;
-      along = along.clamp(5.5, wl * 0.9);
+      // +54: grow short vision wardrobe to gold-like span on same wall
+      if (along < 6.5) along = math.max(6.5, wl * 0.55);
+      if (deep < 1.2 || deep > 2.5) deep = 1.6;
+      along = along.clamp(6.5, wl * 0.92);
     } else if (f.type == FurnitureType.table) {
       if (along < 2.5) along = 4.0;
       if (deep < 1.2) deep = 2.0;
@@ -1076,4 +1190,24 @@ class PhotoTrueLayout {
       included: f.included,
     );
   }
+}
+
+/// Wall roles for study-room gold composition (+54).
+///
+/// When inferred from vision, wardrobe/desk/mesh/doors stay on photo walls
+/// instead of always using the longest-wall template.
+class StudyWallRoles {
+  final WallSide wardrobe;
+  final WallSide desk;
+  final WallSide mesh;
+  final WallSide doorPrimary;
+  final WallSide doorSecondary;
+
+  const StudyWallRoles({
+    required this.wardrobe,
+    required this.desk,
+    required this.mesh,
+    required this.doorPrimary,
+    required this.doorSecondary,
+  });
 }

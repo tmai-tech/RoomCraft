@@ -4,6 +4,7 @@ import 'package:room_craft/domain/accurate_scan.dart';
 import 'package:room_craft/domain/auto_scale.dart';
 import 'package:room_craft/domain/photo_true_layout.dart';
 import 'package:room_craft/domain/scan_refine.dart';
+import 'package:room_craft/domain/wall_relative_scan.dart';
 import 'package:room_craft/models/furniture_item.dart';
 import 'package:room_craft/models/scan_result.dart';
 import 'package:room_craft/models/stroke_model.dart';
@@ -266,6 +267,64 @@ void main() {
       accuracyScore: 0.7,
     );
     expect(PhotoTrueLayout.isPhotoTrue(weak), isFalse);
+  });
+
+  test('+54 vision east wardrobe wall is preserved through ensureGoldQuality', () {
+    // Feedback gold mismatch: vision found east wardrobe — must not force north
+    final partial = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(2, 0),
+          endFt: Offset(5, 0),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(18.5, 8.5),
+          widthFt: 4.0, // short — must grow on east, not relocate
+          lengthFt: 1.5,
+          rotationRad: 1.5708,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final roles = PhotoTrueLayout.inferStudyWallRoles(partial);
+    expect(roles.wardrobe, WallSide.east);
+    final out = PhotoTrueLayout.ensureGoldQuality(partial);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // Still on east half (vision wall)
+    expect(wardrobe.posFt.dx, greaterThan(14));
+    expect(mathMax(wardrobe.widthFt, wardrobe.lengthFt), greaterThanOrEqualTo(6.5));
+  });
+
+  test('+54 composeStudyGold honors vision wall roles', () {
+    final roles = const StudyWallRoles(
+      wardrobe: WallSide.east,
+      desk: WallSide.south,
+      mesh: WallSide.north,
+      doorPrimary: WallSide.west,
+      doorSecondary: WallSide.south,
+    );
+    final gold = PhotoTrueLayout.composeStudyGold(
+      widthFt: 20,
+      lengthFt: 17,
+      roles: roles,
+    );
+    final wardrobe =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dx, greaterThan(16)); // east wall
   });
 
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
