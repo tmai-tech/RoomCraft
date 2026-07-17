@@ -793,6 +793,18 @@ void main() {
     expect(wardrobe.posFt.dy, lessThan(4));
   });
 
+  test('+69 gold wardrobe spans most of storage wall (no 9.5ft cap)', () {
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final wardrobe =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    final along = mathMax(wardrobe.widthFt, wardrobe.lengthFt);
+    // 20ft south wall × 0.72 ≈ 14.4 (old cap was 9.5)
+    expect(along, greaterThanOrEqualTo(12.0));
+    expect(along, lessThanOrEqualTo(18.0));
+    final mesh = gold.walls.firstWhere((w) => w.type == StrokeType.balcony);
+    expect(mesh.lengthFt, greaterThanOrEqualTo(8.0));
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,

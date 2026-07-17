@@ -557,10 +557,10 @@ class PhotoTrueLayout {
     final door1Wall = r.doorPrimary;
     final door2Wall = r.doorSecondary;
     final wardrobeWallLen = wardrobeWall.lengthFt(w, l);
-    // +53: near full-wall sliding wardrobe (photos span most of storage wall)
-    final wardrobeAlong = math
-        .min(9.5, math.max(7.0, wardrobeWallLen * 0.58))
-        .clamp(6.5, wardrobeWallLen * 0.92);
+    // +69: near full-wall sliding wardrobe (gold ~70–85% of storage wall).
+    // Prior min(9.5, …) capped units on 20ft walls at ~47% — too short vs gold.
+    final wardrobeAlong =
+        math.max(7.0, wardrobeWallLen * 0.72).clamp(7.0, wardrobeWallLen * 0.88);
 
     // +55: dual doors may share entry wall (gold hallway) — stagger fromLeft
     final d1Len = door1Wall.lengthFt(w, l);
@@ -589,15 +589,15 @@ class PhotoTrueLayout {
             ? 'study gold door secondary same entry wall (+55)'
             : 'study gold door secondary (+55)',
       ),
-      // +57: mesh on lower/left of adjacent wall so desk can sit at wardrobe corner
+      // +69: wide mesh on gold wall (~60% of wall, gold plan east sliding glass)
       WallOpeningHint.fromLeft(
         wall: meshWall,
         type: StrokeType.balcony,
-        fromLeftFt: 1.2,
-        widthFt: math.min(7.5, meshWall.lengthFt(w, l) * 0.42),
+        fromLeftFt: 1.5,
+        widthFt: math.min(12.0, meshWall.lengthFt(w, l) * 0.62),
         wallLengthFt: meshWall.lengthFt(w, l),
         confidence: 0.92,
-        evidence: 'study gold mesh adjacent wardrobe (+57)',
+        evidence: 'study gold mesh wide (+69)',
       ),
     ];
 
@@ -889,8 +889,9 @@ class PhotoTrueLayout {
         final side = _nearestWall(vWardrobe.posFt, w, l);
         final wl = side.lengthFt(w, l);
         var along = math.max(vWardrobe.widthFt, vWardrobe.lengthFt);
-        if (along < 6.5) along = math.max(6.5, wl * 0.55);
-        along = along.clamp(6.5, wl * 0.92);
+        // +69: grow short vision wardrobe toward gold full-wall span
+        if (along < wl * 0.55) along = math.max(7.0, wl * 0.72);
+        along = along.clamp(6.5, wl * 0.88);
         final deep = 1.6;
         final center = _centerFromLeftOnWall(vWardrobe.posFt, side, w, l)
             .clamp(along / 2 + 0.3, wl - along / 2 - 0.3)
@@ -1283,13 +1284,13 @@ class PhotoTrueLayout {
         wall: meshWall,
         type: StrokeType.balcony,
         fromLeftFt: 1.5,
-        widthFt: math.min(8.0, mLen * 0.55),
+        widthFt: math.min(10.0, mLen * 0.62),
         wallLengthFt: mLen,
         confidence: 0.85,
-        evidence: 'photo-true mesh gold wall (+63)',
+        evidence: 'photo-true mesh gold wall (+69)',
       ));
       usedOpenWalls.add(meshWall);
-      notes.add('Photo-true (+63): seeded mesh on ${meshWall.name}');
+      notes.add('Photo-true (+69): seeded mesh on ${meshWall.name}');
     }
     // At least one door if we have furniture but zero openings
     if (openingHints.isEmpty &&
@@ -1375,9 +1376,9 @@ class PhotoTrueLayout {
         preferLong: true,
       );
       final wl = side.lengthFt(w, l);
-      // +53: gold-plan near full-wall sliding unit (~58% of wall, min 6.5)
+      // +69: gold-plan near full-wall sliding unit (~72% of wall)
       final along =
-          math.min(9.5, math.max(6.5, wl * 0.58)).clamp(6.5, wl * 0.92);
+          math.max(7.0, wl * 0.72).clamp(7.0, wl * 0.88);
       furnHints.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
@@ -1588,9 +1589,10 @@ class PhotoTrueLayout {
     var deep = math.min(f.widthFt, f.lengthFt);
     if (f.type == FurnitureType.wardrobe) {
       // +54: grow short vision wardrobe to gold-like span on same wall
-      if (along < 6.5) along = math.max(6.5, wl * 0.55);
+      // +69: grow short vision wardrobe toward gold full-wall span
+      if (along < wl * 0.55) along = math.max(7.0, wl * 0.72);
       if (deep < 1.2 || deep > 2.5) deep = 1.6;
-      along = along.clamp(6.5, wl * 0.92);
+      along = along.clamp(6.5, wl * 0.88);
     } else if (f.type == FurnitureType.table) {
       if (along < 2.5) along = 4.0;
       if (deep < 1.2) deep = 2.0;

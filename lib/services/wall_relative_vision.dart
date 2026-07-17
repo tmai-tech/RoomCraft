@@ -365,8 +365,9 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
         }
       }
       final wl = side.lengthFt(roomWidthFt, roomLengthFt);
+      // +69: near full-wall span (no 9.5ft artificial cap)
       final along =
-          math.min(9.5, math.max(6.5, wl * 0.58)).clamp(6.5, wl * 0.92);
+          math.max(7.0, wl * 0.72).clamp(7.0, wl * 0.88);
       furn.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
@@ -469,7 +470,7 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
         WallSide.west,
       ]);
       final wl = side.lengthFt(roomWidthFt, roomLengthFt);
-      final span = math.min(8.0, wl * 0.55);
+      final span = math.min(12.0, wl * 0.62);
       opens.add(WallOpeningHint.fromLeft(
         wall: side,
         type: StrokeType.balcony,
