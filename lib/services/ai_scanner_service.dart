@@ -260,16 +260,17 @@ class AIScannerService {
             ],
           );
         }
-        best = multi && studyLike
-            ? PhotoTrueLayout.ensureGoldQuality(best, includeChair: true)
-            : PhotoTrueLayout.polish(best);
+        // +60: always ensureGoldQuality (gates study template via isStudyLike)
+        best = PhotoTrueLayout.ensureGoldQuality(best, includeChair: true);
         final winnerNotes = [
           ...best.warnings,
           ...notes.where((n) => !best!.warnings.contains(n)),
           if (PhotoTrueLayout.isPhotoTrue(best))
-            'Winner photo-true gold-quality (+52)'
+            'Winner photo-true gold-quality (+60)'
+          else if (studyLike)
+            'Winner study path polished (+60) — edit openings/furniture on Review'
           else
-            'Winner polished (+52) — edit openings/furniture on Review if needed',
+            'Winner non-study polished (+60) — edit openings/furniture on Review',
         ];
         return best.copyWith(warnings: winnerNotes);
       }

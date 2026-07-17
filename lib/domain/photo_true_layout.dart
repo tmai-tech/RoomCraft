@@ -38,7 +38,16 @@ class PhotoTrueLayout {
     if (blob.contains('must include bed') && !blob.contains('no bed')) {
       return false;
     }
-    if (r.furniture.any((f) => f.type == FurnitureType.bed && f.included)) {
+    if (blob.contains('bedroom') && !blob.contains('no bed')) {
+      return false;
+    }
+    final types =
+        r.furniture.where((f) => f.included).map((f) => f.type).toSet();
+    if (types.contains(FurnitureType.bed)) return false;
+    if (types.contains(FurnitureType.sofa) &&
+        !blob.contains('no sofa') &&
+        !types.contains(FurnitureType.wardrobe)) {
+      // Sofa living room without wardrobe — not study gold
       return false;
     }
     // Explicit study cues or photo-true wardrobe path
@@ -46,14 +55,24 @@ class PhotoTrueLayout {
         blob.contains('study') ||
         blob.contains('must include wardrobe') ||
         blob.contains('photo-true') ||
-        blob.contains('multi-wall')) {
+        blob.contains('multi-wall') ||
+        blob.contains('wall-by-wall') ||
+        blob.contains('labeled')) {
       return true;
     }
     // Empty multi-wall with no bed claim → study-like for feedback fixtures
-    if (r.furniture.where((f) => f.included).isEmpty &&
+    if (types.isEmpty &&
         !blob.contains('sofa') &&
         !blob.contains('bedroom')) {
       return true;
+    }
+    // +60: wardrobe and/or desk without bedroom set → study gold path
+    if (types.contains(FurnitureType.wardrobe) ||
+        types.contains(FurnitureType.table)) {
+      if (!types.contains(FurnitureType.tvUnit) ||
+          blob.contains('no tv')) {
+        return true;
+      }
     }
     return false;
   }

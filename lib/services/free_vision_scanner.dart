@@ -484,6 +484,27 @@ class FreeVisionScanner {
     }
 
     // Prefer wall-by-wall; user labels → always wall path when available.
+    // +60: always finish with ensureGoldQuality (was missing on bulk/wall path).
+    ScanResult finish(ScanResult raw, {required String pathLabel}) {
+      var out = raw;
+      if (inventoryHint.isNotEmpty &&
+          !out.warnings.any((w) => w.startsWith('Inventory:'))) {
+        out = out.copyWith(
+          warnings: ['Inventory: $inventoryHint', ...out.warnings],
+        );
+      }
+      out = PhotoTrueLayout.ensureGoldQuality(out, includeChair: true);
+      return out.copyWith(
+        warnings: [
+          ...out.warnings,
+          if (PhotoTrueLayout.isPhotoTrue(out))
+            'Photo-true gold-quality bar (+60): $pathLabel + ensureGoldQuality'
+          else
+            'Polished (+60): $pathLabel — edit openings/furniture on Review',
+        ],
+      );
+    }
+
     if (wallByWall != null) {
       final bulkScore = _easyQuality(bulk, inventoryHint);
       final wallScore = _easyQuality(wallByWall, inventoryHint);
@@ -500,9 +521,6 @@ class FreeVisionScanner {
             .toList();
         final useOpenings =
             wallOpenings.isNotEmpty ? wallOpenings : bulkOpenings;
-        final outline = wallByWall.walls
-            .where((w) => w.type == StrokeType.wall)
-            .toList();
         final merged = ScanRefine.refine(AccurateScan.enforce(
           widthFt: size.widthFt,
           lengthFt: size.lengthFt,
@@ -517,19 +535,17 @@ class FreeVisionScanner {
           inventDefaultOpenings: false,
           accuracyScore: wallByWall.accuracyScore ?? bulk.accuracyScore,
         ));
-        // Preserve rectangle walls if enforce rebuilds them
-        if (outline.isNotEmpty &&
-            merged.walls.where((w) => w.type == StrokeType.wall).isEmpty) {
-          return merged.copyWith(walls: [...outline, ...useOpenings]);
-        }
-        return merged;
+        return finish(merged, pathLabel: 'wall-by-wall');
       }
     }
-    return bulk.copyWith(
-      warnings: [
-        ...bulk.warnings,
-        ...warnings.where((w) => !bulk.warnings.contains(w)),
-      ],
+    return finish(
+      bulk.copyWith(
+        warnings: [
+          ...bulk.warnings,
+          ...warnings.where((w) => !bulk.warnings.contains(w)),
+        ],
+      ),
+      pathLabel: 'bulk',
     );
   }
 

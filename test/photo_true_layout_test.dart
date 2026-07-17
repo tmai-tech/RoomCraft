@@ -583,6 +583,50 @@ void main() {
     expect(mesh.lengthFt, greaterThanOrEqualTo(8.0));
   });
 
+  test('+60 wardrobe+table without bed is study-like for gold path', () {
+    final partial = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(8, 2),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    );
+    // No inventory cues — still study-like via wardrobe/table heuristic
+    expect(PhotoTrueLayout.isStudyLike(partial), isTrue);
+    final out = PhotoTrueLayout.ensureGoldQuality(partial.copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    ));
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+  });
+
+  test('+60 bedroom sofa room is not study-like', () {
+    final living = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.sofa,
+          posFt: Offset(8, 6),
+          widthFt: 7,
+          lengthFt: 3,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    ).copyWith(warnings: ['Living room scan']);
+    expect(PhotoTrueLayout.isStudyLike(living), isFalse);
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
