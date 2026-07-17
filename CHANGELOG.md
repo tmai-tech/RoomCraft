@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+47 (2026-07-17)
+
+### Gold-plan density: distinct openings + size labels
+- Seed doors/mesh on **different walls** (gold multi-opening layout).
+- Review preview labels show **name + size** (e.g. Wardrobe 6.7×1.5).
+- Wall vision: stronger MUST wardrobe/TABLE/opening instructions per wall.
+- Longer wall-by-wall wardrobe seed (~6.5–7.5 ft).
+- Version **+47**.
+
 ## 1.0.0-beta.1+46 (2026-07-17)
 
 ### Forced second photo-true polish on multi-wall

@@ -926,9 +926,9 @@ class _ScanPreviewPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
-      // Label (un-rotated so text stays readable)
+      // Label with size like gold plan (+47)
       canvas.rotate(-f.rotationRad);
-      final label = switch (f.type) {
+      final name = switch (f.type) {
         FurnitureType.wardrobe => 'Wardrobe',
         FurnitureType.table => 'Desk',
         FurnitureType.chair => 'Chair',
@@ -937,17 +937,23 @@ class _ScanPreviewPainter extends CustomPainter {
         FurnitureType.tvUnit => 'TV',
         _ => f.type.name,
       };
+      final along = f.widthFt >= f.lengthFt ? f.widthFt : f.lengthFt;
+      final deep = f.widthFt < f.lengthFt ? f.widthFt : f.lengthFt;
+      final label =
+          '$name\n${along.toStringAsFixed(1)}×${deep.toStringAsFixed(1)}';
       final tp = TextPainter(
         text: TextSpan(
           text: label,
           style: TextStyle(
             color: stroke,
-            fontSize: 9,
+            fontSize: 8,
             fontWeight: FontWeight.w700,
+            height: 1.1,
           ),
         ),
+        textAlign: TextAlign.center,
         textDirection: TextDirection.ltr,
-      )..layout(maxWidth: 72);
+      )..layout(maxWidth: 80);
       tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
       canvas.restore();
     }

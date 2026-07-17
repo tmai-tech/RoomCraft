@@ -161,6 +161,45 @@ void main() {
     );
   });
 
+  test('+47 multi openings land on more than one wall', () {
+    final base = AccurateScan.enforce(
+      widthFt: 18,
+      lengthFt: 16,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final polished = PhotoTrueLayout.polish(base);
+    final opens = polished.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .toList();
+    expect(opens.length, greaterThanOrEqualTo(2));
+    // At least two distinct perimeter edges (different midpoints)
+    final mids = opens
+        .map((o) => Offset(
+              (o.startFt.dx + o.endFt.dx) / 2,
+              (o.startFt.dy + o.endFt.dy) / 2,
+            ))
+        .toList();
+    var distinct = 0;
+    for (var i = 0; i < mids.length; i++) {
+      var unique = true;
+      for (var j = 0; j < i; j++) {
+        if ((mids[i] - mids[j]).distance < 1.0) unique = false;
+      }
+      if (unique) distinct++;
+    }
+    expect(distinct, greaterThanOrEqualTo(2));
+  });
+
   test('+46 second polish from forced inventory reaches photo-true', () {
     // Simulates weak wall-by-wall then forced inventory second pass (+46)
     final weak = AccurateScan.enforce(

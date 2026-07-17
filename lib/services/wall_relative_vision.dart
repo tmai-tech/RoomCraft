@@ -338,20 +338,21 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
         WallSide.south,
       ]);
       final wl = side.lengthFt(roomWidthFt, roomLengthFt);
-      final along = math.min(6.7, wl * 0.75);
+      final along =
+          math.min(7.5, math.max(6.5, wl * 0.38)).clamp(6.0, wl * 0.85);
       furn.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
         fromLeftFt: math.max(0.3, (wl - along) / 2),
-        depthFt: 1.3,
-        widthFt: along,
+        depthFt: 1.5,
+        widthFt: along.toDouble(),
         lengthFt: 1.5,
         wallLengthFt: wl,
         confidence: 0.88,
-        evidence: 'photo-true inventory seed WARDROBE (+37)',
+        evidence: 'photo-true inventory seed WARDROBE (+47)',
       ));
       types.add(FurnitureType.wardrobe);
-      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+37)');
+      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+47)');
     }
 
     if (inventoryHint.contains('MUST include TABLE') &&
@@ -463,7 +464,12 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
         : '\nROOM INVENTORY (whole room — respect when placing on THIS wall):\n$inventoryHint\n'
             '- Only place types that appear on THIS wall in the photo.\n'
             '- If inventory says NO BED/SOFA/TV_UNIT, never list those types.\n'
-            '- Mirror alone ≠ WARDROBE. Monitors on a desk ≠ TV_UNIT.\n';
+            '- Mirror alone ≠ WARDROBE. Monitors on a desk ≠ TV_UNIT.\n'
+            '- If MUST include WARDROBE and this wall shows sliding cupboard/panels, '
+            'you MUST list WARDROBE with from_left_ft + dim (do not omit).\n'
+            '- If MUST include TABLE and this wall shows a desk/work table, '
+            'you MUST list TABLE.\n'
+            '- Doors/mesh openings on this wall: always report with realistic widths.\n';
 
     return '''
 This photo is ${wall.shortLabel} of a rectangular room (interior designer field survey).

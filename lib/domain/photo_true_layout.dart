@@ -119,25 +119,51 @@ class PhotoTrueLayout {
       ));
     }
 
-    // Seed doors / mesh if inventory required but missing
+    // Seed doors / mesh on distinct walls (gold-plan multi-opening layout) (+47)
+    final usedOpenWalls = <WallSide>{
+      for (final o in openingHints) o.wall,
+    };
     final haveDoors =
         openingHints.where((o) => o.type == StrokeType.door).length +
             rawOpeningsKept.where((o) => o.type == StrokeType.door).length;
     if (wantDoors > haveDoors) {
-      final sides = [WallSide.south, WallSide.west, WallSide.east, WallSide.north];
-      for (var i = 0; i < wantDoors - haveDoors; i++) {
+      final sides = [
+        WallSide.south,
+        WallSide.west,
+        WallSide.east,
+        WallSide.north,
+      ];
+      var added = 0;
+      for (final side in sides) {
+        if (haveDoors + added >= wantDoors) break;
+        if (usedOpenWalls.contains(side) && added > 0) continue;
+        openingHints.add(WallOpeningHint.fromLeft(
+          wall: side,
+          type: StrokeType.door,
+          fromLeftFt: 1.0 + added * 0.5,
+          widthFt: 2.8,
+          wallLengthFt: side.lengthFt(w, l),
+          confidence: 0.85,
+          evidence: 'photo-true door seed (+47)',
+        ));
+        usedOpenWalls.add(side);
+        added++;
+      }
+      // If still short (all walls used), place remaining anyway
+      for (var i = added; haveDoors + i < wantDoors; i++) {
         final side = sides[i % sides.length];
         openingHints.add(WallOpeningHint.fromLeft(
           wall: side,
           type: StrokeType.door,
-          fromLeftFt: 1.0 + i,
+          fromLeftFt: 2.0 + i,
           widthFt: 2.8,
           wallLengthFt: side.lengthFt(w, l),
-          confidence: 0.85,
-          evidence: 'photo-true door seed (+44)',
+          confidence: 0.8,
+          evidence: 'photo-true door seed extra (+47)',
         ));
+        usedOpenWalls.add(side);
       }
-      notes.add('Photo-true (+44): seeded door openings');
+      notes.add('Photo-true (+47): seeded door openings on distinct walls');
     }
     final hasWide = openingHints.any((o) =>
             o.type == StrokeType.balcony ||
@@ -149,17 +175,29 @@ class PhotoTrueLayout {
             o.type == StrokeType.window ||
             (o.type == StrokeType.door && o.lengthFt >= 4.5));
     if (needMesh && !hasWide) {
-      final meshWall = WallSide.east;
+      // Prefer free wall for mesh (gold plan spreads openings)
+      final meshPrefer = [
+        WallSide.east,
+        WallSide.north,
+        WallSide.south,
+        WallSide.west,
+      ];
+      final meshWall = meshPrefer.firstWhere(
+        (s) => !usedOpenWalls.contains(s),
+        orElse: () => WallSide.east,
+      );
+      final mLen = meshWall.lengthFt(w, l);
       openingHints.add(WallOpeningHint.fromLeft(
         wall: meshWall,
         type: StrokeType.balcony,
         fromLeftFt: 1.5,
-        widthFt: math.min(7.0, meshWall.lengthFt(w, l) * 0.55),
-        wallLengthFt: meshWall.lengthFt(w, l),
+        widthFt: math.min(7.0, mLen * 0.55),
+        wallLengthFt: mLen,
         confidence: 0.85,
-        evidence: 'photo-true mesh seed (+44)',
+        evidence: 'photo-true mesh seed (+47)',
       ));
-      notes.add('Photo-true (+44): seeded mesh/glass balcony');
+      usedOpenWalls.add(meshWall);
+      notes.add('Photo-true (+47): seeded mesh on ${meshWall.name}');
     }
     // At least one door if we have furniture but zero openings
     if (openingHints.isEmpty &&
