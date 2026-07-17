@@ -5,6 +5,7 @@ import '../catalog/furniture_catalog.dart';
 import '../domain/scan_parser.dart';
 import '../domain/units.dart';
 import '../domain/wall_relative_scan.dart';
+import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import '../providers/room_provider.dart';
@@ -901,21 +902,53 @@ class _ScanPreviewPainter extends CustomPainter {
       final cy = f.posFt.dy * scale;
       final rw = f.widthFt * scale;
       final rh = f.lengthFt * scale;
+      // +42: type colors so gold-plan pieces read clearly on review
+      final (Color fill, Color stroke) = switch (f.type) {
+        FurnitureType.wardrobe => (Colors.indigo.shade100, Colors.indigo.shade800),
+        FurnitureType.table => (Colors.amber.shade100, Colors.brown.shade700),
+        FurnitureType.chair => (Colors.orange.shade100, Colors.orange.shade800),
+        FurnitureType.bed => (Colors.purple.shade100, Colors.purple.shade700),
+        FurnitureType.sofa => (Colors.teal.shade100, Colors.teal.shade800),
+        _ => (Colors.teal.shade100, Colors.teal.shade700),
+      };
       canvas.save();
       canvas.translate(cx, cy);
       canvas.rotate(f.rotationRad);
       final rect = Rect.fromCenter(center: Offset.zero, width: rw, height: rh);
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
-        Paint()..color = Colors.teal.shade100,
+        Paint()..color = fill,
       );
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
         Paint()
-          ..color = Colors.teal.shade700
+          ..color = stroke
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
+          ..strokeWidth = 2,
       );
+      // Label (un-rotated so text stays readable)
+      canvas.rotate(-f.rotationRad);
+      final label = switch (f.type) {
+        FurnitureType.wardrobe => 'Wardrobe',
+        FurnitureType.table => 'Desk',
+        FurnitureType.chair => 'Chair',
+        FurnitureType.bed => 'Bed',
+        FurnitureType.sofa => 'Sofa',
+        FurnitureType.tvUnit => 'TV',
+        _ => f.type.name,
+      };
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: stroke,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: 72);
+      tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
       canvas.restore();
     }
   }

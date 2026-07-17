@@ -209,6 +209,23 @@ class FreeVisionScanner {
 
     final userLabeled = wallPhotoMap != null && wallPhotoMap.length >= 3;
 
+    // +42: multi-wall / labeled study-style rooms — if inventory missed wardrobe
+    // (common false-negative) but did not claim a bed, boost MUST list for polish.
+    if ((userLabeled || frames.length >= 3) &&
+        !inventoryHint.contains('MUST include WARDROBE') &&
+        !inventoryHint.contains('MUST include BED') &&
+        inventoryHint.contains('NO BED')) {
+      inventoryHint = _mergeInventoryHints(
+        inventoryHint,
+        'MUST include WARDROBE; MUST include TABLE (desk); '
+        'about 2 door opening(s); '
+        'MUST include mesh balcony or large window for glass sliding',
+      );
+      warnings.add(
+        'Multi-wall inventory boost (+42): wardrobe/desk/doors/mesh for photo-true plan',
+      );
+    }
+
     // +34: labeled 4-wall path — skip bulk free-scatter layout entirely.
     if (userLabeled) {
       return _labeledWallsEasyScan(

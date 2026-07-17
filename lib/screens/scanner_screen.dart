@@ -638,10 +638,21 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       },
     );
 
-    if (ok != true) return null;
+    // +42: Cancel / dismiss → still scan with default walk order (near→right→far→left)
     final map = <WallSide, File>{};
     for (final e in assign.entries) {
       if (e.key < frames.length) map[e.value] = frames[e.key];
+    }
+    if (map.length < 3) {
+      // rebuild pure index order
+      map.clear();
+      for (var i = 0; i < frames.length && i < order.length; i++) {
+        map[order[i]] = frames[i];
+      }
+    }
+    if (ok != true) {
+      // User dismissed — keep defaults so scan is not aborted
+      return map.length >= 3 ? map : null;
     }
     if (map.length < 3) return null;
     return map;
@@ -751,9 +762,18 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         _freeFrames.length >= 3 &&
         _freeFrames.length <= 4) {
       easyWallMap = await _promptWallAssignments(_freeFrames);
-      if (easyWallMap == null) {
-        // User cancelled assignment
-        return;
+      // +42: null only if fewer than 3 frames; cancel uses default wall order
+      if (easyWallMap == null && _freeFrames.length >= 3) {
+        const order = [
+          WallSide.south,
+          WallSide.east,
+          WallSide.north,
+          WallSide.west,
+        ];
+        easyWallMap = {
+          for (var i = 0; i < _freeFrames.length && i < order.length; i++)
+            order[i]: _freeFrames[i],
+        };
       }
     }
 

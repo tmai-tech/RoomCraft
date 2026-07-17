@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+42 (2026-07-17)
+
+### Multi-wall reliability + readable gold plan preview
+- Wall-label sheet **Cancel no longer aborts scan** — uses default walk order.
+- Multi-wall with **NO BED** but missing wardrobe MUST → boost wardrobe/desk/doors/mesh inventory.
+- Review preview: **type colors + labels** (Wardrobe / Desk) so plan is not “empty white”.
+- HF easy path: photo-true **min room size** + wardrobe prior like Groq.
+- Version **+42**.
+
 ## 1.0.0-beta.1+41 (2026-07-17)
 
 ### Honest gold score + wall-compose MUST pieces (feedback 443cf0c3)

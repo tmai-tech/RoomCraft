@@ -187,7 +187,7 @@ class HuggingFaceVisionScanner {
     final parsed = ScanParser.parse(filtered.map);
 
     final doorWidths = AutoScale.doorWidthsFromWalls(parsed.walls);
-    final size = AutoScale.resolve(
+    var size = AutoScale.resolve(
       userWidthFt: userWidthFt,
       userLengthFt: userLengthFt,
       visionWidthFt: provisionalW,
@@ -201,9 +201,28 @@ class HuggingFaceVisionScanner {
             widthFt: f.widthFt,
             lengthFt: f.lengthFt,
           ),
+        if (inventoryHint.contains('MUST include WARDROBE'))
+          (type: 'WARDROBE', widthFt: 6.7, lengthFt: 1.5),
       ],
     );
     warnings.addAll(size.notes);
+    // +42: same photo-true room floor as Groq path
+    final minSize = AutoScale.ensurePhotoTrueMinSize(
+      widthFt: size.widthFt,
+      lengthFt: size.lengthFt,
+      inventoryHint: inventoryHint,
+      usedUserSize: size.usedUserSize,
+    );
+    if (minSize.notes.isNotEmpty) {
+      warnings.addAll(minSize.notes);
+      size = (
+        widthFt: minSize.widthFt,
+        lengthFt: minSize.lengthFt,
+        confidence: size.confidence,
+        notes: size.notes,
+        usedUserSize: size.usedUserSize,
+      );
+    }
 
     var result = AccurateScan.enforce(
       widthFt: size.widthFt,
