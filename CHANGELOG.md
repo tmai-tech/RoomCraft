@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+40 (2026-07-17)
+
+### End-to-end photo-true winner polish
+- **Always** run PhotoTrueLayout.polish on the winning scan backend (Groq/HF/Gemini).
+- Layout quality scoring: +50 for photo-true; penalize zero openings; weak if no doors.
+- Prefer polished layouts when comparing backends; try next engine if not photo-true yet.
+- HF easy + locked paths also polish to gold-quality bar.
+- Version **+40**.
+
 ## 1.0.0-beta.1+39 (2026-07-17)
 
 ### Gold-plan quality polish (photo-true ~74% bar)

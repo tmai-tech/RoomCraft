@@ -6,6 +6,7 @@ import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/auto_scale.dart';
 import '../domain/furniture_vision_filter.dart';
+import '../domain/photo_true_layout.dart';
 import '../domain/scan_keyframes.dart';
 import '../domain/scan_parser.dart';
 import '../domain/scan_refine.dart';
@@ -256,10 +257,11 @@ class HuggingFaceVisionScanner {
       warnings.add('HF returned no furniture — check photos or add from catalog');
     }
 
-    return ScanRefine.refine(result.copyWith(
+    // +40: gold-quality polish (wall-hug, openings spread, score bar)
+    return PhotoTrueLayout.polish(ScanRefine.refine(result.copyWith(
       warnings: warnings,
       accuracyScore: accuracy,
-    ));
+    )));
   }
 
   Future<ScanResult> _lockedScan({
@@ -331,7 +333,7 @@ class HuggingFaceVisionScanner {
       dropped: filtered.dropped,
     );
 
-    return ScanRefine.refine(AccurateScan.enforce(
+    return PhotoTrueLayout.polish(ScanRefine.refine(AccurateScan.enforce(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
       openings: parsed.walls,
@@ -340,7 +342,7 @@ class HuggingFaceVisionScanner {
       sourceLabel: 'HF $modelLabel — size locked',
       inventDefaultOpenings: false,
       accuracyScore: accuracy,
-    ));
+    )));
   }
 
   static ({Map<String, dynamic> map, int dropped}) _filterFurnitureMap(

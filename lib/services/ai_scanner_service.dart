@@ -10,6 +10,7 @@ import '../domain/accurate_scan.dart';
 import '../domain/furniture_vision_filter.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/local_room_scanner.dart';
+import '../domain/photo_true_layout.dart';
 import '../domain/scan_parser.dart';
 import '../domain/scan_refine.dart';
 import '../domain/vision_layout_prompts.dart';
@@ -142,7 +143,7 @@ class AIScannerService {
     if (tryVision) {
       ScanResult? best;
       final notes = <String>[
-        'Scan engines +34: labeled walls skip bulk scatter; size+per-wall only',
+        'Scan engines +40: photo-true polish on winner; labeled walls preferred',
       ];
       if (wallPhotoMap != null && wallPhotoMap.length >= 3) {
         notes.add(
@@ -242,9 +243,15 @@ class AIScannerService {
       }
 
       if (best != null) {
+        // +40: always gold-quality polish the winning backend layout
+        best = PhotoTrueLayout.polish(best);
         final winnerNotes = [
           ...best.warnings,
           ...notes.where((n) => !best!.warnings.contains(n)),
+          if (PhotoTrueLayout.isPhotoTrue(best))
+            'Winner photo-true gold-quality (+40)'
+          else
+            'Winner polished (+40) — edit openings/furniture on Review if needed',
         ];
         return best.copyWith(warnings: winnerNotes);
       }
@@ -425,12 +432,24 @@ class AIScannerService {
   static bool _isWeakLayout(ScanResult r) {
     if (r.furniture.isEmpty) return true;
     if (r.furniture.length < 2) return true;
+    // +40: missing openings is weak (gold plan always has doors)
+    final openings = r.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .length;
+    if (openings == 0) return true;
     final score = r.accuracyScore;
     if (score != null && score < 0.48) return true;
-    return _layoutQuality(r) < 35;
+    // Not photo-true (no wardrobe+table) → still try next backend
+    if (!PhotoTrueLayout.isPhotoTrue(r) && r.furniture.length < 3) {
+      return true;
+    }
+    return _layoutQuality(r) < 45;
   }
 
-  /// Higher is better. Favors real inventory (wardrobe/desk) over empty/random.
+  /// Higher is better. Favors photo-true inventory (wardrobe/desk + openings).
   static int _layoutQuality(ScanResult r) {
     var q = 0;
     final types = r.furniture.map((f) => f.type).toSet();
@@ -449,6 +468,9 @@ class AIScannerService {
         )
         .length;
     q += openings.clamp(0, 4) * 6;
+    if (openings == 0 && r.furniture.isNotEmpty) q -= 25;
+    // +40: gold-quality photo-true bundle
+    if (PhotoTrueLayout.isPhotoTrue(r)) q += 50;
     if (r.furniture.isEmpty) q -= 60;
     // Single floating piece is often a bad guess
     if (r.furniture.length == 1) q -= 10;
@@ -458,11 +480,16 @@ class AIScannerService {
   }
 
   /// Keep the higher-quality layout; ties keep [current].
+  /// +40: polish candidates before compare so seeded wardrobe/doors count.
   static ScanResult? _preferLayout(ScanResult? current, ScanResult candidate) {
-    if (current == null) return candidate;
-    final a = _layoutQuality(current);
-    final b = _layoutQuality(candidate);
-    if (b > a) return candidate;
-    return current;
+    final polished = PhotoTrueLayout.polish(candidate);
+    if (current == null) return polished;
+    final polishedCurrent = PhotoTrueLayout.isPhotoTrue(current)
+        ? current
+        : PhotoTrueLayout.polish(current);
+    final a = _layoutQuality(polishedCurrent);
+    final b = _layoutQuality(polished);
+    if (b > a) return polished;
+    return polishedCurrent;
   }
 }
