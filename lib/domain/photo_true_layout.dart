@@ -83,19 +83,31 @@ class PhotoTrueLayout {
     final needMesh = invBlob.contains('mesh') ||
         invBlob.contains('glass') ||
         invBlob.contains('balcony');
+    final needChair = invBlob.contains('chair') ||
+        input.furniture.any((f) => f.type == FurnitureType.chair);
     final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(invBlob);
-    final wantDoors = doorMatch != null
+    // +44: multi-wall / wardrobe plans usually have ≥2 openings in study rooms
+    var wantDoors = doorMatch != null
         ? int.tryParse(doorMatch.group(1)!) ?? 0
         : (invBlob.contains('door opening') ? 1 : 0);
+    if (wantDoors < 1 &&
+        (needWardrobe || needMesh || invBlob.contains('multi-wall'))) {
+      wantDoors = needMesh ? 2 : 1;
+    }
 
-    // Start from existing openings
+    // Start from existing openings (+44: keep raw if openingToField fails)
     var openingHints = <WallOpeningHint>[];
+    final rawOpeningsKept = <ScanWallSegment>[];
     for (final o in input.walls.where((s) =>
         s.type == StrokeType.door ||
         s.type == StrokeType.window ||
         s.type == StrokeType.balcony)) {
       final field = WallRelativeComposer.openingToField(o, w, l);
-      if (field == null) continue;
+      if (field == null) {
+        rawOpeningsKept.add(o);
+        notes.add('Kept raw ${o.type.name} opening (field map failed) (+44)');
+        continue;
+      }
       openingHints.add(WallOpeningHint.fromLeft(
         wall: field.wall,
         type: o.type,
@@ -109,7 +121,8 @@ class PhotoTrueLayout {
 
     // Seed doors / mesh if inventory required but missing
     final haveDoors =
-        openingHints.where((o) => o.type == StrokeType.door).length;
+        openingHints.where((o) => o.type == StrokeType.door).length +
+            rawOpeningsKept.where((o) => o.type == StrokeType.door).length;
     if (wantDoors > haveDoors) {
       final sides = [WallSide.south, WallSide.west, WallSide.east, WallSide.north];
       for (var i = 0; i < wantDoors - haveDoors; i++) {
@@ -121,30 +134,36 @@ class PhotoTrueLayout {
           widthFt: 2.8,
           wallLengthFt: side.lengthFt(w, l),
           confidence: 0.85,
-          evidence: 'photo-true door seed (+41)',
+          evidence: 'photo-true door seed (+44)',
         ));
       }
-      notes.add('Photo-true (+41): seeded door openings');
+      notes.add('Photo-true (+44): seeded door openings');
     }
     final hasWide = openingHints.any((o) =>
-        o.type == StrokeType.balcony ||
-        o.type == StrokeType.window ||
-        (o.type == StrokeType.door &&
-            o.widthAlongWallFt(o.wall.lengthFt(w, l)) >= 4.5));
+            o.type == StrokeType.balcony ||
+            o.type == StrokeType.window ||
+            (o.type == StrokeType.door &&
+                o.widthAlongWallFt(o.wall.lengthFt(w, l)) >= 4.5)) ||
+        rawOpeningsKept.any((o) =>
+            o.type == StrokeType.balcony ||
+            o.type == StrokeType.window ||
+            (o.type == StrokeType.door && o.lengthFt >= 4.5));
     if (needMesh && !hasWide) {
+      final meshWall = WallSide.east;
       openingHints.add(WallOpeningHint.fromLeft(
-        wall: WallSide.east,
+        wall: meshWall,
         type: StrokeType.balcony,
         fromLeftFt: 1.5,
-        widthFt: math.min(7.0, l * 0.55),
-        wallLengthFt: WallSide.east.lengthFt(w, l),
+        widthFt: math.min(7.0, meshWall.lengthFt(w, l) * 0.55),
+        wallLengthFt: meshWall.lengthFt(w, l),
         confidence: 0.85,
-        evidence: 'photo-true mesh seed (+41)',
+        evidence: 'photo-true mesh seed (+44)',
       ));
-      notes.add('Photo-true (+41): seeded mesh/glass balcony');
+      notes.add('Photo-true (+44): seeded mesh/glass balcony');
     }
     // At least one door if we have furniture but zero openings
     if (openingHints.isEmpty &&
+        rawOpeningsKept.isEmpty &&
         (needWardrobe || needTable || input.furniture.isNotEmpty)) {
       openingHints.add(WallOpeningHint.fromLeft(
         wall: WallSide.south,
@@ -153,9 +172,9 @@ class PhotoTrueLayout {
         widthFt: 2.8,
         wallLengthFt: WallSide.south.lengthFt(w, l),
         confidence: 0.75,
-        evidence: 'photo-true default door (+41)',
+        evidence: 'photo-true default door (+44)',
       ));
-      notes.add('Photo-true (+41): default entry door (plan had none)');
+      notes.add('Photo-true (+44): default entry door (plan had none)');
     }
 
     // Furniture: +43 preserve wall-by-wall placement; only seed missing pieces.
@@ -247,6 +266,35 @@ class PhotoTrueLayout {
       notes.add('Seeded TABLE on ${side.name} (+43)');
     }
 
+    // +44: chair next to desk for gold-plan density when inventory/vision has chair
+    final hasChairHint = furnHints.any((h) => h.type == FurnitureType.chair) ||
+        keepOther.any((f) => f.type == FurnitureType.chair) ||
+        input.furniture.any((f) => f.type == FurnitureType.chair);
+    WallFurnitureHint? tableHint;
+    for (final h in furnHints) {
+      if (h.type == FurnitureType.table) {
+        tableHint = h;
+        break;
+      }
+    }
+    if (needChair && !hasChairHint && tableHint != null) {
+      final side = tableHint.wall ?? WallSide.south;
+      final wl = side.lengthFt(w, l);
+      final tableFrom = tableHint.t * wl;
+      furnHints.add(WallFurnitureHint.fromLeft(
+        type: FurnitureType.chair,
+        wall: side,
+        fromLeftFt: (tableFrom + 1.2).clamp(0.5, wl - 1.5).toDouble(),
+        depthFt: 2.4,
+        widthFt: 1.8,
+        lengthFt: 1.8,
+        wallLengthFt: wl,
+        confidence: 0.85,
+        evidence: 'photo-true chair at desk (+44)',
+      ));
+      notes.add('Seeded CHAIR at desk on ${side.name} (+44)');
+    }
+
     // Compose wall-anchored pieces
     final composed = WallRelativeComposer.compose(
       widthFt: w,
@@ -264,7 +312,7 @@ class PhotoTrueLayout {
       for (final f in keepOther) _hugNearestWall(_normalizeGeneric(f, w, l), w, l),
     ];
 
-    // Dedupe majors
+    // Dedupe majors (allow multiple chairs)
     final seen = <FurnitureType>{};
     final deduped = <ScanFurnitureHint>[];
     for (final f in mergedFurniture) {
@@ -279,12 +327,14 @@ class PhotoTrueLayout {
       deduped.add(f);
     }
 
-    final openingsOut = composed.walls
-        .where((s) =>
-            s.type == StrokeType.door ||
-            s.type == StrokeType.window ||
-            s.type == StrokeType.balcony)
-        .toList();
+    final openingsOut = [
+      ...composed.walls.where((s) =>
+          s.type == StrokeType.door ||
+          s.type == StrokeType.window ||
+          s.type == StrokeType.balcony),
+      // +44: raw openings that failed field map
+      ...rawOpeningsKept,
+    ];
 
     final draft = AccurateScan.enforce(
       widthFt: w,

@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+44 (2026-07-17)
+
+### Openings preserved + chair density (gold-plan fill)
+- Keep **raw door/window/balcony** segments when wall field-map fails (no longer drop openings).
+- Seed **chair next to desk** when inventory mentions chair.
+- Stronger door/mesh defaults for multi-wall wardrobe study rooms.
+- Version **+44**.
+
 ## 1.0.0-beta.1+43 (2026-07-17)
 
 ### Preserve wall placement (stop scrambling gold plans)

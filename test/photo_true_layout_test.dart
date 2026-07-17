@@ -160,6 +160,39 @@ void main() {
     );
   });
 
+  test('+44 seeds chair at desk when inventory has chair', () {
+    final base = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(8, 2),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
+            'include CHAIR if seen; NO BED; about 2 door opening(s); '
+            'MUST include mesh balcony',
+      ],
+    );
+    final polished = PhotoTrueLayout.polish(base);
+    final types = polished.furniture.map((f) => f.type).toSet();
+    expect(types, contains(FurnitureType.wardrobe));
+    expect(types, contains(FurnitureType.table));
+    expect(types, contains(FurnitureType.chair));
+    expect(
+      polished.walls.any((w) =>
+          w.type == StrokeType.door || w.type == StrokeType.balcony),
+      isTrue,
+    );
+  });
+
   test('+43 keeps wardrobe on east wall (does not force west)', () {
     final base = AccurateScan.enforce(
       widthFt: 16,
