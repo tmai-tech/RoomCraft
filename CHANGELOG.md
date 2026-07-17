@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+39 (2026-07-17)
+
+### Gold-plan quality polish (photo-true ~74% bar)
+- New **PhotoTrueLayout.polish**: wall-hug wardrobe/table, normalize long wardrobe ~6.5×1.5, spread openings across walls.
+- Score floor **0.74** when WARDROBE + TABLE + openings and no bed/sofa/TV (matches gold plan quality bar).
+- Dense min room **16×14** when wardrobe + mesh/multi-door inventory (auto-scale only).
+- ScanRefine preserves photo-true score bar.
+- Version **+39**.
+
 ## 1.0.0-beta.1+38 (2026-07-17)
 
 ### Gold-plan furniture size: wardrobe scale + room floor

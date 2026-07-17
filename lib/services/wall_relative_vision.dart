@@ -8,6 +8,7 @@ import 'package:image/image.dart' as img;
 import 'package:mime/mime.dart';
 
 import '../config/app_config.dart';
+import '../domain/photo_true_layout.dart';
 import '../domain/scan_refine.dart';
 import '../domain/wall_relative_scan.dart';
 import '../models/furniture_item.dart';
@@ -285,7 +286,7 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       notes: notes,
     );
 
-    return ScanRefine.refine(WallRelativeComposer.compose(
+    final composed = ScanRefine.refine(WallRelativeComposer.compose(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
       openings: filled.openings,
@@ -294,6 +295,8 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       wallPhotos: wallPhotos.length,
       overviewPhotos: overviewPhotos.length,
     ));
+    // +39: gold-plan quality wall-hug + score when photo-true
+    return PhotoTrueLayout.polish(composed);
   }
 
   /// Ensure MUST wardrobe/TABLE and door/mesh openings as high-confidence wall anchors.

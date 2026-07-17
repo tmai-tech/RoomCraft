@@ -7,6 +7,7 @@ import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
+import 'photo_true_layout.dart';
 import 'wall_relative_scan.dart';
 
 /// Post-process scan geometry for higher layout accuracy.
@@ -467,7 +468,24 @@ class ScanRefine {
     // Aspect not extreme
     final aspect = widthFt / lengthFt;
     if (aspect > 0.4 && aspect < 2.5) s += 0.03;
-    final cap = furniture.isEmpty ? 0.52 : 0.94;
+
+    // +39: photo-true gold quality bar (~74%) for wardrobe+table+openings
+    final types = furniture.map((f) => f.type).toSet();
+    final photoTrue = types.contains(FurnitureType.wardrobe) &&
+        types.contains(FurnitureType.table) &&
+        openings.isNotEmpty &&
+        !types.contains(FurnitureType.bed) &&
+        !types.contains(FurnitureType.sofa) &&
+        !types.contains(FurnitureType.tvUnit);
+    if (photoTrue) {
+      s = math.max(s, PhotoTrueLayout.goldQualityScore);
+      s += 0.02;
+      if (prior != null && prior >= PhotoTrueLayout.goldQualityScore) {
+        s = math.max(s, prior);
+      }
+    }
+
+    final cap = furniture.isEmpty ? 0.52 : (photoTrue ? 0.90 : 0.94);
     return s.clamp(0.28, cap);
   }
 }

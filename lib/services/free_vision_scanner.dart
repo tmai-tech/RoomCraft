@@ -7,6 +7,7 @@ import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/auto_scale.dart';
 import '../domain/furniture_vision_filter.dart';
+import '../domain/photo_true_layout.dart';
 import '../domain/scan_keyframes.dart';
 import '../domain/scan_parser.dart';
 import '../domain/scan_refine.dart';
@@ -657,10 +658,6 @@ Rules:
     final openings = wallPlan.walls
         .where((w) => w.type != StrokeType.wall)
         .toList();
-    final types = wallPlan.furniture.map((f) => f.type).toSet();
-    final photoTrue = types.contains(FurnitureType.wardrobe) &&
-        types.contains(FurnitureType.table) &&
-        openings.isNotEmpty;
     final acc = _estimateAccuracy(
       frames: frames.length,
       furnitureCount: wallPlan.furniture.length,
@@ -669,12 +666,8 @@ Rules:
       autoScale: !size.usedUserSize,
       scaleConfidence: size.confidence,
     );
-    // Photo-true complete (wardrobe+desk+openings) → score like dense gold plan
-    final accBoost = photoTrue
-        ? (acc + 0.28).clamp(0.55, 0.88)
-        : acc;
 
-    return ScanRefine.refine(AccurateScan.enforce(
+    var result = AccurateScan.enforce(
       widthFt: wallPlan.roomWidthFt,
       lengthFt: wallPlan.roomLengthFt,
       openings: openings,
@@ -682,17 +675,23 @@ Rules:
       warnings: [
         ...wallPlan.warnings,
         ...warnings.where((w) => !wallPlan.warnings.contains(w)),
-        if (photoTrue)
-          'Photo-true inventory complete (+36): WARDROBE + TABLE + openings'
-        else
-          'Labeled 4-wall path (+36) — inventory + size + per-wall + openings seed',
+        'Labeled 4-wall path (+39) — inventory + size + per-wall + photo-true polish',
       ],
-      sourceLabel: photoTrue
-          ? 'Easy plan — labeled walls photo-true (+36)'
-          : 'Easy plan — labeled walls clean path (+36)',
+      sourceLabel: 'Easy plan — labeled walls (+39)',
       inventDefaultOpenings: false,
-      accuracyScore: accBoost,
-    ));
+      accuracyScore: acc,
+    );
+    // +39: gold-plan quality polish (wall-hug, sizes, score ~74%)
+    result = PhotoTrueLayout.polish(result);
+    if (PhotoTrueLayout.isPhotoTrue(result)) {
+      result = result.copyWith(
+        warnings: [
+          ...result.warnings,
+          'Photo-true gold-quality bar (+39): WARDROBE + TABLE + openings',
+        ],
+      );
+    }
+    return result;
   }
 
   /// Ensure MUST inventory types exist: copy from bulk if wall-anchored, else vision place, else seed.

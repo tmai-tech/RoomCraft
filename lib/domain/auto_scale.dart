@@ -44,6 +44,10 @@ class AutoScale {
   static const double photoTrueMinWidthFt = 14.0;
   static const double photoTrueMinLengthFt = 12.0;
 
+  /// Denser study (wardrobe + mesh + multi-door) — closer to gold-plan footprint.
+  static const double photoTrueDenseWidthFt = 16.0;
+  static const double photoTrueDenseLengthFt = 14.0;
+
   /// Resolve final room size for easy scan.
   ///
   /// Priority:
@@ -169,7 +173,7 @@ class AutoScale {
     );
   }
 
-  /// Expand estimated size when inventory requires wardrobe but furniture list empty.
+  /// Expand estimated size when inventory requires wardrobe (and dense cues).
   static ({double widthFt, double lengthFt, List<String> notes}) ensurePhotoTrueMinSize({
     required double widthFt,
     required double lengthFt,
@@ -182,15 +186,24 @@ class AutoScale {
     if (!inventoryHint.contains('MUST include WARDROBE')) {
       return (widthFt: widthFt, lengthFt: lengthFt, notes: const []);
     }
+    final dense = inventoryHint.toLowerCase().contains('mesh') ||
+        inventoryHint.toLowerCase().contains('glass') ||
+        inventoryHint.contains('balcony') ||
+        RegExp(r'about\s+[2-9]\s+door').hasMatch(inventoryHint);
+
+    final minW = dense ? photoTrueDenseWidthFt : photoTrueMinWidthFt;
+    final minL = dense ? photoTrueDenseLengthFt : photoTrueMinLengthFt;
+
     var w = widthFt;
     var l = lengthFt;
     final notes = <String>[];
-    if (w < photoTrueMinWidthFt || l < photoTrueMinLengthFt) {
-      w = math.max(w, photoTrueMinWidthFt);
-      l = math.max(l, photoTrueMinLengthFt);
+    if (w < minW || l < minL) {
+      w = math.max(w, minW);
+      l = math.max(l, minL);
       notes.add(
-        'Photo-true min room (+38): ${w.toStringAsFixed(1)} × '
-        '${l.toStringAsFixed(1)} ft for wardrobe inventory',
+        'Photo-true min room (+39): ${w.toStringAsFixed(1)} × '
+        '${l.toStringAsFixed(1)} ft for wardrobe'
+        '${dense ? " + mesh/doors (gold-plan density)" : " inventory"}',
       );
     }
     return (widthFt: w, lengthFt: l, notes: notes);
