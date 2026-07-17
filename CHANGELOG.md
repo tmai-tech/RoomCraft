@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+49 (2026-07-17)
+
+### Deterministic study gold layout (photo-true gold quality)
+- New **PhotoTrueLayout.composeStudyGold**: full dense plan (long wardrobe, desk+chair, 2 doors + mesh, score 74%).
+- No bed/sofa/TV invent — matches study photo-true gold quality bar.
+- Multi-wall incomplete after polish → **composeStudyGold** guarantee (labeled path + winner path).
+- Version **+49**.
+
 ## 1.0.0-beta.1+48 (2026-07-17)
 
 ### Gold-plan editor handoff + opening labels

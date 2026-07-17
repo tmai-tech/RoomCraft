@@ -161,6 +161,32 @@ void main() {
     );
   });
 
+  test('+49 composeStudyGold is photo-true dense gold layout', () {
+    final gold = PhotoTrueLayout.composeStudyGold(
+      widthFt: 18.5,
+      lengthFt: 17.2,
+    );
+    expect(PhotoTrueLayout.isPhotoTrue(gold), isTrue);
+    expect(gold.accuracyScore, greaterThanOrEqualTo(0.74));
+    final types = gold.furniture.map((f) => f.type).toSet();
+    expect(types, contains(FurnitureType.wardrobe));
+    expect(types, contains(FurnitureType.table));
+    expect(types, contains(FurnitureType.chair));
+    expect(types, isNot(contains(FurnitureType.bed)));
+    expect(types, isNot(contains(FurnitureType.sofa)));
+    final wardrobe =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(
+      mathMax(wardrobe.widthFt, wardrobe.lengthFt),
+      greaterThanOrEqualTo(6.0),
+    );
+    final opens = gold.walls
+        .where((w) =>
+            w.type == StrokeType.door || w.type == StrokeType.balcony)
+        .length;
+    expect(opens, greaterThanOrEqualTo(2));
+  });
+
   test('+47 multi openings land on more than one wall', () {
     final base = AccurateScan.enforce(
       widthFt: 18,

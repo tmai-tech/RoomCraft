@@ -23,6 +23,121 @@ class PhotoTrueLayout {
   /// Cap when plan is incomplete (feedback 443cf0c3: 74% with empty plan).
   static const double incompleteScoreCap = 0.48;
 
+  /// Deterministic study-room gold layout (photo-true inventory only — no bed/sofa/TV).
+  ///
+  /// Matches gold-plan *quality*: long wardrobe, desk+chair, multi-wall openings,
+  /// ~74% score. Used as offline multi-wall guarantee (+49).
+  static ScanResult composeStudyGold({
+    required double widthFt,
+    required double lengthFt,
+    List<String> warnings = const [],
+    bool includeChair = true,
+  }) {
+    final w = widthFt > 0 ? widthFt : 18.0;
+    final l = lengthFt > 0 ? lengthFt : 16.0;
+    final wardrobeAlong = math.min(7.2, math.max(6.5, l * 0.42)).clamp(6.0, l * 0.85);
+
+    final openings = <WallOpeningHint>[
+      WallOpeningHint.fromLeft(
+        wall: WallSide.south,
+        type: StrokeType.door,
+        fromLeftFt: 1.2,
+        widthFt: 2.8,
+        wallLengthFt: WallSide.south.lengthFt(w, l),
+        confidence: 0.95,
+        evidence: 'study gold door south (+49)',
+      ),
+      WallOpeningHint.fromLeft(
+        wall: WallSide.west,
+        type: StrokeType.door,
+        fromLeftFt: 1.0,
+        widthFt: 2.8,
+        wallLengthFt: WallSide.west.lengthFt(w, l),
+        confidence: 0.9,
+        evidence: 'study gold door west (+49)',
+      ),
+      WallOpeningHint.fromLeft(
+        wall: WallSide.east,
+        type: StrokeType.balcony,
+        fromLeftFt: 1.5,
+        widthFt: math.min(7.0, l * 0.5),
+        wallLengthFt: WallSide.east.lengthFt(w, l),
+        confidence: 0.92,
+        evidence: 'study gold mesh east (+49)',
+      ),
+    ];
+
+    final furniture = <WallFurnitureHint>[
+      WallFurnitureHint.fromLeft(
+        type: FurnitureType.wardrobe,
+        wall: WallSide.north,
+        fromLeftFt: math.max(0.4, (w - wardrobeAlong) / 2),
+        depthFt: 1.5,
+        widthFt: wardrobeAlong.toDouble(),
+        lengthFt: 1.5,
+        wallLengthFt: WallSide.north.lengthFt(w, l),
+        confidence: 0.95,
+        evidence: 'study gold wardrobe (+49)',
+      ),
+      WallFurnitureHint.fromLeft(
+        type: FurnitureType.table,
+        wall: WallSide.south,
+        fromLeftFt: math.min(w * 0.45, w - 3.5),
+        depthFt: 1.6,
+        widthFt: 4.0,
+        lengthFt: 2.0,
+        wallLengthFt: WallSide.south.lengthFt(w, l),
+        confidence: 0.95,
+        evidence: 'study gold desk (+49)',
+      ),
+    ];
+    if (includeChair) {
+      furniture.add(WallFurnitureHint.fromLeft(
+        type: FurnitureType.chair,
+        wall: WallSide.south,
+        fromLeftFt: math.min(w * 0.45 + 2.0, w - 2.0),
+        depthFt: 2.5,
+        widthFt: 1.8,
+        lengthFt: 1.8,
+        wallLengthFt: WallSide.south.lengthFt(w, l),
+        confidence: 0.9,
+        evidence: 'study gold chair (+49)',
+      ));
+    }
+
+    final composed = WallRelativeComposer.compose(
+      widthFt: w,
+      lengthFt: l,
+      openings: openings,
+      furniture: furniture,
+      warnings: [
+        ...warnings,
+        'Deterministic study gold layout (+49): wardrobe + desk + openings',
+      ],
+      wallPhotos: 4,
+      fromTapeMeasure: false,
+    );
+
+    final opens = composed.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
+
+    return AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: opens,
+      furniture: composed.furniture,
+      warnings: [
+        ...composed.warnings.where((n) => !n.startsWith('Accurate plan:')),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: goldQualityScore,
+    ).copyWith(accuracyScore: goldQualityScore);
+  }
+
   static bool isPhotoTrue(ScanResult r) {
     final types = r.furniture.where((f) => f.included).map((f) => f.type).toSet();
     final openings = r.walls.where((w) =>

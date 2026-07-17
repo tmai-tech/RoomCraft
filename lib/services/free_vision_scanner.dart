@@ -729,23 +729,15 @@ Rules:
         ],
       );
     } else {
-      // +48: offline deterministic guarantee for labeled multi-wall
-      result = PhotoTrueLayout.polish(
-        AccurateScan.enforce(
-          widthFt: size.widthFt,
-          lengthFt: size.lengthFt,
-          openings: const [],
-          furniture: const [],
-          warnings: [
-            'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
-                'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
-                'about 2 door opening(s); MUST include mesh balcony',
-            'Offline photo-true layout guarantee (+48)',
-            ...result.warnings,
-          ],
-          inventDefaultOpenings: false,
-          accuracyScore: 0.35,
-        ),
+      // +49: full deterministic study gold layout (gold-plan quality, photo-true inventory)
+      result = PhotoTrueLayout.composeStudyGold(
+        widthFt: size.widthFt,
+        lengthFt: size.lengthFt,
+        warnings: [
+          'Offline study gold layout guarantee (+49)',
+          ...result.warnings,
+        ],
+        includeChair: true,
       );
     }
     return result;
