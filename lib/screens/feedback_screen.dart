@@ -40,7 +40,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     super.dispose();
   }
 
-  Future<void> _addShot({required bool camera}) async {
+  Future<void> _addCameraShot() async {
     if (_shots.length >= FeedbackService.maxScreenshots) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -49,14 +49,59 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       );
       return;
     }
-    final x = await _picker.pickImage(
-      source: camera ? ImageSource.camera : ImageSource.gallery,
-      maxWidth: 1600,
-      maxHeight: 1600,
-      imageQuality: 85,
-    );
-    if (x == null) return;
-    setState(() => _shots.add(File(x.path)));
+    try {
+      final x = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+      );
+      if (x == null || !mounted) return;
+      setState(() => _shots.add(File(x.path)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Camera pick failed: $e')),
+      );
+    }
+  }
+
+  /// Multi-select from gallery (pick several room photos / plan shots at once).
+  Future<void> _addGalleryMulti() async {
+    final room = FeedbackService.maxScreenshots - _shots.length;
+    if (room <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Max ${FeedbackService.maxScreenshots} screenshots'),
+        ),
+      );
+      return;
+    }
+    try {
+      final picked = await _picker.pickMultiImage(
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+        limit: room,
+      );
+      if (picked.isEmpty || !mounted) return;
+      final files = picked.take(room).map((x) => File(x.path)).toList();
+      setState(() => _shots.addAll(files));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Added ${files.length} image${files.length == 1 ? '' : 's'} '
+            '(${_shots.length}/${FeedbackService.maxScreenshots})',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gallery pick failed: $e')),
+      );
+    }
   }
 
   Future<void> _submit() async {
@@ -139,8 +184,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                     leading: Icon(Icons.bug_report_outlined),
                     title: Text('Help us fix issues'),
                     subtitle: Text(
-                      'Describe what happened and attach screenshots of the crash, '
-                      'error, or wrong plan. The team reviews these to identify bugs.',
+                      'Describe what happened and attach multiple screenshots '
+                      '(room inputs, wrong plan, crash) in one pick. '
+                      'The team reviews these to identify bugs.',
                     ),
                   ),
                 ),
@@ -182,7 +228,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Crash screens, error messages, or wrong floor plans help most.',
+                  'Select multiple photos at once (inputs, wrong plan, errors). '
+                  'Up to ${FeedbackService.maxScreenshots} images.',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
                 const SizedBox(height: 8),
@@ -219,12 +266,12 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                       ),
                     if (_shots.length < FeedbackService.maxScreenshots) ...[
                       OutlinedButton.icon(
-                        onPressed: () => _addShot(camera: false),
+                        onPressed: _addGalleryMulti,
                         icon: const Icon(Icons.photo_library),
-                        label: const Text('Gallery'),
+                        label: const Text('Gallery (multi)'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: () => _addShot(camera: true),
+                        onPressed: _addCameraShot,
                         icon: const Icon(Icons.camera_alt),
                         label: const Text('Camera'),
                       ),

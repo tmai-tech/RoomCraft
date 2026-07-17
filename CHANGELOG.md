@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+35 (2026-07-17)
+
+### Feedback form multi-image select
+- Gallery on Send feedback uses **pick multi image** (up to 5) so testers can attach room inputs + wrong plan in one go.
+- Camera still adds one shot at a time.
+- Version **+35**.
+
 ## 1.0.0-beta.1+34 (2026-07-16)
 
 ### Labeled 4-wall clean path (no bulk scatter)
