@@ -266,35 +266,6 @@ class PhotoTrueLayout {
       notes.add('Seeded TABLE on ${side.name} (+43)');
     }
 
-    // +44: chair next to desk for gold-plan density when inventory/vision has chair
-    final hasChairHint = furnHints.any((h) => h.type == FurnitureType.chair) ||
-        keepOther.any((f) => f.type == FurnitureType.chair) ||
-        input.furniture.any((f) => f.type == FurnitureType.chair);
-    WallFurnitureHint? tableHint;
-    for (final h in furnHints) {
-      if (h.type == FurnitureType.table) {
-        tableHint = h;
-        break;
-      }
-    }
-    if (needChair && !hasChairHint && tableHint != null) {
-      final side = tableHint.wall ?? WallSide.south;
-      final wl = side.lengthFt(w, l);
-      final tableFrom = tableHint.t * wl;
-      furnHints.add(WallFurnitureHint.fromLeft(
-        type: FurnitureType.chair,
-        wall: side,
-        fromLeftFt: (tableFrom + 1.2).clamp(0.5, wl - 1.5).toDouble(),
-        depthFt: 2.4,
-        widthFt: 1.8,
-        lengthFt: 1.8,
-        wallLengthFt: wl,
-        confidence: 0.85,
-        evidence: 'photo-true chair at desk (+44)',
-      ));
-      notes.add('Seeded CHAIR at desk on ${side.name} (+44)');
-    }
-
     // Compose wall-anchored pieces
     final composed = WallRelativeComposer.compose(
       widthFt: w,
@@ -311,6 +282,32 @@ class PhotoTrueLayout {
       ...composed.furniture,
       for (final f in keepOther) _hugNearestWall(_normalizeGeneric(f, w, l), w, l),
     ];
+
+    // +44: place chair in free space next to desk after compose (more reliable)
+    final hasChairAlready =
+        mergedFurniture.any((f) => f.type == FurnitureType.chair) ||
+            input.furniture.any((f) => f.type == FurnitureType.chair);
+    ScanFurnitureHint? tablePiece;
+    for (final f in mergedFurniture) {
+      if (f.type == FurnitureType.table) {
+        tablePiece = f;
+        break;
+      }
+    }
+    if (needChair && !hasChairAlready && tablePiece != null) {
+      final t = tablePiece;
+      final cx = (t.posFt.dx + 2.2).clamp(1.0, w - 1.0);
+      final cy = (t.posFt.dy + 2.0).clamp(1.0, l - 1.0);
+      mergedFurniture.add(ScanFurnitureHint(
+        type: FurnitureType.chair,
+        posFt: Offset(cx, cy),
+        widthFt: 1.8,
+        lengthFt: 1.8,
+        rotationRad: 0,
+        included: true,
+      ));
+      notes.add('Seeded CHAIR near desk (+44)');
+    }
 
     // Dedupe majors (allow multiple chairs)
     final seen = <FurnitureType>{};
