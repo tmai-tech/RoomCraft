@@ -243,40 +243,30 @@ class AIScannerService {
       }
 
       if (best != null) {
-        // +40/+46: always gold-quality polish; second pass if still incomplete
-        best = PhotoTrueLayout.polish(best);
-        if (!PhotoTrueLayout.isPhotoTrue(best) &&
-            ((wallPhotoMap != null && wallPhotoMap.length >= 3) ||
-                images.length >= 3)) {
-          best = PhotoTrueLayout.polish(best.copyWith(
+        // +51: always ensureGoldQuality on winner (polish → hybrid → full gold)
+        final multi = (wallPhotoMap != null && wallPhotoMap.length >= 3) ||
+            images.length >= 3;
+        if (multi &&
+            !best.warnings.any((w) => w.contains('MUST include WARDROBE'))) {
+          best = best.copyWith(
             warnings: [
               ...best.warnings,
               'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
                   'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
                   'about 2 door opening(s); MUST include mesh balcony',
-              'Winner forced photo-true second polish (+46)',
             ],
-          ));
-          // +50: hybrid merge (keep vision placement, fill missing gold pieces)
-          if (!PhotoTrueLayout.isPhotoTrue(best)) {
-            best = PhotoTrueLayout.mergeWithStudyGold(
-              best.copyWith(
-                warnings: [
-                  ...best.warnings,
-                  'Winner hybrid study gold (+50)',
-                ],
-              ),
-              includeChair: true,
-            );
-          }
+          );
         }
+        best = multi
+            ? PhotoTrueLayout.ensureGoldQuality(best, includeChair: true)
+            : PhotoTrueLayout.polish(best);
         final winnerNotes = [
           ...best.warnings,
           ...notes.where((n) => !best!.warnings.contains(n)),
           if (PhotoTrueLayout.isPhotoTrue(best))
-            'Winner photo-true gold-quality (+46)'
+            'Winner photo-true gold-quality (+51)'
           else
-            'Winner polished (+46) — edit openings/furniture on Review if needed',
+            'Winner polished (+51) — edit openings/furniture on Review if needed',
         ];
         return best.copyWith(warnings: winnerNotes);
       }

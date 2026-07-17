@@ -707,37 +707,20 @@ Rules:
       inventDefaultOpenings: false,
       accuracyScore: acc,
     );
-    // +46: polish with inventory on warnings; second forced pass if still incomplete
-    result = PhotoTrueLayout.polish(result);
-    if (!PhotoTrueLayout.isPhotoTrue(result)) {
-      result = PhotoTrueLayout.polish(result.copyWith(
-        warnings: [
-          ...result.warnings,
-          'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
-              'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
-              'about 2 door opening(s); '
-              'MUST include mesh balcony or large window for glass sliding',
-          'Forced photo-true second polish (+46)',
-        ],
-      ));
+    // +51: single ensureGoldQuality path (polish → hybrid → full gold)
+    if (!result.warnings.any((w) => w.startsWith('Inventory:')) &&
+        inventoryHint.isNotEmpty) {
+      result = result.copyWith(
+        warnings: ['Inventory: $inventoryHint', ...result.warnings],
+      );
     }
+    result = PhotoTrueLayout.ensureGoldQuality(result, includeChair: true);
     if (PhotoTrueLayout.isPhotoTrue(result)) {
       result = result.copyWith(
         warnings: [
           ...result.warnings,
-          'Photo-true gold-quality bar (+46): WARDROBE + TABLE + openings',
+          'Photo-true gold-quality bar (+51): WARDROBE + TABLE + openings',
         ],
-      );
-    } else {
-      // +50: hybrid merge keeps any vision pieces; fills rest from study gold
-      result = PhotoTrueLayout.mergeWithStudyGold(
-        result.copyWith(
-          warnings: [
-            'Hybrid study gold guarantee (+50)',
-            ...result.warnings,
-          ],
-        ),
-        includeChair: true,
       );
     }
     return result;

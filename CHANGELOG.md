@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+51 (2026-07-17)
+
+### Unified ensureGoldQuality path
+- Single entry **ensureGoldQuality**: polish → hybrid merge → full study gold until photo-true.
+- Wired into labeled multi-wall scan, winner backend, and Open editor.
+- Vision-preserved wardrobe hybrid score raised to **82%** (closer to trusted gold plan).
+- Version **+51**.
+
 ## 1.0.0-beta.1+50 (2026-07-17)
 
 ### Hybrid vision + study gold merge

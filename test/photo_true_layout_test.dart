@@ -161,6 +161,24 @@ void main() {
     );
   });
 
+  test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
+    final empty = AccurateScan.enforce(
+      widthFt: 18,
+      lengthFt: 16,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.2,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(empty);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.74));
+  });
+
   test('+50 merge keeps east wardrobe and fills openings', () {
     final partial = AccurateScan.enforce(
       widthFt: 18,
