@@ -805,6 +805,60 @@ void main() {
     expect(mesh.lengthFt, greaterThanOrEqualTo(8.0));
   });
 
+  test('+73 gold room floor rescales furniture and openings', () {
+    // 12×10.5 with door on east edge and wardrobe mid-south — must scale with room
+    final thin = AccurateScan.enforce(
+      widthFt: 12,
+      lengthFt: 10.5,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(12, 3),
+          endFt: Offset(12, 6),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(6, 1.2),
+          widthFt: 7,
+          lengthFt: 1.5,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(2, 7),
+          widthFt: 3.5,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(thin);
+    expect(out.roomWidthFt, greaterThanOrEqualTo(20));
+    expect(out.roomLengthFt, greaterThanOrEqualTo(17));
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    // Openings should sit on perimeter of NEW room (not float at x=12)
+    final opens = out.walls.where((w) =>
+        w.type == StrokeType.door ||
+        w.type == StrokeType.window ||
+        w.type == StrokeType.balcony);
+    for (final o in opens) {
+      final midX = (o.startFt.dx + o.endFt.dx) / 2;
+      final midY = (o.startFt.dy + o.endFt.dy) / 2;
+      final onEdge = midX < 0.6 ||
+          midX > out.roomWidthFt - 0.6 ||
+          midY < 0.6 ||
+          midY > out.roomLengthFt - 0.6;
+      expect(onEdge, isTrue, reason: 'opening mid ($midX,$midY) not on wall');
+    }
+  });
+
   test('+72 gold orientation requires full-wall wardrobe span', () {
     // Correct walls but short wardrobe → not gold orientation (88% bar)
     final short = AccurateScan.enforce(

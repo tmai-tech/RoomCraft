@@ -502,6 +502,10 @@ class PhotoTrueLayout {
   }
 
   /// Expand study rooms toward gold-plan density (feedback 12×10.5 → ~20×17).
+  ///
+  /// +73: must **rescale** furniture/openings with the room. Prior code only
+  /// changed roomWidth/Length, leaving doors floating mid-plan and wardrobe
+  /// off-center — opposite of gold-plan layout quality.
   static ScanResult _ensureGoldRoomSize(ScanResult input) {
     final invBlob = input.warnings.join(' ');
     final hasStudyInv = invBlob.contains('MUST include WARDROBE') ||
@@ -526,16 +530,20 @@ class PhotoTrueLayout {
         (sized.lengthFt - l0).abs() < 0.05) {
       return input;
     }
-    return input.copyWith(
-      roomWidthFt: sized.widthFt,
-      roomLengthFt: sized.lengthFt,
-      warnings: [
-        ...input.warnings,
+    // Uniform scale of geometry into the denser gold room
+    final scaled = AutoScale.rescaleResult(
+      input.copyWith(roomWidthFt: w0, roomLengthFt: l0),
+      newWidthFt: sized.widthFt,
+      newLengthFt: sized.lengthFt,
+      extraNotes: [
         ...sized.notes,
-        'ensureGoldQuality: gold room floor (+53) '
+        'ensureGoldQuality: gold room floor rescale (+73) '
+            '${w0.toStringAsFixed(0)}×${l0.toStringAsFixed(0)} → '
             '${sized.widthFt.toStringAsFixed(0)}×${sized.lengthFt.toStringAsFixed(0)}',
       ],
+      accuracyScore: input.accuracyScore,
     );
+    return scaled;
   }
 
   /// Deterministic study-room gold layout (photo-true inventory only — no bed/sofa/TV).
