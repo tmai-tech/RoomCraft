@@ -266,21 +266,29 @@ class PhotoTrueLayout {
 
   /// Wall roles for study gold (vision-driven when available).
   ///
-  /// +55 gold geometry (feedback 32ffdc65 manual plan):
-  /// - long wardrobe on longest storage wall
-  /// - mesh/glass on wall adjacent to wardrobe
-  /// - two walk-through doors on opposite entry wall (often same wall)
-  /// - desk near mesh wall
+  /// +62 gold geometry (feedback 32ffdc65 manual plan ~20×17):
+  /// - long wardrobe on south (bottom of plan) when room is wide
+  /// - mesh/glass on east (right)
+  /// - doors on west + north (not through wardrobe)
+  /// - desk near west / NW corner (work area in gold)
   static StudyWallRoles defaultStudyWallRoles(double w, double l) {
-    final wardrobe = w >= l ? WallSide.north : WallSide.west;
-    final mesh = _adjacentClockwise(wardrobe);
-    final entry = _opposite(wardrobe);
-    return StudyWallRoles(
-      wardrobe: wardrobe,
-      desk: mesh, // desk near mesh/wardrobe corner (study photos)
-      mesh: mesh,
-      doorPrimary: entry,
-      doorSecondary: entry, // dual doors on entry wall (gold hallway style)
+    if (w >= l) {
+      // Match gold plan orientation: wardrobe south, mesh east, doors W+N
+      return const StudyWallRoles(
+        wardrobe: WallSide.south,
+        desk: WallSide.west,
+        mesh: WallSide.east,
+        doorPrimary: WallSide.west,
+        doorSecondary: WallSide.north,
+      );
+    }
+    // Deep room: wardrobe on long west wall
+    return const StudyWallRoles(
+      wardrobe: WallSide.west,
+      desk: WallSide.south,
+      mesh: WallSide.north,
+      doorPrimary: WallSide.south,
+      doorSecondary: WallSide.east,
     );
   }
 
@@ -493,11 +501,13 @@ class PhotoTrueLayout {
     ];
 
     // +56: fromLeftFt is CENTER along wall (WallFurnitureHint contract).
-    // +57: desk at wardrobe corner end of mesh wall (free of mesh span).
+    // +62: desk on west (gold NW work area) or near wardrobe corner if same as mesh.
     final dwl = deskWall.lengthFt(w, l);
     final deskCenter = deskWall == meshWall
-        ? math.max(dwl * 0.72, dwl - 3.0) // high fromLeft = wardrobe corner after mesh
-        : dwl * 0.42;
+        ? math.max(dwl * 0.72, dwl - 3.0)
+        : (deskWall == WallSide.west
+            ? math.max(dwl * 0.65, dwl - 3.5) // toward north (gold NW)
+            : dwl * 0.42);
     final furniture = <WallFurnitureHint>[
       WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,

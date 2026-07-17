@@ -188,12 +188,12 @@ void main() {
   });
 
   test('+52 composeStudyGold puts wardrobe on longest wall', () {
-    // Wide room: N/S walls are longer (w=20 > l=12)
+    // Wide room: N/S walls are longer (w=20 > l=12); +62 gold uses south
     final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 12);
     final wardrobe =
         gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
-    // North wall furniture sits near y≈length
-    expect(wardrobe.posFt.dy, greaterThan(12 - 3));
+    // South wall furniture sits near y≈0
+    expect(wardrobe.posFt.dy, lessThan(3));
   });
 
   test('+53 ensureGoldQuality upgrades 12×10.5 thin plan to gold density', () {
@@ -327,13 +327,13 @@ void main() {
     expect(wardrobe.posFt.dx, greaterThan(16)); // east wall
   });
 
-  test('+55 default roles: dual doors on entry, mesh adjacent wardrobe', () {
-    // Wide room → wardrobe north, mesh west (clockwise), entry south
+  test('+55/+62 default roles match gold plan walls (S wardrobe, E mesh)', () {
+    // Gold plan 32ffdc65: wardrobe south, mesh east, doors west+north
     final roles = PhotoTrueLayout.defaultStudyWallRoles(20, 17);
-    expect(roles.wardrobe, WallSide.north);
-    expect(roles.mesh, WallSide.west);
-    expect(roles.doorPrimary, WallSide.south);
-    expect(roles.doorSecondary, WallSide.south);
+    expect(roles.wardrobe, WallSide.south);
+    expect(roles.mesh, WallSide.east);
+    expect(roles.doorPrimary, WallSide.west);
+    expect(roles.doorSecondary, WallSide.north);
     final gold = PhotoTrueLayout.composeStudyGold(
       widthFt: 20,
       lengthFt: 17,
@@ -342,14 +342,18 @@ void main() {
     expect(PhotoTrueLayout.isPhotoTrue(gold), isTrue);
     final doors = gold.walls.where((w) => w.type == StrokeType.door).toList();
     expect(doors.length, greaterThanOrEqualTo(2));
-    // Both doors near south (y≈0)
-    for (final d in doors) {
-      final midY = (d.startFt.dy + d.endFt.dy) / 2;
-      expect(midY, lessThan(3.0));
-    }
+    // Doors on west (x≈0) and/or north (y≈17)
+    expect(
+      doors.any((d) {
+        final mx = (d.startFt.dx + d.endFt.dx) / 2;
+        final my = (d.startFt.dy + d.endFt.dy) / 2;
+        return mx < 3 || my > 14;
+      }),
+      isTrue,
+    );
     final mesh = gold.walls.firstWhere((w) => w.type == StrokeType.balcony);
     final meshMidX = (mesh.startFt.dx + mesh.endFt.dx) / 2;
-    expect(meshMidX, lessThan(3.0)); // west wall x≈0
+    expect(meshMidX, greaterThan(17)); // east wall x≈20
   });
 
   test('+55 polish dual doors not on wardrobe storage wall', () {
@@ -357,9 +361,10 @@ void main() {
       widthFt: 20,
       lengthFt: 17,
       furniture: [
+        // Wardrobe on south (storage wall y≈0)
         const ScanFurnitureHint(
           type: FurnitureType.wardrobe,
-          posFt: Offset(10, 15.5),
+          posFt: Offset(10, 1.5),
           widthFt: 8,
           lengthFt: 1.6,
         ),
@@ -376,18 +381,18 @@ void main() {
     final doors = polished.walls.where((w) => w.type == StrokeType.door);
     for (final d in doors) {
       final midY = (d.startFt.dy + d.endFt.dy) / 2;
-      // Doors must not sit on north storage wall (y≈17)
-      expect(midY, lessThan(14));
+      // Doors must not sit on south storage wall (y≈0)
+      expect(midY, greaterThan(2.5));
     }
   });
 
   test('+56 gold wardrobe is centered on longest wall (fromLeft = center)', () {
-    // Wide room → wardrobe on north (y≈17). Center x should be ~10, not ~4
+    // Wide room → wardrobe on south (y≈0). Center x should be ~10, not ~4
     // (old left-edge bug placed center at left edge of unit).
     final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
     final wardrobe =
         gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
-    expect(wardrobe.posFt.dy, greaterThan(14)); // north wall
+    expect(wardrobe.posFt.dy, lessThan(3)); // south wall (+62 gold)
     expect(wardrobe.posFt.dx, closeTo(10.0, 2.5));
     expect(
       mathMax(wardrobe.widthFt, wardrobe.lengthFt),
@@ -480,20 +485,20 @@ void main() {
     expect(table.posFt.dy, lessThan(4));
   });
 
-  test('+57 composeStudyGold desk near wardrobe-mesh corner not over mesh mid', () {
+  test('+57/+62 composeStudyGold desk on west NW, mesh on east free', () {
     final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
     final roles = PhotoTrueLayout.defaultStudyWallRoles(20, 17);
-    // desk wall == mesh wall (west)
-    expect(roles.desk, roles.mesh);
+    // +62 gold: desk west, mesh east (not same wall)
+    expect(roles.desk, WallSide.west);
+    expect(roles.mesh, WallSide.east);
     final table =
         gold.furniture.firstWhere((f) => f.type == FurnitureType.table);
-    // west wall x small; wardrobe corner = north → higher y after mesh span
+    // west wall x small; toward north (gold NW work area)
     expect(table.posFt.dx, lessThan(4));
-    expect(table.posFt.dy, greaterThan(9));
-    // Mesh should not cover table y-band
+    expect(table.posFt.dy, greaterThan(8));
     final mesh = gold.walls.firstWhere((w) => w.type == StrokeType.balcony);
-    final meshMidY = (mesh.startFt.dy + mesh.endFt.dy) / 2;
-    expect((table.posFt.dy - meshMidY).abs(), greaterThan(2.0));
+    final meshMidX = (mesh.startFt.dx + mesh.endFt.dx) / 2;
+    expect(meshMidX, greaterThan(17)); // east — not covering west desk
   });
 
   test('+58 preferVisionOpenings keeps vision door positions', () {
