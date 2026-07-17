@@ -794,10 +794,15 @@ Room ${roomWidthFt.toStringAsFixed(1)} × ${roomLengthFt.toStringAsFixed(1)} ft.
 Inventory: $inventoryHint
 Place ONLY these missing pieces (each on a wall): ${missing.map((t) => t.name.toUpperCase()).join(", ")}.
 
-Return ONLY:
-{"furniture":[{"type":"WARDROBE","wall":"west","fromLeft":1.0,"depth":1.2,"dim":{"w":6,"l":2},"confidence":0.8,"evidence":"..."}]}
+Study gold defaults when photo wall is unclear (wide rooms):
+- WARDROBE → wall south, fromLeft ≈ roomWidth/2 (center), dim.w ≥ 6.5
+- TABLE → wall west, fromLeft toward north end, dim ≈ 4×2
+- Do not put doors on the wardrobe wall.
 
-Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unless listed; empty array not allowed if list non-empty.
+Return ONLY:
+{"furniture":[{"type":"WARDROBE","wall":"south","fromLeft":${(roomWidthFt / 2).toStringAsFixed(1)},"depth":1.6,"dim":{"w":8,"l":1.6},"confidence":0.8,"evidence":"..."}]}
+
+Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required; no BED/SOFA/TV unless listed; empty array not allowed if list non-empty.
 ''',
           temperature: 0.0,
         );

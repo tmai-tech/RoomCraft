@@ -142,47 +142,55 @@ Wall names (pick one consistent orientation for the whole plan):
 fromLeft = feet from the LEFT corner while facing that wall from inside the room.
 depth = how far the furniture center sits into the room from that wall face.
 
-Return ONLY JSON:
+Return ONLY JSON (example matches study gold orientation when photos agree):
 {
-  "roomWidth": 12.0,
-  "roomLength": 14.0,
+  "roomWidth": 20.0,
+  "roomLength": 17.0,
   "sizeConfidence": 0.65,
   "openings": [
     {
       "type": "door",
-      "wall": "south",
-      "fromLeft": 1.0,
+      "wall": "west",
+      "fromLeft": 1.2,
       "width": 2.8,
       "confidence": 0.9,
-      "evidence": "entry door"
+      "evidence": "walk-through door west"
+    },
+    {
+      "type": "door",
+      "wall": "north",
+      "fromLeft": 2.0,
+      "width": 2.8,
+      "confidence": 0.9,
+      "evidence": "walk-through door north"
     },
     {
       "type": "balcony",
       "wall": "east",
-      "fromLeft": 1.0,
-      "width": 7.0,
+      "fromLeft": 2.0,
+      "width": 8.0,
       "confidence": 0.85,
-      "evidence": "full-height mesh sliding doors"
+      "evidence": "full-height mesh sliding doors east"
     }
   ],
   "furniture": [
     {
       "type": "WARDROBE",
-      "wall": "north",
-      "fromLeft": 4.0,
-      "depth": 1.2,
-      "dim": {"w": 8.0, "l": 2.0},
+      "wall": "south",
+      "fromLeft": 10.0,
+      "depth": 1.6,
+      "dim": {"w": 11.0, "l": 1.6},
       "confidence": 0.9,
-      "evidence": "long sliding wardrobe along wall"
+      "evidence": "long sliding wardrobe along south wall"
     },
     {
       "type": "TABLE",
-      "wall": "east",
-      "fromLeft": 3.0,
-      "depth": 1.5,
+      "wall": "west",
+      "fromLeft": 12.0,
+      "depth": 1.6,
       "dim": {"w": 4.0, "l": 2.0},
       "confidence": 0.85,
-      "evidence": "desk with computers"
+      "evidence": "desk with computers near NW"
     }
   ]
 }
@@ -196,11 +204,12 @@ Rules:
 6. confidence ≥ 0.55 when clearly visible.
 7. Rectangular outer bounds only.
 8. NEVER invent bed/sofa/TV if not in photos.
-9. Put the long wardrobe on ONE wall (fromLeft near 0 if it fills most of the wall; dim.w ≈ 55–90% of that wall).
-10. Desk against a wall near monitors / mesh — often adjacent to wardrobe corner.
+9. Put the long wardrobe on ONE wall; fromLeft = CENTER of piece; dim.w ≈ 55–90% of that wall for sliding units.
+10. Desk against a wall near monitors / mesh — often west wall near north (study gold).
 11. Keep relative positions consistent across frames (same corner relations).
-12. Two walk-through doors on the same wall → two door openings (not wardrobe shutters).
-13. Full-height mesh/glass next to wardrobe → balcony opening on that wall, wide width.
+12. Two walk-through doors → two door openings on walls where frames appear (not wardrobe shutters).
+13. Full-height mesh/glass → balcony, wide width, often on east when wardrobe is south.
+14. Prefer photo truth over this example; example is only the study gold template when photos are ambiguous.
 ''';
 
   static String architecture(double w, double l) => '''
@@ -208,18 +217,35 @@ Survey this room for a measured floor plan.
 
 ROOM SIZE FIXED: roomWidth = $w ft, roomLength = $l ft.
 
-Return openings with wall + fromLeft (feet from left while facing wall):
+Return openings with wall + fromLeft (LEFT edge while facing wall).
+Study gold example when photos agree (doors west+north, mesh east):
 {
   "roomWidth": $w,
   "roomLength": $l,
   "openings": [
     {
       "type": "door",
-      "wall": "south",
-      "fromLeft": 1.0,
+      "wall": "west",
+      "fromLeft": 1.2,
       "width": 2.8,
       "confidence": 0.9,
-      "evidence": "entry door"
+      "evidence": "walk-through door"
+    },
+    {
+      "type": "door",
+      "wall": "north",
+      "fromLeft": 2.0,
+      "width": 2.8,
+      "confidence": 0.9,
+      "evidence": "second walk-through door"
+    },
+    {
+      "type": "balcony",
+      "wall": "east",
+      "fromLeft": 2.0,
+      "width": 8.0,
+      "confidence": 0.9,
+      "evidence": "mesh/glass sliding"
     }
   ]
 }
@@ -229,6 +255,7 @@ Rules:
 2. wall: south|north|east|west. fromLeft + width in feet.
 3. Only openings you can see. Empty [] is valid.
 4. confidence ≥ 0.55. No freestanding furniture in this pass.
+5. Prefer photo walls; example is study gold when ambiguous.
 ''';
 
   static String furniture(double w, double l) => '''
@@ -239,25 +266,25 @@ ROOM SIZE FIXED: roomWidth = $w ft, roomLength = $l ft.
 Use ALL frames. Place each piece ON A WALL (wall + fromLeft + depth).
 fromLeft = feet from left corner while facing that wall from inside.
 
-Return ONLY JSON:
+Return ONLY JSON (study gold example when photos agree: wardrobe south, desk west):
 {
   "roomWidth": $w,
   "roomLength": $l,
   "furniture": [
     {
       "type": "WARDROBE",
-      "wall": "north",
-      "fromLeft": 4.0,
-      "depth": 1.2,
-      "dim": {"w": 8.0, "l": 2.0},
+      "wall": "south",
+      "fromLeft": ${w / 2},
+      "depth": 1.6,
+      "dim": {"w": 8.0, "l": 1.6},
       "confidence": 0.9,
       "evidence": "sliding wardrobe full wall"
     },
     {
       "type": "TABLE",
-      "wall": "east",
-      "fromLeft": 3.0,
-      "depth": 1.5,
+      "wall": "west",
+      "fromLeft": ${l * 0.65},
+      "depth": 1.6,
       "dim": {"w": 4.0, "l": 2.0},
       "confidence": 0.85,
       "evidence": "desk with monitors"
@@ -268,9 +295,9 @@ Return ONLY JSON:
 Rules:
 1. List ALL clearly visible major pieces. Empty [] ONLY if none visible.
 2. Types: $furnitureTypes (desk→TABLE, closet→WARDROBE, couch→SOFA).
-3. EVERY item MUST have wall (south|north|east|west), fromLeft, depth, dim.
+3. EVERY item MUST have wall (south|north|east|west), fromLeft (CENTER), depth, dim.
 4. confidence ≥ 0.55 when clearly visible.
-5. Do not invent furniture not in the photos.
+5. Do not invent furniture not in the photos. Prefer photo walls over example.
 ''';
 
   /// Single-pass locked-size prompt (Gemini / simple path).
@@ -285,25 +312,29 @@ ROOM SIZE IS FIXED (do not change):
 List every clearly visible major furniture piece and clear doors/windows.
 Do NOT invent bed/sofa/TV if not in photos. Mirror ≠ wardrobe. Desk monitors ≠ TV_UNIT.
 
-Return ONLY JSON (no markdown):
+Return ONLY JSON (no markdown). Example uses study gold walls when photos agree
+(wide room: wardrobe south, mesh east, desk west, doors west+north):
 {
   "roomWidth": $roomWidthFt,
   "roomLength": $roomLengthFt,
   "openings": [
-    {"type": "door", "wall": "south", "fromLeft": 1.0, "width": 2.8, "confidence": 0.85, "evidence": "entry door"}
+    {"type": "door", "wall": "west", "fromLeft": 1.2, "width": 2.8, "confidence": 0.85, "evidence": "entry door"},
+    {"type": "door", "wall": "north", "fromLeft": 2.0, "width": 2.8, "confidence": 0.85, "evidence": "second door"},
+    {"type": "balcony", "wall": "east", "fromLeft": 2.0, "width": 8.0, "confidence": 0.85, "evidence": "mesh sliding"}
   ],
   "furniture": [
-    {"type": "WARDROBE", "wall": "west", "fromLeft": 0.5, "depth": 1.2, "dim": {"w": 6.0, "l": 2.0}, "confidence": 0.9, "evidence": "sliding wardrobe"},
-    {"type": "TABLE", "wall": "south", "fromLeft": 3.0, "depth": 1.5, "dim": {"w": 4.0, "l": 2.0}, "confidence": 0.85, "evidence": "desk"}
+    {"type": "WARDROBE", "wall": "south", "fromLeft": ${roomWidthFt / 2}, "depth": 1.6, "dim": {"w": 8.0, "l": 1.6}, "confidence": 0.9, "evidence": "sliding wardrobe"},
+    {"type": "TABLE", "wall": "west", "fromLeft": ${roomLengthFt * 0.65}, "depth": 1.6, "dim": {"w": 4.0, "l": 2.0}, "confidence": 0.85, "evidence": "desk"}
   ]
 }
 
 Rules:
 - ALWAYS keep roomWidth=$roomWidthFt and roomLength=$roomLengthFt.
 - Types only: $furnitureTypes.
-- EVERY furniture item: wall (north|south|east|west) + fromLeft + depth + dim.
-- EVERY opening: wall + fromLeft + width. Types: door | window | balcony.
+- EVERY furniture item: wall (north|south|east|west) + fromLeft (CENTER along wall) + depth + dim.
+- EVERY opening: wall + fromLeft (LEFT edge) + width. Types: door | window | balcony.
 - confidence ≥ 0.55 when clearly visible.
 - Empty furniture [] only if the room has no freestanding furniture.
+- Prefer photo wall assignment; study gold example only when ambiguous.
 ''';
 }
