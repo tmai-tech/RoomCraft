@@ -250,17 +250,33 @@ class ScanRefine {
       final cl = catalog.defaultLengthFt;
       // Soft size fix only for absurd values — keep vision sizes when plausible
       // (wardrobe spans and desk depths matter for matching photos).
-      // +38: do not crush long wardrobes to 4 ft via wrong catalog entry.
-      if (fw < 0.6 || fl < 0.6 || fw > w * 0.95 || fl > l * 0.95) {
+      // +38/70: do not crush long wardrobes to catalog via fw>roomW checks.
+      if (raw.type == FurnitureType.wardrobe) {
+        // +71: same full-wall policy as AccurateScan — along may exceed short side
+        final maxAlong = math.max(w, l) * 0.92;
+        var along = math.max(fw, fl);
+        var deep = math.min(fw, fl);
+        if (fw < 0.6 || fl < 0.6) {
+          along = cw;
+          deep = cl;
+        } else {
+          if (along > maxAlong) along = maxAlong;
+          if (along < 4.0 || deep > 3.0 || deep < 0.9) {
+            if (along < 4.0) along = cw;
+            if (deep > 3.0 || deep < 0.9) deep = 1.5;
+          }
+          along = along.clamp(4.0, maxAlong);
+        }
+        if (raw.widthFt >= raw.lengthFt) {
+          fw = along;
+          fl = deep;
+        } else {
+          fw = deep;
+          fl = along;
+        }
+      } else if (fw < 0.6 || fl < 0.6 || fw > w * 0.95 || fl > l * 0.95) {
         fw = cw;
         fl = cl;
-      } else if (raw.type == FurnitureType.wardrobe) {
-        final along = math.max(fw, fl);
-        final deep = math.min(fw, fl);
-        if (along < 4.0 || deep > 3.0 || deep < 0.9) {
-          fw = cw;
-          fl = cl;
-        }
       } else if (fw > cw * 3.0 ||
           fl > cl * 3.0 ||
           fw < cw * 0.25 ||

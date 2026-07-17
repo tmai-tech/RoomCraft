@@ -98,4 +98,27 @@ void main() {
     expect(door.lengthFt, lessThan(5.0));
     expect(door.lengthFt, greaterThan(1.9));
   });
+
+  test('+71 refine keeps gold full-wall wardrobe span', () {
+    // Old refine crushed fw > w*0.95 or fw > short side back to catalog ~6.5
+    final input = ScanResult(
+      roomWidthFt: 20,
+      roomLengthFt: 17,
+      walls: const [],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 1.5),
+          widthFt: 14.4,
+          lengthFt: 1.6,
+        ),
+      ],
+    );
+    final out = ScanRefine.refine(input);
+    final w =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    final along = w.widthFt > w.lengthFt ? w.widthFt : w.lengthFt;
+    expect(along, greaterThanOrEqualTo(12.0));
+    expect(w.posFt.dy, lessThan(4.0)); // still south
+  });
 }
