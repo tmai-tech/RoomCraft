@@ -864,6 +864,74 @@ void main() {
     expect(span, lessThanOrEqualTo(12.1));
   });
 
+  test('+80 hybrid grows short vision wardrobe to full-wall gold span', () {
+    final partial = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0, 2),
+          endFt: Offset(0, 5),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 4),
+          endFt: Offset(20, 14),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 0.8),
+          widthFt: 5.0, // short — must grow on south
+          lengthFt: 1.5,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(1.5, 12),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.35,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final merged = PhotoTrueLayout.mergeWithStudyGold(partial);
+    expect(PhotoTrueLayout.isPhotoTrue(merged), isTrue);
+    final wardrobe =
+        merged.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, lessThan(4));
+    final along = wardrobe.widthFt > wardrobe.lengthFt
+        ? wardrobe.widthFt
+        : wardrobe.lengthFt;
+    expect(along, greaterThanOrEqualTo(12)); // ~72% of 20ft wall
+  });
+
+  test('+80 empty inventory study ensureGoldQuality is gold-oriented', () {
+    final empty = AccurateScan.enforce(
+      widthFt: 14,
+      lengthFt: 12,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.2,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(empty);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(out), isTrue);
+    expect(out.roomWidthFt, greaterThanOrEqualTo(18));
+  });
+
   test('+59 preferVisionFurniture keeps east wardrobe through full gold', () {
     final vision = AccurateScan.enforce(
       widthFt: 20,

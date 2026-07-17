@@ -838,8 +838,38 @@ class PhotoTrueLayout {
         continue;
       }
       if (f.type == FurnitureType.wardrobe) {
-        // +54: keep vision wall even if short — polish grows length on same wall
-        furniture.add(f);
+        // +54/80: keep vision wall; grow short unit to gold full-wall span now
+        // (do not wait for polish — hybrid early-exit needed dense span)
+        final side = _nearestWall(f.posFt, w, l);
+        final wl = side.lengthFt(w, l);
+        var along = math.max(f.widthFt, f.lengthFt);
+        if (along < wl * 0.55) along = math.max(7.0, wl * 0.72);
+        along = along.clamp(6.5, wl * 0.88);
+        final deep = 1.6;
+        final center = _centerFromLeftOnWall(f.posFt, side, w, l)
+            .clamp(along / 2 + 0.3, wl - along / 2 - 0.3)
+            .toDouble();
+        final hint = WallFurnitureHint.fromLeft(
+          type: FurnitureType.wardrobe,
+          wall: side,
+          fromLeftFt: center,
+          depthFt: deep,
+          widthFt: along,
+          lengthFt: deep,
+          wallLengthFt: wl,
+          confidence: 0.93,
+          evidence: 'hybrid keep + grow wardrobe on ${side.name} (+80)',
+        );
+        final composed = WallRelativeComposer.compose(
+          widthFt: w,
+          lengthFt: l,
+          openings: const [],
+          furniture: [hint],
+          warnings: const [],
+        );
+        furniture.add(
+          composed.furniture.isNotEmpty ? composed.furniture.first : f,
+        );
         keptTypes.add(FurnitureType.wardrobe);
         continue;
       }

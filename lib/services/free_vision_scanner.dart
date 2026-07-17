@@ -294,16 +294,22 @@ class FreeVisionScanner {
         userWidthFt: userWidthFt,
         userLengthFt: userLengthFt,
       );
-      return AccurateScan.enforce(
+      // +80: empty fallback still runs gold path when inventory is study-like
+      var empty = AccurateScan.enforce(
         widthFt: size.widthFt,
         lengthFt: size.lengthFt,
         openings: const [],
         furniture: const [],
-        warnings: [...warnings, ...size.notes],
+        warnings: [
+          if (inventoryHint.isNotEmpty) 'Inventory: $inventoryHint',
+          ...warnings,
+          ...size.notes,
+        ],
         sourceLabel: 'Easy scan fallback — empty plan',
         inventDefaultOpenings: false,
         accuracyScore: size.confidence * 0.5,
       );
+      return PhotoTrueLayout.ensureGoldQuality(empty, includeChair: true);
     }
 
     // Strip invented types; seed MUST pieces inventory required but model omitted.

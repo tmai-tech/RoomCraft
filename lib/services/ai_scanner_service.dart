@@ -83,7 +83,8 @@ class AIScannerService {
       roomWidthFt: size.widthFt,
       roomLengthFt: size.lengthFt,
     );
-    return AccurateScan.enforce(
+    // +80: offline path must still hit gold quality bar (was enforce-only)
+    final enforced = AccurateScan.enforce(
       widthFt: size.widthFt,
       lengthFt: size.lengthFt,
       openings: raw.walls,
@@ -91,6 +92,7 @@ class AIScannerService {
       warnings: raw.warnings.where((w) => !w.startsWith('Exact room')).toList(),
       sourceLabel: 'Free accurate offline plan — no API key needed',
     );
+    return PhotoTrueLayout.ensureGoldQuality(enforced, includeChair: true);
   }
 
   /// Resolve dimensions once for all scan backends.
@@ -285,6 +287,7 @@ class AIScannerService {
       roomLengthFt: l,
     );
     if (offline.furniture.isEmpty && tryVision) {
+      // ensureGoldQuality already applied in scanRoomFree (+80)
       return offline.copyWith(
         warnings: [
           ...offline.warnings,
@@ -348,7 +351,8 @@ class AIScannerService {
       }
       try {
         final gemini = await _scanWithGemini(images, apiKey, w, l);
-        return AccurateScan.enforce(
+        // +80: Gemini-only mode skipped ensureGoldQuality (wall/easy already had it)
+        final enforced = AccurateScan.enforce(
           widthFt: w,
           lengthFt: l,
           openings: gemini.walls,
@@ -356,6 +360,7 @@ class AIScannerService {
           warnings: gemini.warnings,
           sourceLabel: 'Gemini scan — room size locked to your measurements',
         );
+        return PhotoTrueLayout.ensureGoldQuality(enforced, includeChair: true);
       } catch (e) {
         final free = await scanRoomFree(
           images,
