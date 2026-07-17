@@ -261,9 +261,10 @@ class FurnitureCatalog {
       label: 'Wardrobe',
       category: FurnitureCategory.storage,
       icon: Icons.door_sliding,
-      defaultWidthFt: 4.0,
-      defaultLengthFt: 2.0,
-      description: 'Closet / wardrobe',
+      // +38: default to wide sliding unit (study feedback / gold-plan style)
+      defaultWidthFt: 6.5,
+      defaultLengthFt: 1.5,
+      description: 'Closet / sliding wardrobe',
     ),
     FurnitureCatalogEntry(
       id: 'wardrobe_wide',
@@ -271,9 +272,9 @@ class FurnitureCatalog {
       label: 'Wide wardrobe',
       category: FurnitureCategory.storage,
       icon: Icons.door_sliding,
-      defaultWidthFt: 6.0,
-      defaultLengthFt: 2.0,
-      description: 'Large wardrobe',
+      defaultWidthFt: 6.7,
+      defaultLengthFt: 1.5,
+      description: 'Large sliding wardrobe',
     ),
     FurnitureCatalogEntry(
       id: 'dresser',
@@ -425,6 +426,23 @@ class FurnitureCatalog {
       orElse: () => all.first,
     );
   }
+
+  /// Prefer wide wardrobe when scan reports a long unit (+38).
+  static FurnitureCatalogEntry entryForSized(
+    FurnitureType type, {
+    double? widthFt,
+    double? lengthFt,
+  }) {
+    if (type == FurnitureType.wardrobe) {
+      final long = mathMax(widthFt ?? 0, lengthFt ?? 0);
+      if (long >= 5.5) {
+        return byId('wardrobe_wide') ?? entryFor(type);
+      }
+    }
+    return entryFor(type);
+  }
+
+  static double mathMax(double a, double b) => a > b ? a : b;
 
   static FurnitureCatalogEntry? byId(String id) {
     try {

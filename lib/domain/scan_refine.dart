@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../catalog/furniture_catalog.dart';
+import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
@@ -237,17 +238,32 @@ class ScanRefine {
 
     for (final raw in items) {
       if (!raw.included) continue;
-      final catalog = FurnitureCatalog.entryFor(raw.type);
+      final catalog = FurnitureCatalog.entryForSized(
+        raw.type,
+        widthFt: raw.widthFt,
+        lengthFt: raw.lengthFt,
+      );
       var fw = raw.widthFt;
       var fl = raw.lengthFt;
       final cw = catalog.defaultWidthFt;
       final cl = catalog.defaultLengthFt;
       // Soft size fix only for absurd values — keep vision sizes when plausible
       // (wardrobe spans and desk depths matter for matching photos).
+      // +38: do not crush long wardrobes to 4 ft via wrong catalog entry.
       if (fw < 0.6 || fl < 0.6 || fw > w * 0.95 || fl > l * 0.95) {
         fw = cw;
         fl = cl;
-      } else if (fw > cw * 3.0 || fl > cl * 3.0 || fw < cw * 0.25 || fl < cl * 0.25) {
+      } else if (raw.type == FurnitureType.wardrobe) {
+        final along = math.max(fw, fl);
+        final deep = math.min(fw, fl);
+        if (along < 4.0 || deep > 3.0 || deep < 0.9) {
+          fw = cw;
+          fl = cl;
+        }
+      } else if (fw > cw * 3.0 ||
+          fl > cl * 3.0 ||
+          fw < cw * 0.25 ||
+          fl < cl * 0.25) {
         fw = cw;
         fl = cl;
       }

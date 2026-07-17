@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+38 (2026-07-17)
+
+### Gold-plan furniture size: wardrobe scale + room floor
+- AutoScale WARDROBE prior **6.5 ft** (was 4.0 — shrank correct long sliding units).
+- Catalog default wardrobe **6.5×1.5**; size-aware `entryForSized` for wide units.
+- AccurateScan / ScanRefine no longer crush long wardrobes toward 4 ft.
+- Photo-true min room **14×12** when inventory requires wardrobe (auto-scale only; tape still wins).
+- Labeled multi-wall path applies min size before wall-by-wall place.
+- Version **+38**.
+
 ## 1.0.0-beta.1+37 (2026-07-17)
 
 ### Photo-true gold quality: keep wall detections + wall-anchored fill

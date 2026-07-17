@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../catalog/furniture_catalog.dart';
+import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 
@@ -177,7 +178,12 @@ class AccurateScan {
     for (final raw in input) {
       if (!raw.included) continue;
 
-      final catalog = FurnitureCatalog.entryFor(raw.type);
+      // +38: size-aware catalog (long wardrobe → wide entry, not 4×2 crush)
+      final catalog = FurnitureCatalog.entryForSized(
+        raw.type,
+        widthFt: raw.widthFt,
+        lengthFt: raw.lengthFt,
+      );
       // Keep scanned sizes when realistic; fall back to catalog defaults.
       var fw = raw.widthFt;
       var fl = raw.lengthFt;
@@ -185,10 +191,29 @@ class AccurateScan {
         fw = catalog.defaultWidthFt;
         fl = catalog.defaultLengthFt;
       } else {
-        // Soft clamp extreme AI sizes toward catalog (±50%)
+        // Soft clamp extreme AI sizes toward catalog
         final cw = catalog.defaultWidthFt;
         final cl = catalog.defaultLengthFt;
-        if (fw > cw * 2.5 || fl > cl * 2.5 || fw < cw * 0.35 || fl < cl * 0.35) {
+        // Wardrobe: allow long sliding units up to wall span (don't force 4 ft)
+        if (raw.type == FurnitureType.wardrobe) {
+          if (fw > roomW * 0.95 || fl > roomL * 0.95) {
+            fw = catalog.defaultWidthFt;
+            fl = catalog.defaultLengthFt;
+          } else if (math.max(fw, fl) < 4.0 && math.min(fw, fl) < 1.0) {
+            fw = catalog.defaultWidthFt;
+            fl = catalog.defaultLengthFt;
+          }
+          // Keep depth ~1.2–2.5 for wardrobes
+          final deep = math.min(fw, fl);
+          final along = math.max(fw, fl);
+          if (deep > 2.8 || deep < 1.0) {
+            fl = 1.5;
+            fw = along.clamp(4.0, math.min(roomW, roomL) * 0.85);
+          }
+        } else if (fw > cw * 2.5 ||
+            fl > cl * 2.5 ||
+            fw < cw * 0.35 ||
+            fl < cl * 0.35) {
           fw = cw;
           fl = cl;
         }

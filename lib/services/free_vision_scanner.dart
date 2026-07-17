@@ -566,15 +566,37 @@ Rules:
       warnings.add('Size-only pass failed: $e — using fallback scale');
     }
 
-    final size = AutoScale.resolve(
+    var size = AutoScale.resolve(
       userWidthFt: userWidthFt,
       userLengthFt: userLengthFt,
       visionWidthFt: visionW,
       visionLengthFt: visionL,
       visionSizeConfidence: visionConf,
       doorWidthsFt: doorWidths,
+      // Hint long wardrobe prior for scale when inventory requires it
+      furniture: inventoryHint.contains('MUST include WARDROBE')
+          ? [(type: 'WARDROBE', widthFt: 6.7, lengthFt: 1.5)]
+          : const [],
     );
     warnings.addAll(size.notes);
+
+    // +38: raise tiny AI rooms so wardrobe/doors aren't crushed
+    final minSize = AutoScale.ensurePhotoTrueMinSize(
+      widthFt: size.widthFt,
+      lengthFt: size.lengthFt,
+      inventoryHint: inventoryHint,
+      usedUserSize: size.usedUserSize,
+    );
+    if (minSize.notes.isNotEmpty) {
+      warnings.addAll(minSize.notes);
+      size = (
+        widthFt: minSize.widthFt,
+        lengthFt: minSize.lengthFt,
+        confidence: size.confidence,
+        notes: size.notes,
+        usedUserSize: size.usedUserSize,
+      );
+    }
 
     var wallPlan = await _orderedWallByWallScan(
       key: key,

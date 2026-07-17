@@ -31,13 +31,18 @@ class AutoScale {
   static const double fallbackLengthFt = 14.0;
 
   /// Furniture catalog priors used as secondary scale anchors (feet).
+  /// +38: WARDROBE 6.5 (sliding study units) — prior 4.0 shrank correct long wardrobes.
   static const Map<String, double> furnitureLongSideFt = {
     'BED': 6.5,
     'SOFA': 7.0,
     'TABLE': 4.0,
-    'WARDROBE': 4.0,
+    'WARDROBE': 6.5,
     'TV_UNIT': 5.0,
   };
+
+  /// Minimum easy-scan room when inventory requires a long wardrobe (multi-wall).
+  static const double photoTrueMinWidthFt = 14.0;
+  static const double photoTrueMinLengthFt = 12.0;
 
   /// Resolve final room size for easy scan.
   ///
@@ -126,6 +131,28 @@ class AutoScale {
     w = w.clamp(minRoomFt, maxRoomFt);
     l = l.clamp(minRoomFt, maxRoomFt);
 
+    // +38: long wardrobe / multi-piece study inventory needs room not under-sized
+    // (12×10.5 feedback plans crushed wardrobe depth and door placement).
+    final hasLongWardrobe = furniture.any((f) {
+      final t = f.type.toUpperCase();
+      if (!t.contains('WARDROBE')) return false;
+      return math.max(f.widthFt, f.lengthFt) >= 5.5;
+    });
+    if (hasLongWardrobe) {
+      final beforeW = w;
+      final beforeL = l;
+      w = math.max(w, photoTrueMinWidthFt);
+      l = math.max(l, photoTrueMinLengthFt);
+      if ((w - beforeW).abs() > 0.2 || (l - beforeL).abs() > 0.2) {
+        conf = math.max(conf, 0.52);
+        notes.add(
+          'Room floor raised for long wardrobe (+38): '
+          '${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft '
+          '(edit in Review if your tape differs)',
+        );
+      }
+    }
+
     // Prefer wider aspect ≥ 1 for consistency (swap if needed is optional;
     // keep vision orientation so furniture coords stay consistent).
     notes.add(
@@ -140,6 +167,33 @@ class AutoScale {
       notes: notes,
       usedUserSize: false,
     );
+  }
+
+  /// Expand estimated size when inventory requires wardrobe but furniture list empty.
+  static ({double widthFt, double lengthFt, List<String> notes}) ensurePhotoTrueMinSize({
+    required double widthFt,
+    required double lengthFt,
+    required String inventoryHint,
+    bool usedUserSize = false,
+  }) {
+    if (usedUserSize) {
+      return (widthFt: widthFt, lengthFt: lengthFt, notes: const []);
+    }
+    if (!inventoryHint.contains('MUST include WARDROBE')) {
+      return (widthFt: widthFt, lengthFt: lengthFt, notes: const []);
+    }
+    var w = widthFt;
+    var l = lengthFt;
+    final notes = <String>[];
+    if (w < photoTrueMinWidthFt || l < photoTrueMinLengthFt) {
+      w = math.max(w, photoTrueMinWidthFt);
+      l = math.max(l, photoTrueMinLengthFt);
+      notes.add(
+        'Photo-true min room (+38): ${w.toStringAsFixed(1)} × '
+        '${l.toStringAsFixed(1)} ft for wardrobe inventory',
+      );
+    }
+    return (widthFt: w, lengthFt: l, notes: notes);
   }
 
   /// Extract door segment lengths from parsed walls.
