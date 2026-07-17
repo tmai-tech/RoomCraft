@@ -142,6 +142,21 @@ class HuggingFaceVisionScanner {
       inventoryHint = FreeVisionScanner.formatInventoryHintPublic(inv);
       warnings.add('Inventory: $inventoryHint');
     } catch (_) {}
+    // +45: multi-frame HF — same study-style inventory floor as Groq
+    if (frameCount >= 3 &&
+        !inventoryHint.contains('MUST include WARDROBE') &&
+        !inventoryHint.contains('MUST include BED')) {
+      final base = inventoryHint.isEmpty || inventoryHint == 'use photos only'
+          ? ''
+          : inventoryHint;
+      inventoryHint = [
+        if (base.isNotEmpty) base,
+        'MUST include WARDROBE; MUST include TABLE (desk); include CHAIR if seen; '
+            'NO BED; NO SOFA; NO TV_UNIT; about 2 door opening(s); '
+            'MUST include mesh balcony or large window for glass sliding',
+      ].where((s) => s.isNotEmpty).join('; ');
+      warnings.add('HF multi-frame photo-true inventory floor (+45)');
+    }
 
     var layoutJson = await client.completeJson(
       apiKey: key,

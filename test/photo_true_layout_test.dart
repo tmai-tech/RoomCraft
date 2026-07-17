@@ -95,8 +95,9 @@ void main() {
       inventoryHint:
           'MUST include WARDROBE; MUST include mesh balcony; about 2 door opening(s)',
     );
-    expect(min.widthFt, greaterThanOrEqualTo(16));
-    expect(min.lengthFt, greaterThanOrEqualTo(14));
+    // +45 dense floor raised toward gold-plan scale
+    expect(min.widthFt, greaterThanOrEqualTo(18));
+    expect(min.lengthFt, greaterThanOrEqualTo(16));
   });
 
   test('+41 caps confidence when plan is table-only (feedback 443cf0c3)', () {

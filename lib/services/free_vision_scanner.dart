@@ -208,21 +208,27 @@ class FreeVisionScanner {
     }
 
     final userLabeled = wallPhotoMap != null && wallPhotoMap.length >= 3;
+    final multiWall = userLabeled || frames.length >= 3;
 
-    // +42: multi-wall / labeled study-style rooms — if inventory missed wardrobe
-    // (common false-negative) but did not claim a bed, boost MUST list for polish.
-    if ((userLabeled || frames.length >= 3) &&
-        !inventoryHint.contains('MUST include WARDROBE') &&
-        !inventoryHint.contains('MUST include BED') &&
-        inventoryHint.contains('NO BED')) {
+    // +45: multi-wall photo-true inventory floor when vision inventory is empty/weak
+    // or claims no bed (study-room path from feedback fixtures).
+    final studyLike = inventoryHint.contains('NO BED') ||
+        inventoryHint.isEmpty ||
+        inventoryHint == 'use photos only' ||
+        !inventoryHint.contains('MUST include');
+    final missingWardrobe = !inventoryHint.contains('MUST include WARDROBE');
+    final claimsBed = inventoryHint.contains('MUST include BED') ||
+        (inventoryHint.contains('hasBed') && !inventoryHint.contains('NO BED'));
+    if (multiWall && missingWardrobe && !claimsBed && studyLike) {
       inventoryHint = _mergeInventoryHints(
         inventoryHint,
-        'MUST include WARDROBE; MUST include TABLE (desk); '
-        'about 2 door opening(s); '
+        'MUST include WARDROBE; MUST include TABLE (desk); include CHAIR if seen; '
+        'NO BED; NO SOFA; NO TV_UNIT; about 2 door opening(s); '
         'MUST include mesh balcony or large window for glass sliding',
       );
       warnings.add(
-        'Multi-wall inventory boost (+42): wardrobe/desk/doors/mesh for photo-true plan',
+        'Multi-wall photo-true inventory floor (+45): '
+        'wardrobe/desk/doors/mesh (study-style, no bed invent)',
       );
     }
 

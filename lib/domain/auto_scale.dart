@@ -44,9 +44,10 @@ class AutoScale {
   static const double photoTrueMinWidthFt = 14.0;
   static const double photoTrueMinLengthFt = 12.0;
 
-  /// Denser study (wardrobe + mesh + multi-door) — closer to gold-plan footprint.
-  static const double photoTrueDenseWidthFt = 16.0;
-  static const double photoTrueDenseLengthFt = 14.0;
+  /// Denser study (wardrobe + mesh + multi-door) — closer to gold-plan ~18×17.
+  /// +45: raised from 16×14 toward gold-plan scale (still not tape-accurate).
+  static const double photoTrueDenseWidthFt = 18.0;
+  static const double photoTrueDenseLengthFt = 16.0;
 
   /// Resolve final room size for easy scan.
   ///

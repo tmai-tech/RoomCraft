@@ -31,6 +31,17 @@ void main() {
     expect(min.notes, isNotEmpty);
   });
 
+  test('+45 dense gold floor is 18x16 for wardrobe+mesh', () {
+    final min = AutoScale.ensurePhotoTrueMinSize(
+      widthFt: 12.0,
+      lengthFt: 10.5,
+      inventoryHint:
+          'MUST include WARDROBE; MUST include mesh balcony; about 2 door opening(s)',
+    );
+    expect(min.widthFt, greaterThanOrEqualTo(18));
+    expect(min.lengthFt, greaterThanOrEqualTo(16));
+  });
+
   test('+38 user size not overridden by photo-true floor', () {
     final min = AutoScale.ensurePhotoTrueMinSize(
       widthFt: 10,

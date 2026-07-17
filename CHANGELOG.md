@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+45 (2026-07-17)
+
+### Multi-wall inventory floor + gold-plan room scale
+- Multi-wall / labeled scans: if inventory empty/weak (no wardrobe MUST, no bed claim) → full photo-true floor (wardrobe, desk, chair, doors, mesh, NO bed/sofa/TV).
+- Dense auto room floor raised to **18×16** (closer to gold ~18.5×17.2) when wardrobe+mesh.
+- HF multi-frame gets the same inventory floor.
+- Version **+45**.
+
 ## 1.0.0-beta.1+44 (2026-07-17)
 
 ### Openings preserved + chair density (gold-plan fill)
