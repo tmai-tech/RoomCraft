@@ -87,4 +87,81 @@ void main() {
       isTrue,
     );
   });
+
+  test('+75 wide 20×17: doors on W+N not south wardrobe; mesh east', () {
+    // Gold wide study: wardrobe south, mesh east, doors west+north.
+    final result = FreeVisionScanner.applyInventoryCompletePublic(
+      {
+        'roomWidth': 20.0,
+        'roomLength': 17.0,
+        'furniture': <dynamic>[],
+        'openings': <dynamic>[],
+      },
+      'MUST include WARDROBE; MUST include TABLE (desk); NO BED; NO SOFA; '
+      'NO TV_UNIT; MUST include mesh balcony or large window for glass sliding; '
+      'about 2 door opening(s)',
+    );
+    final openings = (result.map['openings'] as List? ?? [])
+        .whereType<Map>()
+        .toList();
+    expect(openings, isNotEmpty);
+
+    final doors = openings.where((o) {
+      final t = o['type']?.toString().toLowerCase() ?? '';
+      return t.contains('door') && !t.contains('wardrobe');
+    }).toList();
+    expect(doors.length, greaterThanOrEqualTo(2));
+    // Never seed a door through the storage (south) wall
+    expect(
+      doors.every((d) => d['wall']?.toString().toLowerCase() != 'south'),
+      isTrue,
+      reason: 'doors must not sit on south wardrobe wall',
+    );
+    final doorWalls =
+        doors.map((d) => d['wall']?.toString().toLowerCase()).toSet();
+    expect(doorWalls.contains('west'), isTrue);
+    expect(doorWalls.contains('north'), isTrue);
+
+    final mesh = openings.where((o) {
+      final t = o['type']?.toString().toLowerCase() ?? '';
+      return t.contains('balcony') || t.contains('window');
+    }).toList();
+    expect(mesh, isNotEmpty);
+    expect(mesh.first['wall']?.toString().toLowerCase(), 'east');
+    final meshW = mesh.first['width'];
+    final mw = meshW is num ? meshW.toDouble() : double.tryParse('$meshW') ?? 0;
+    // ~62% of east wall (length 17) ≈ 10.5 ft, capped 12
+    expect(mw, greaterThanOrEqualTo(8.0));
+  });
+
+  test('+75 deep room: doors avoid west wardrobe wall; mesh north', () {
+    final result = FreeVisionScanner.applyInventoryCompletePublic(
+      {
+        'roomWidth': 12.0,
+        'roomLength': 18.0,
+        'furniture': <dynamic>[],
+        'openings': <dynamic>[],
+      },
+      'MUST include mesh balcony; about 2 door opening(s)',
+    );
+    final openings = (result.map['openings'] as List? ?? [])
+        .whereType<Map>()
+        .toList();
+    final doors = openings.where((o) {
+      final t = o['type']?.toString().toLowerCase() ?? '';
+      return t.contains('door') && !t.contains('wardrobe');
+    }).toList();
+    expect(doors.length, greaterThanOrEqualTo(2));
+    expect(
+      doors.every((d) => d['wall']?.toString().toLowerCase() != 'west'),
+      isTrue,
+      reason: 'deep-room wardrobe is west — no door seed there',
+    );
+    final mesh = openings.where((o) {
+      final t = o['type']?.toString().toLowerCase() ?? '';
+      return t.contains('balcony');
+    }).toList();
+    expect(mesh, isNotEmpty);
+    expect(mesh.first['wall']?.toString().toLowerCase(), 'north');
+  });
 }

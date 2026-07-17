@@ -1127,6 +1127,7 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
   }
 
   /// Seed doors / mesh balcony when inventory required them but plan has none.
+  /// +75: doors/mesh on gold walls (W+N doors, E mesh) — never storage wall.
   static ScanResult _ensureOpeningsFromInventory(
     ScanResult r,
     String inventoryHint,
@@ -1140,6 +1141,10 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
         .toList();
     final notes = <String>[];
     final seedMaps = <Map<String, dynamic>>[];
+    final gold = PhotoTrueLayout.defaultStudyWallRoles(
+      r.roomWidthFt,
+      r.roomLengthFt,
+    );
 
     final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(inventoryHint);
     final wantDoors = doorMatch != null
@@ -1148,18 +1153,33 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
     final doorCount = existing.where((o) => o.type == StrokeType.door).length;
     if (wantDoors > 0 && doorCount < wantDoors) {
       final toAdd = wantDoors - doorCount;
-      const walls = ['south', 'west', 'east', 'north'];
+      // Prefer gold door walls; never seed through wardrobe storage wall
+      final walls = <String>[
+        gold.doorPrimary.name,
+        gold.doorSecondary.name,
+        for (final s in ['west', 'north', 'south', 'east'])
+          if (s != gold.wardrobe.name &&
+              s != gold.doorPrimary.name &&
+              s != gold.doorSecondary.name)
+            s,
+      ];
       for (var i = 0; i < toAdd; i++) {
+        final wallName = walls[i % walls.length];
+        final wl = wallName == 'east' || wallName == 'west'
+            ? r.roomLengthFt
+            : r.roomWidthFt;
         seedMaps.add({
           'type': 'door',
-          'wall': walls[i % walls.length],
-          'fromLeft': 1.0 + i * 0.5,
+          'wall': wallName,
+          'fromLeft': 1.2 + i * math.max(3.5, wl * 0.3),
           'width': 2.8,
           'confidence': 0.6,
-          'evidence': 'seeded: inventory doorCount',
+          'evidence': 'seeded: inventory doorCount (+75 gold)',
         });
       }
-      notes.add('Seeded $toAdd door opening(s) from inventory (+36)');
+      notes.add(
+        'Seeded $toAdd door opening(s) on gold walls (+75)',
+      );
     }
 
     final wantMesh = inventoryHint.toLowerCase().contains('mesh') ||
@@ -1170,15 +1190,18 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
         o.type == StrokeType.window ||
         (o.type == StrokeType.door && o.lengthFt >= 4.5));
     if (wantMesh && !hasWide) {
+      final mLen = gold.mesh.lengthFt(r.roomWidthFt, r.roomLengthFt);
       seedMaps.add({
         'type': 'balcony',
-        'wall': 'east',
-        'fromLeft': 1.0,
-        'width': 6.0,
+        'wall': gold.mesh.name,
+        'fromLeft': 1.5,
+        'width': math.min(12.0, mLen * 0.62),
         'confidence': 0.6,
-        'evidence': 'seeded: inventory mesh/glass',
+        'evidence': 'seeded: inventory mesh/glass (+75 gold)',
       });
-      notes.add('Seeded mesh/glass balcony opening from inventory (+36)');
+      notes.add(
+        'Seeded mesh/glass balcony on ${gold.mesh.name} (+75)',
+      );
     }
 
     if (seedMaps.isEmpty) return r;
@@ -1202,7 +1225,7 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
       openings: [...existing, ...seeded],
       furniture: r.furniture,
       warnings: [...r.warnings, ...notes],
-      sourceLabel: 'Easy plan — openings seed (+36)',
+      sourceLabel: 'Easy plan — openings seed (+75 gold)',
       inventDefaultOpenings: false,
       accuracyScore: r.accuracyScore,
     ));
@@ -1439,6 +1462,8 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
             Map<String, dynamic>.from(o),
     ];
     var openingsChanged = false;
+    // +75: openings use same gold roles as furniture (never wardrobe wall)
+    final goldOpen = goldRoles;
 
     if (inventoryHint.contains('mesh') || inventoryHint.contains('glass')) {
       final hasBalconyOrWide = openings.any((o) {
@@ -1450,13 +1475,14 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
             (t.contains('door') && ww >= 4.5);
       });
       if (!hasBalconyOrWide) {
+        final mLen = goldOpen.mesh.lengthFt(rw, rl);
         openings.add({
           'type': 'balcony',
-          'wall': 'east',
-          'fromLeft': 1.0,
-          'width': 6.0,
+          'wall': goldOpen.mesh.name,
+          'fromLeft': 1.5,
+          'width': math.min(12.0, mLen * 0.62),
           'confidence': 0.55,
-          'evidence': 'seeded: inventory mesh/sliding glass',
+          'evidence': 'seeded: inventory mesh/sliding glass (+75 gold)',
         });
         added++;
         openingsChanged = true;
@@ -1474,15 +1500,23 @@ Rules: wall = north|south|east|west; fromLeft = CENTER of piece; depth required;
       }).length;
       if (haveDoors < wantDoors) {
         final toAdd = wantDoors - haveDoors;
-        const walls = ['south', 'west', 'east', 'north'];
+        final walls = <String>[
+          goldOpen.doorPrimary.name,
+          goldOpen.doorSecondary.name,
+          for (final s in ['west', 'north', 'south', 'east'])
+            if (s != goldOpen.wardrobe.name &&
+                s != goldOpen.doorPrimary.name &&
+                s != goldOpen.doorSecondary.name)
+              s,
+        ];
         for (var i = 0; i < toAdd; i++) {
           openings.add({
             'type': 'door',
             'wall': walls[i % walls.length],
-            'fromLeft': 1.0 + i * 0.5,
+            'fromLeft': 1.2 + i * 0.5,
             'width': 2.8,
             'confidence': 0.55,
-            'evidence': 'seeded: inventory doorCount',
+            'evidence': 'seeded: inventory doorCount (+75 gold)',
           });
         }
         added += toAdd;
