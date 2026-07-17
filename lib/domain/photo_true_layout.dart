@@ -1063,7 +1063,8 @@ class PhotoTrueLayout {
     final haveDoors =
         openingHints.where((o) => o.type == StrokeType.door).length +
             rawOpeningsKept.where((o) => o.type == StrokeType.door).length;
-    // Infer storage wall so we don't put doors through the wardrobe
+    // +62/63: invent openings from gold roles (S wardrobe, E mesh, W+N doors)
+    final goldRoles = defaultStudyWallRoles(w, l);
     WallSide? storageWall;
     for (final f in input.furniture.where((x) => x.included)) {
       if (f.type == FurnitureType.wardrobe) {
@@ -1071,69 +1072,61 @@ class PhotoTrueLayout {
         break;
       }
     }
-    storageWall ??= needWardrobe
-        ? (w >= l ? WallSide.north : WallSide.west)
-        : null;
-    final entryWall =
-        storageWall != null ? _opposite(storageWall) : WallSide.south;
+    storageWall ??= needWardrobe ? goldRoles.wardrobe : null;
+    final doorA = goldRoles.doorPrimary;
+    final doorB = goldRoles.doorSecondary;
+    final meshPreferWall = goldRoles.mesh;
 
     if (wantDoors > haveDoors) {
       final need = wantDoors - haveDoors;
-      // +55: invent dual doors on entry wall opposite wardrobe (gold hallway)
+      // +63: seed doors on gold walls (west + north for wide rooms), not dual on one wall
       if (haveDoors == 0 && need >= 2) {
-        final eLen = entryWall.lengthFt(w, l);
-        openingHints.add(WallOpeningHint.fromLeft(
-          wall: entryWall,
-          type: StrokeType.door,
-          fromLeftFt: 1.2,
-          widthFt: 2.8,
-          wallLengthFt: eLen,
-          confidence: 0.88,
-          evidence: 'photo-true dual door A entry wall (+55)',
-        ));
-        openingHints.add(WallOpeningHint.fromLeft(
-          wall: entryWall,
-          type: StrokeType.door,
-          fromLeftFt: math.min(eLen - 3.2, math.max(5.0, eLen * 0.48)),
-          widthFt: 2.8,
-          wallLengthFt: eLen,
-          confidence: 0.88,
-          evidence: 'photo-true dual door B entry wall (+55)',
-        ));
-        usedOpenWalls.add(entryWall);
+        for (final side in [doorA, doorB]) {
+          if (storageWall != null && side == storageWall) continue;
+          final eLen = side.lengthFt(w, l);
+          final already = openingHints.where((o) => o.wall == side).length;
+          openingHints.add(WallOpeningHint.fromLeft(
+            wall: side,
+            type: StrokeType.door,
+            fromLeftFt: 1.2 + already * math.max(3.5, eLen * 0.35),
+            widthFt: 2.8,
+            wallLengthFt: eLen,
+            confidence: 0.88,
+            evidence: 'photo-true gold door on ${side.name} (+63)',
+          ));
+          usedOpenWalls.add(side);
+        }
         notes.add(
-          'Photo-true (+55): dual doors on ${entryWall.name} entry wall',
+          'Photo-true (+63): doors on ${doorA.name}+${doorB.name} (gold walls)',
         );
       } else {
         final sides = [
-          entryWall,
-          WallSide.south,
+          doorA,
+          doorB,
           WallSide.west,
-          WallSide.east,
           WallSide.north,
+          WallSide.south,
+          WallSide.east,
         ];
         var added = 0;
         for (final side in sides) {
           if (haveDoors + added >= wantDoors) break;
           if (storageWall != null && side == storageWall) continue;
-          if (usedOpenWalls.contains(side) && added > 0) {
-            // allow second door on same entry wall
-            if (side != entryWall) continue;
-          }
           final wl = side.lengthFt(w, l);
+          final onWall = openingHints.where((o) => o.wall == side).length;
           openingHints.add(WallOpeningHint.fromLeft(
             wall: side,
             type: StrokeType.door,
-            fromLeftFt: 1.0 + added * math.max(3.5, wl * 0.35),
+            fromLeftFt: 1.0 + onWall * math.max(3.5, wl * 0.35),
             widthFt: 2.8,
             wallLengthFt: wl,
             confidence: 0.85,
-            evidence: 'photo-true door seed (+55)',
+            evidence: 'photo-true door seed (+63)',
           ));
           usedOpenWalls.add(side);
           added++;
         }
-        notes.add('Photo-true (+55): seeded door openings');
+        notes.add('Photo-true (+63): seeded door openings');
       }
     }
     final hasWide = openingHints.any((o) =>
@@ -1146,8 +1139,9 @@ class PhotoTrueLayout {
             o.type == StrokeType.window ||
             (o.type == StrokeType.door && o.lengthFt >= 4.5));
     if (forceMesh && !hasWide) {
-      // +55: mesh adjacent to wardrobe (photo: sliding unit then mesh corner)
+      // +63: prefer gold mesh wall (east for wide rooms)
       final meshPrefer = <WallSide>[
+        meshPreferWall,
         if (storageWall != null) _adjacentClockwise(storageWall),
         WallSide.east,
         WallSide.north,
@@ -1155,11 +1149,8 @@ class PhotoTrueLayout {
         WallSide.west,
       ];
       final meshWall = meshPrefer.firstWhere(
-        (s) => s != storageWall && (!usedOpenWalls.contains(s) || s != entryWall),
-        orElse: () => meshPrefer.firstWhere(
-          (s) => s != storageWall,
-          orElse: () => WallSide.east,
-        ),
+        (s) => s != storageWall,
+        orElse: () => WallSide.east,
       );
       final mLen = meshWall.lengthFt(w, l);
       openingHints.add(WallOpeningHint.fromLeft(
@@ -1169,10 +1160,10 @@ class PhotoTrueLayout {
         widthFt: math.min(8.0, mLen * 0.55),
         wallLengthFt: mLen,
         confidence: 0.85,
-        evidence: 'photo-true mesh adjacent wardrobe (+55)',
+        evidence: 'photo-true mesh gold wall (+63)',
       ));
       usedOpenWalls.add(meshWall);
-      notes.add('Photo-true (+55): seeded mesh on ${meshWall.name}');
+      notes.add('Photo-true (+63): seeded mesh on ${meshWall.name}');
     }
     // At least one door if we have furniture but zero openings
     if (openingHints.isEmpty &&
@@ -1229,24 +1220,28 @@ class PhotoTrueLayout {
     if (!hasWardrobe &&
         (needWardrobe ||
             input.furniture.any((f) => f.type == FurnitureType.wardrobe))) {
-      // +48: prefer long wall without doors (storage wall, gold-plan style)
+      // +63: prefer gold storage wall (south for wide rooms)
       final doorWalls = {
         for (final o in openingHints)
           if (o.type == StrokeType.door) o.wall,
       };
+      final goldStorage = defaultStudyWallRoles(w, l).wardrobe;
       final side = _pickFreeWall(
         prefer: [
+          if (!doorWalls.contains(goldStorage) && !usedWalls.contains(goldStorage))
+            goldStorage,
           for (final s in [
+            WallSide.south,
             WallSide.west,
             WallSide.north,
             WallSide.east,
-            WallSide.south,
           ])
             if (!doorWalls.contains(s) && !usedWalls.contains(s)) s,
+          goldStorage,
+          WallSide.south,
           WallSide.west,
           WallSide.north,
           WallSide.east,
-          WallSide.south,
         ],
         used: usedWalls,
         roomW: w,
@@ -1275,24 +1270,34 @@ class PhotoTrueLayout {
     if (!hasTable &&
         (needTable ||
             input.furniture.any((f) => f.type == FurnitureType.table))) {
+      final goldDesk = defaultStudyWallRoles(w, l).desk;
       final side = _pickFreeWall(
-        prefer: [WallSide.south, WallSide.east, WallSide.north, WallSide.west],
+        prefer: [
+          if (!usedWalls.contains(goldDesk)) goldDesk,
+          WallSide.west,
+          WallSide.south,
+          WallSide.east,
+          WallSide.north,
+        ],
         used: usedWalls,
         roomW: w,
         roomL: l,
         preferLong: false,
       );
       final wl = side.lengthFt(w, l);
+      final deskCenter = side == WallSide.west
+          ? math.max(wl * 0.65, wl - 3.5)
+          : wl * 0.42;
       furnHints.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
         wall: side,
-        fromLeftFt: wl * 0.42, // +56 center
+        fromLeftFt: deskCenter,
         depthFt: 1.6,
         widthFt: 4.0,
         lengthFt: 2.0,
         wallLengthFt: wl,
         confidence: 0.92,
-        evidence: 'photo-true seed desk (+56)',
+        evidence: 'photo-true seed desk (+63)',
       ));
       usedWalls.add(side);
       notes.add('Seeded TABLE on ${side.name} (+43)');

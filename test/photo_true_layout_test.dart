@@ -653,6 +653,40 @@ void main() {
     expect(out.accuracyScore, greaterThanOrEqualTo(0.74));
   });
 
+  test('+63 polish invents gold walls: S wardrobe, E mesh, doors W+N', () {
+    final empty = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.2,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final polished = PhotoTrueLayout.polish(empty);
+    expect(PhotoTrueLayout.isPhotoTrue(polished), isTrue);
+    final wardrobe =
+        polished.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // South storage wall
+    expect(wardrobe.posFt.dy, lessThan(4));
+    final mesh = polished.walls.firstWhere((w) => w.type == StrokeType.balcony);
+    expect((mesh.startFt.dx + mesh.endFt.dx) / 2, greaterThan(16));
+    final doors = polished.walls.where((w) => w.type == StrokeType.door).toList();
+    expect(doors.length, greaterThanOrEqualTo(2));
+    // At least one door on west and/or north (not both only on south)
+    expect(
+      doors.any((d) {
+        final mx = (d.startFt.dx + d.endFt.dx) / 2;
+        final my = (d.startFt.dy + d.endFt.dy) / 2;
+        return mx < 3 || my > 13;
+      }),
+      isTrue,
+    );
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
