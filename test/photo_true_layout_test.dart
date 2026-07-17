@@ -727,6 +727,93 @@ void main() {
     expect((mesh.startFt.dx + mesh.endFt.dx) / 2, greaterThan(16));
   });
 
+  test('+78 table-only input (no vision wardrobe) → default gold south', () {
+    // Input had no wardrobe: polish may invent west storage; full gold must use
+    // default orientation (S wardrobe / E mesh / W desk) instead.
+    final tableOnly = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0, 3),
+          endFt: Offset(0, 6),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(4, 2),
+          widthFt: 3.5,
+          lengthFt: 2.0,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(tableOnly);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(out), isTrue);
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, lessThan(4), reason: 'gold south storage wall');
+    final along = wardrobe.widthFt > wardrobe.lengthFt
+        ? wardrobe.widthFt
+        : wardrobe.lengthFt;
+    expect(along, greaterThan(10));
+  });
+
+  test('+78 vision west wardrobe still preserved (wall trust)', () {
+    final vision = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(8, 0),
+          endFt: Offset(11, 0),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 4),
+          endFt: Offset(20, 14),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(1.0, 8.5),
+          widthFt: 12.0,
+          lengthFt: 1.6,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(10, 15.5),
+          widthFt: 4.0,
+          lengthFt: 2.0,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(vision);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // Vision west wall kept (not forced to south gold template)
+    expect(wardrobe.posFt.dx, lessThan(4));
+  });
+
   test('+59 preferVisionFurniture keeps east wardrobe through full gold', () {
     final vision = AccurateScan.enforce(
       widthFt: 20,

@@ -141,40 +141,68 @@ class PhotoTrueLayout {
         );
       }
     }
-    // +54/58/59: full gold keeps vision openings + vision wardrobe/desk walls
-    final roles = inferStudyWallRoles(cur);
+    // +54/58/59: full gold keeps vision openings + vision wardrobe/desk walls.
+    // +78: only trust inferred walls when the *input* already had a wardrobe.
+    // If polish invented one (input had none), force default gold orientation
+    // so we do not lock west storage after door-dodge placement.
+    final rw = cur.roomWidthFt > 0 ? cur.roomWidthFt : goldRoomWidthFt;
+    final rl = cur.roomLengthFt > 0 ? cur.roomLengthFt : goldRoomLengthFt;
+    final visionHadWardrobe = _hasVisionWardrobe(visionSnapshot);
+    final roles = visionHadWardrobe
+        ? inferStudyWallRoles(cur)
+        : defaultStudyWallRoles(rw, rl);
     final gold = composeStudyGold(
-      widthFt: cur.roomWidthFt > 0 ? cur.roomWidthFt : goldRoomWidthFt,
-      lengthFt: cur.roomLengthFt > 0 ? cur.roomLengthFt : goldRoomLengthFt,
+      widthFt: rw,
+      lengthFt: rl,
       warnings: [
         ...cur.warnings,
-        'ensureGoldQuality: full study gold with vision wall roles (+67) '
-            'wardrobe=${roles.wardrobe.name}',
+        visionHadWardrobe
+            ? 'ensureGoldQuality: full study gold with vision wall roles (+67) '
+                'wardrobe=${roles.wardrobe.name}'
+            : 'ensureGoldQuality: full study gold default orientation (+78) '
+                'wardrobe=${roles.wardrobe.name}',
       ],
       includeChair: includeChair,
       roles: roles,
     );
     var out = resolveWallClearances(
-      preferVisionFurniture(preferVisionOpenings(gold, cur), cur),
+      visionHadWardrobe
+          ? preferVisionFurniture(preferVisionOpenings(gold, cur), cur)
+          : preferVisionOpenings(gold, dropOpeningsOnWardrobeWall(cur)),
     );
-    // +67: if vision openings blocked mesh/doors, rebuild openings from gold
-    // while still preferring vision furniture walls.
-    if (!isPhotoTrue(out)) {
+    // +67/78: rebuild if incomplete OR default path missed gold orientation
+    final needsRebuild = !isPhotoTrue(out) ||
+        (!visionHadWardrobe && !matchesDefaultGoldOrientation(out));
+    if (needsRebuild) {
+      final rebuildRoles = visionHadWardrobe
+          ? inferStudyWallRoles(out)
+          : defaultStudyWallRoles(out.roomWidthFt, out.roomLengthFt);
       final rebuilt = composeStudyGold(
         widthFt: out.roomWidthFt,
         lengthFt: out.roomLengthFt,
         warnings: [
           ...out.warnings,
-          'ensureGoldQuality: re-compose openings for photo-true (+67)',
+          visionHadWardrobe
+              ? 'ensureGoldQuality: re-compose openings for photo-true (+67)'
+              : 'ensureGoldQuality: re-compose default gold orientation (+78)',
         ],
         includeChair: includeChair,
-        roles: inferStudyWallRoles(out),
+        roles: rebuildRoles,
       );
       out = resolveWallClearances(
-        preferVisionFurniture(rebuilt, visionSnapshot),
+        visionHadWardrobe
+            ? preferVisionFurniture(rebuilt, visionSnapshot)
+            : rebuilt,
       );
     }
     return _finalizePhotoTrue(out, vision: visionSnapshot, path: 'full-gold');
+  }
+
+  /// True when the input scan already placed a wardrobe (trust its wall; +54/78).
+  static bool _hasVisionWardrobe(ScanResult r) {
+    return r.furniture.any(
+      (f) => f.included && f.type == FurnitureType.wardrobe,
+    );
   }
 
   /// Score + notes when plan meets photo-true gold quality (+67).
