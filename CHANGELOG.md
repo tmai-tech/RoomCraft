@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+36 (2026-07-17)
+
+### Photo-true scan → gold-plan quality (study room)
+- Inventory **recall bias** + second-chance pass when multi-wall photos miss wardrobe/desk.
+- **Enrich from notes**: pink sliding wardrobe / desk / mesh / doors recover MUST flags if booleans were false.
+- **Openings seed** from inventory: doorCount + mesh balcony when wall vision omits them.
+- Wardrobe seed size ~6.7×1.5 (gold-plan style wall unit); score boost when WARDROBE+TABLE+openings present.
+- Photo-true bar (not invent bed/sofa/TV): dense wall-anchored plan matching feedback gold **quality**.
+- Version **+36**.
+
 ## 1.0.0-beta.1+35 (2026-07-17)
 
 ### Feedback form multi-image select

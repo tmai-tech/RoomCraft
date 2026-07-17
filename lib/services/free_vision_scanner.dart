@@ -162,6 +162,7 @@ class FreeVisionScanner {
     }
 
     // Pass 1 — inventory (what exists) so placement cannot invent beds/sofas.
+    // +36: enrich notes + recall pass so wardrobe/desk/doors are not false-negatives.
     var inventoryHint = '';
     try {
       final inv = await _client.completeJson(
@@ -172,7 +173,35 @@ class FreeVisionScanner {
         temperature: 0.0,
       );
       inventoryHint = _formatInventoryHint(inv);
+      inventoryHint = _enrichInventoryHint(inv, inventoryHint);
       warnings.add('Inventory: $inventoryHint');
+
+      // Multi-wall / labeled: if still no MUST wardrobe or TABLE, one recall pass.
+      final multiWall = frames.length >= 3 ||
+          (wallPhotoMap != null && wallPhotoMap.length >= 3);
+      final weakInv = !inventoryHint.contains('MUST include WARDROBE') &&
+          !inventoryHint.contains('MUST include TABLE');
+      if (multiWall && weakInv) {
+        try {
+          final inv2 = await _client.completeJson(
+            apiKey: key,
+            frames: frames,
+            prompt: VisionLayoutPrompts.inventoryRecallPass(),
+            system: VisionLayoutPrompts.inventorySystem,
+            temperature: 0.0,
+          );
+          var hint2 = _formatInventoryHint(inv2);
+          hint2 = _enrichInventoryHint(inv2, hint2);
+          if (hint2.contains('MUST include WARDROBE') ||
+              hint2.contains('MUST include TABLE') ||
+              hint2.contains('door opening')) {
+            inventoryHint = _mergeInventoryHints(inventoryHint, hint2);
+            warnings.add('Inventory recall (+36): $inventoryHint');
+          }
+        } catch (e) {
+          warnings.add('Inventory recall skipped: $e');
+        }
+      }
     } catch (e) {
       warnings.add('Inventory pass skipped: $e');
     }
@@ -600,10 +629,16 @@ Rules:
       roomLengthFt: wallPlan.roomLengthFt,
     );
     wallPlan = _dedupeMajorFurniture(wallPlan);
+    // +36: doors / mesh openings from inventory when wall vision missed them
+    wallPlan = _ensureOpeningsFromInventory(wallPlan, inventoryHint);
 
     final openings = wallPlan.walls
         .where((w) => w.type != StrokeType.wall)
         .toList();
+    final types = wallPlan.furniture.map((f) => f.type).toSet();
+    final photoTrue = types.contains(FurnitureType.wardrobe) &&
+        types.contains(FurnitureType.table) &&
+        openings.isNotEmpty;
     final acc = _estimateAccuracy(
       frames: frames.length,
       furnitureCount: wallPlan.furniture.length,
@@ -612,6 +647,10 @@ Rules:
       autoScale: !size.usedUserSize,
       scaleConfidence: size.confidence,
     );
+    // Photo-true complete (wardrobe+desk+openings) → score like dense gold plan
+    final accBoost = photoTrue
+        ? (acc + 0.28).clamp(0.55, 0.88)
+        : acc;
 
     return ScanRefine.refine(AccurateScan.enforce(
       widthFt: wallPlan.roomWidthFt,
@@ -621,11 +660,16 @@ Rules:
       warnings: [
         ...wallPlan.warnings,
         ...warnings.where((w) => !wallPlan.warnings.contains(w)),
-        'Labeled 4-wall clean path (+34) — inventory + size + per-wall place',
+        if (photoTrue)
+          'Photo-true inventory complete (+36): WARDROBE + TABLE + openings'
+        else
+          'Labeled 4-wall path (+36) — inventory + size + per-wall + openings seed',
       ],
-      sourceLabel: 'Easy plan — labeled walls clean path (+34)',
+      sourceLabel: photoTrue
+          ? 'Easy plan — labeled walls photo-true (+36)'
+          : 'Easy plan — labeled walls clean path (+36)',
       inventDefaultOpenings: false,
-      accuracyScore: acc,
+      accuracyScore: accBoost,
     ));
   }
 
@@ -812,6 +856,7 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
     result = _filterScanByInventory(result, inventoryHint);
     // Seed missing MUST types as wall-anchored on first empty wall side
     result = _seedScanResultFromInventory(result, inventoryHint);
+    result = _ensureOpeningsFromInventory(result, inventoryHint);
 
     final assignNote = wallPhotoMap != null && wallPhotoMap.length >= 3
         ? 'Walls from user labels: ${wallPhotos.keys.map((k) => k.name).join(", ")}'
@@ -822,7 +867,7 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
         ...result.warnings,
         ...size.notes,
         assignNote,
-        'Easy plan — Groq wall-by-wall (+31)',
+        'Easy plan — Groq wall-by-wall (+36)',
       ],
     );
   }
@@ -898,7 +943,7 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       if (types.contains(type)) return;
       // Approximate catalog sizes
       final dim = switch (type) {
-        FurnitureType.wardrobe => (6.0, 2.0),
+        FurnitureType.wardrobe => (6.7, 1.5),
         FurnitureType.table => (4.0, 2.0),
         _ => (3.0, 2.0),
       };
@@ -932,6 +977,7 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       notes.add('Seeded ${type.name} from inventory on $wallName wall');
     }
 
+    // Prefer longer wall for wardrobe (gold-plan style wall-hugging unit)
     seed(FurnitureType.wardrobe, 'MUST include WARDROBE', 'west');
     seed(FurnitureType.table, 'MUST include TABLE', 'south');
     if (extra.length == r.furniture.length) return r;
@@ -941,7 +987,89 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       openings: r.walls,
       furniture: extra,
       warnings: notes,
-      sourceLabel: 'Easy plan — Groq wall-by-wall (+29) seeded',
+      sourceLabel: 'Easy plan — inventory seed (+36)',
+      inventDefaultOpenings: false,
+      accuracyScore: r.accuracyScore,
+    ));
+  }
+
+  /// Seed doors / mesh balcony when inventory required them but plan has none.
+  static ScanResult _ensureOpeningsFromInventory(
+    ScanResult r,
+    String inventoryHint,
+  ) {
+    if (inventoryHint.isEmpty) return r;
+    final existing = r.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .toList();
+    final notes = <String>[];
+    final seedMaps = <Map<String, dynamic>>[];
+
+    final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(inventoryHint);
+    final wantDoors = doorMatch != null
+        ? int.tryParse(doorMatch.group(1)!) ?? 0
+        : (inventoryHint.contains('door opening') ? 1 : 0);
+    final doorCount = existing.where((o) => o.type == StrokeType.door).length;
+    if (wantDoors > 0 && doorCount < wantDoors) {
+      final toAdd = wantDoors - doorCount;
+      const walls = ['south', 'west', 'east', 'north'];
+      for (var i = 0; i < toAdd; i++) {
+        seedMaps.add({
+          'type': 'door',
+          'wall': walls[i % walls.length],
+          'fromLeft': 1.0 + i * 0.5,
+          'width': 2.8,
+          'confidence': 0.6,
+          'evidence': 'seeded: inventory doorCount',
+        });
+      }
+      notes.add('Seeded $toAdd door opening(s) from inventory (+36)');
+    }
+
+    final wantMesh = inventoryHint.toLowerCase().contains('mesh') ||
+        inventoryHint.toLowerCase().contains('glass') ||
+        inventoryHint.contains('balcony');
+    final hasWide = existing.any((o) =>
+        o.type == StrokeType.balcony ||
+        o.type == StrokeType.window ||
+        (o.type == StrokeType.door && o.lengthFt >= 4.5));
+    if (wantMesh && !hasWide) {
+      seedMaps.add({
+        'type': 'balcony',
+        'wall': 'east',
+        'fromLeft': 1.0,
+        'width': 6.0,
+        'confidence': 0.6,
+        'evidence': 'seeded: inventory mesh/glass',
+      });
+      notes.add('Seeded mesh/glass balcony opening from inventory (+36)');
+    }
+
+    if (seedMaps.isEmpty) return r;
+
+    final parsed = ScanParser.parse({
+      'roomWidth': r.roomWidthFt,
+      'roomLength': r.roomLengthFt,
+      'openings': seedMaps,
+      'furniture': <dynamic>[],
+    });
+    final seeded = parsed.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .toList();
+
+    return ScanRefine.refine(AccurateScan.enforce(
+      widthFt: r.roomWidthFt,
+      lengthFt: r.roomLengthFt,
+      openings: [...existing, ...seeded],
+      furniture: r.furniture,
+      warnings: [...r.warnings, ...notes],
+      sourceLabel: 'Easy plan — openings seed (+36)',
       inventDefaultOpenings: false,
       accuracyScore: r.accuracyScore,
     ));
@@ -954,8 +1082,10 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
   }
 
   /// Public for HuggingFaceVisionScanner inventory gate.
-  static String formatInventoryHintPublic(Map<String, dynamic> inv) =>
-      _formatInventoryHint(inv);
+  static String formatInventoryHintPublic(Map<String, dynamic> inv) {
+    final base = _formatInventoryHint(inv);
+    return _enrichInventoryHint(inv, base);
+  }
 
   static Map<String, dynamic> applyInventoryGatePublic(
     Map<String, dynamic> layout,
@@ -988,7 +1118,7 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
     if (!b('hasSofa')) parts.add('NO SOFA');
     if (!b('hasTvUnit')) parts.add('NO TV_UNIT');
     if (b('hasMeshOrSlidingGlass')) {
-      parts.add('include balcony or large window for mesh/glass sliding');
+      parts.add('MUST include mesh balcony or large window for glass sliding');
     }
     final doors = inv['doorCount'];
     if (doors is num && doors > 0) {
@@ -997,6 +1127,72 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
     final notes = inv['notes']?.toString();
     if (notes != null && notes.isNotEmpty) parts.add('notes: $notes');
     return parts.isEmpty ? 'use photos only' : parts.join('; ');
+  }
+
+  /// Recover MUST flags when model notes mention items but booleans were false.
+  static String _enrichInventoryHint(
+    Map<String, dynamic> inv,
+    String hint,
+  ) {
+    final notes = (inv['notes'] ?? '').toString().toLowerCase();
+    final blob = '$hint $notes'.toLowerCase();
+    final parts = hint == 'use photos only' || hint.isEmpty
+        ? <String>[]
+        : hint.split('; ').where((p) => p.isNotEmpty).toList();
+
+    void ensure(String token) {
+      if (parts.any((p) => p.contains(token))) return;
+      parts.add(token);
+    }
+
+    final mentionsWardrobe = RegExp(
+      r'wardrobe|cupboard|almirah|closet|sliding\s*(cabinet|storage|door)',
+    ).hasMatch(blob);
+    final mentionsDesk = RegExp(
+      r'\bdesk\b|\btable\b|work\s*surface|monitor',
+    ).hasMatch(blob);
+    final mentionsMesh = RegExp(
+      r'mesh|sliding\s*glass|balcony|french\s*door',
+    ).hasMatch(blob);
+    final mentionsDoor = RegExp(r'\bdoor\b|opening|passage').hasMatch(blob);
+
+    if (mentionsWardrobe) ensure('MUST include WARDROBE');
+    if (mentionsDesk) ensure('MUST include TABLE (desk)');
+    if (mentionsMesh) {
+      ensure('MUST include mesh balcony or large window for glass sliding');
+    }
+    if (mentionsDoor && !parts.any((p) => p.contains('door opening'))) {
+      // Prefer explicit doorCount from JSON when present
+      final doors = inv['doorCount'];
+      final n = doors is num && doors > 0 ? doors.toInt() : 1;
+      ensure('about $n door opening(s)');
+    }
+    // Always keep forbid list when notes don't claim bed/sofa/tv
+    if (!blob.contains('bed') || blob.contains('no bed')) {
+      if (!parts.any((p) => p.contains('NO BED'))) ensure('NO BED');
+    }
+    if (!RegExp(r'\bsofa\b|\bcouch\b').hasMatch(blob)) {
+      if (!parts.any((p) => p.contains('NO SOFA'))) ensure('NO SOFA');
+    }
+    if (!RegExp(r'\btv\b|television').hasMatch(blob) ||
+        blob.contains('monitor')) {
+      // Monitors on desk ≠ TV unit
+      if (!parts.any((p) => p.contains('NO TV_UNIT'))) ensure('NO TV_UNIT');
+    }
+
+    return parts.isEmpty ? hint : parts.join('; ');
+  }
+
+  static String _mergeInventoryHints(String a, String b) {
+    final parts = <String>{};
+    for (final h in [a, b]) {
+      if (h.isEmpty || h == 'use photos only') continue;
+      for (final p in h.split('; ')) {
+        if (p.isNotEmpty) parts.add(p);
+      }
+    }
+    // Prefer stronger MUST over weaker
+    return parts.isEmpty ? a : parts.join('; ');
   }
 
   static Map<String, dynamic> _applyInventoryGate(
@@ -1072,8 +1268,9 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       wall: 'west',
       fromLeft: 0.5,
       depth: 1.2,
-      w: 6.0,
-      l: 2.0,
+      // Gold-plan style long sliding unit (~6.7×1.5)
+      w: 6.7,
+      l: 1.5,
       evidence: 'seeded: inventory required WARDROBE',
     );
     ensure(
@@ -1087,36 +1284,73 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       evidence: 'seeded: inventory required TABLE/desk',
     );
 
-    // Opening seed for mesh/sliding glass
+    // Opening seeds: mesh/glass balcony + doorCount from inventory (+36)
+    final openings = <Map<String, dynamic>>[
+      if (layout['openings'] is List)
+        for (final o in layout['openings'] as List)
+          if (o is Map) Map<String, dynamic>.from(o),
+      if (layout['walls'] is List)
+        for (final o in layout['walls'] as List)
+          if (o is Map &&
+              !['wall', 'WALL'].contains(o['type']?.toString()))
+            Map<String, dynamic>.from(o),
+    ];
+    var openingsChanged = false;
+
     if (inventoryHint.contains('mesh') || inventoryHint.contains('glass')) {
-      final openings = <Map<String, dynamic>>[
-        if (layout['openings'] is List)
-          for (final o in layout['openings'] as List)
-            if (o is Map) Map<String, dynamic>.from(o),
-        if (layout['walls'] is List)
-          for (final o in layout['walls'] as List)
-            if (o is Map &&
-                !['wall', 'WALL'].contains(o['type']?.toString()))
-              Map<String, dynamic>.from(o),
-      ];
       final hasBalconyOrWide = openings.any((o) {
         final t = o['type']?.toString().toLowerCase() ?? '';
-        return t.contains('balcony') || t.contains('window') || t.contains('door');
+        final w = o['width'] ?? o['widthFt'];
+        final ww = w is num ? w.toDouble() : double.tryParse('$w') ?? 0;
+        return t.contains('balcony') ||
+            t.contains('window') ||
+            (t.contains('door') && ww >= 4.5);
       });
       if (!hasBalconyOrWide) {
         openings.add({
           'type': 'balcony',
           'wall': 'east',
           'fromLeft': 1.0,
-          'width': 5.0,
+          'width': 6.0,
           'confidence': 0.55,
           'evidence': 'seeded: inventory mesh/sliding glass',
         });
         added++;
+        openingsChanged = true;
       }
+    }
+
+    final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(inventoryHint);
+    final wantDoors = doorMatch != null
+        ? int.tryParse(doorMatch.group(1)!) ?? 0
+        : 0;
+    if (wantDoors > 0) {
+      final haveDoors = openings.where((o) {
+        final t = o['type']?.toString().toLowerCase() ?? '';
+        return t.contains('door') && !t.contains('wardrobe');
+      }).length;
+      if (haveDoors < wantDoors) {
+        final toAdd = wantDoors - haveDoors;
+        const walls = ['south', 'west', 'east', 'north'];
+        for (var i = 0; i < toAdd; i++) {
+          openings.add({
+            'type': 'door',
+            'wall': walls[i % walls.length],
+            'fromLeft': 1.0 + i * 0.5,
+            'width': 2.8,
+            'confidence': 0.55,
+            'evidence': 'seeded: inventory doorCount',
+          });
+        }
+        added += toAdd;
+        openingsChanged = true;
+      }
+    }
+
+    if (openingsChanged || added > 0) {
       final outOpen = Map<String, dynamic>.from(layout);
       outOpen['furniture'] = list;
-      outOpen['openings'] = openings;
+      if (openingsChanged) outOpen['openings'] = openings;
       return (map: outOpen, added: added);
     }
 

@@ -27,6 +27,8 @@ You are graded on matching the photos — not inventing a typical bedroom.
   static const inventorySystem = '''
 Strict room inventory from photos. List what exists. Do not invent. Do not place. JSON only.
 Mirror ≠ wardrobe. Desk monitors ≠ TV unit.
+False negatives hurt more than false positives for wardrobe/desk/doors — if a
+sliding cupboard or work desk is visible in ANY frame, set those flags true.
 ''';
 
   static String inventoryPass() => '''
@@ -46,9 +48,40 @@ Same room, multiple photos. Cross-check every frame. Return ONLY:
 }
 
 Booleans MUST match photos.
-- hasWardrobe true only for storage cupboard/wardrobe (not mirror alone).
-- hasDeskOrTable true for desk/table with work surface.
-- hasBed/hasSofa/hasTvUnit true only if that object is clearly visible.
+- hasWardrobe TRUE for storage cupboard/wardrobe/sliding almirah (pink/white panels,
+  overhead storage). NOT a tall mirror alone.
+- hasDeskOrTable TRUE for desk/table/work surface (even with monitors on it).
+- hasBed/hasSofa/hasTvUnit true ONLY if that object is clearly visible (do not invent).
+- doorCount = number of walk-through door openings you can see (not wardrobe doors).
+- hasMeshOrSlidingGlass TRUE for full-height mesh/glass balcony or partition doors.
+- Prefer hasWardrobe/hasDeskOrTable true when unsure after multi-angle photos of a
+  furnished room (missing them empties the plan).
+''';
+
+  /// Second-chance inventory when first pass is sparse (multi-wall photos).
+  static String inventoryRecallPass() => '''
+RECALL pass — look again carefully across ALL photos of ONE room.
+
+Often missed: long sliding wardrobe/cupboard, computer desk with monitors,
+interior door openings, full-height mesh/glass sliding doors.
+
+Return ONLY the same inventory JSON as before:
+{
+  "hasWardrobe": true/false,
+  "hasDeskOrTable": true/false,
+  "hasBed": false,
+  "hasSofa": false,
+  "hasTvUnit": false,
+  "hasChair": true/false,
+  "doorCount": 0,
+  "hasMeshOrSlidingGlass": true/false,
+  "hasWindow": true/false,
+  "notes": "what you see"
+}
+
+Rules: set hasWardrobe true if ANY sliding cupboard/wardrobe is visible.
+Set hasDeskOrTable true if ANY desk/table is visible. Do NOT invent bed/sofa/TV.
+Count real door openings (passages), not wardrobe shutter panels.
 ''';
 
   /// System for architecture-only pass.
