@@ -328,33 +328,41 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       return sidesWithPhoto.first;
     }
 
+    // +64: invent missing pieces on gold-plan walls (S wardrobe, E mesh, W+N doors)
+    final gold = PhotoTrueLayout.defaultStudyWallRoles(
+      roomWidthFt,
+      roomLengthFt,
+    );
+
     if (inventoryHint.contains('MUST include WARDROBE') &&
         !types.contains(FurnitureType.wardrobe)) {
-      // +54: prefer longest photo wall free of doors (storage wall, gold style)
       final doorWalls = {
         for (final o in opens)
           if (o.type == StrokeType.door) o.wall,
       };
-      WallSide side = sidesWithPhoto.first;
-      var bestLen = -1.0;
-      for (final s in sidesWithPhoto) {
-        if (doorWalls.contains(s) && sidesWithPhoto.any((x) => !doorWalls.contains(x))) {
-          continue;
-        }
-        final len = s.lengthFt(roomWidthFt, roomLengthFt);
-        if (len > bestLen) {
-          bestLen = len;
-          side = s;
-        }
-      }
-      // Fallback prefer west/north if pickSide style needed
-      if (bestLen < 0) {
+      // Prefer gold storage wall if photo exists and free of doors
+      WallSide side = gold.wardrobe;
+      if (!sidesWithPhoto.contains(side) || doorWalls.contains(side)) {
         side = pickSide([
+          gold.wardrobe,
+          WallSide.south,
           WallSide.west,
           WallSide.north,
           WallSide.east,
-          WallSide.south,
         ]);
+        // Prefer longest door-free photo wall among remaining
+        var bestLen = -1.0;
+        for (final s in sidesWithPhoto) {
+          if (doorWalls.contains(s) &&
+              sidesWithPhoto.any((x) => !doorWalls.contains(x))) {
+            continue;
+          }
+          final len = s.lengthFt(roomWidthFt, roomLengthFt);
+          if (len > bestLen) {
+            bestLen = len;
+            side = s;
+          }
+        }
       }
       final wl = side.lengthFt(roomWidthFt, roomLengthFt);
       final along =
@@ -362,40 +370,44 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       furn.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
-        fromLeftFt: wl / 2, // +56 center along wall
+        fromLeftFt: wl / 2,
         depthFt: 1.6,
         widthFt: along.toDouble(),
         lengthFt: 1.6,
         wallLengthFt: wl,
         confidence: 0.88,
-        evidence: 'photo-true inventory seed WARDROBE (+56)',
+        evidence: 'photo-true inventory seed WARDROBE (+64 gold wall)',
       ));
       types.add(FurnitureType.wardrobe);
-      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+56)');
+      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+64)');
     }
 
     if (inventoryHint.contains('MUST include TABLE') &&
         !types.contains(FurnitureType.table)) {
       final side = pickSide([
+        gold.desk,
+        WallSide.west,
         WallSide.south,
         WallSide.east,
         WallSide.north,
-        WallSide.west,
       ]);
       final wl = side.lengthFt(roomWidthFt, roomLengthFt);
+      final deskCenter = side == WallSide.west
+          ? math.max(wl * 0.65, wl - 3.5)
+          : wl * 0.42;
       furn.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
         wall: side,
-        fromLeftFt: wl * 0.42, // +56 center
+        fromLeftFt: deskCenter,
         depthFt: 1.5,
         widthFt: 4.0,
         lengthFt: 2.0,
         wallLengthFt: wl,
         confidence: 0.88,
-        evidence: 'photo-true inventory seed TABLE (+56)',
+        evidence: 'photo-true inventory seed TABLE (+64 gold desk)',
       ));
       types.add(FurnitureType.table);
-      notes.add('Photo-true: seeded TABLE on ${side.shortLabel} (+37)');
+      notes.add('Photo-true: seeded TABLE on ${side.shortLabel} (+64)');
     }
 
     final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(inventoryHint);
@@ -404,19 +416,20 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
         : (inventoryHint.contains('door opening') ? 1 : 0);
     final haveDoors = opens.where((o) => o.type == StrokeType.door).length;
     if (wantDoors > 0 && haveDoors < wantDoors) {
+      // Prefer gold door walls first, then remaining photo walls
       final order = <WallSide>[
-        ...sidesWithPhoto.where((s) =>
-            s == WallSide.south ||
-            s == WallSide.west ||
-            s == WallSide.east ||
-            s == WallSide.north),
+        gold.doorPrimary,
+        gold.doorSecondary,
         ...sidesWithPhoto,
       ];
-      // Unique preserve order
       final seen = <WallSide>{};
       final unique = <WallSide>[];
       for (final s in order) {
-        if (seen.add(s)) unique.add(s);
+        if (s == gold.wardrobe) continue; // never invent door on storage wall
+        if (sidesWithPhoto.contains(s) && seen.add(s)) unique.add(s);
+      }
+      for (final s in sidesWithPhoto) {
+        if (s != gold.wardrobe && seen.add(s)) unique.add(s);
       }
       var added = 0;
       for (final use in unique) {
@@ -429,12 +442,12 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
           widthFt: 2.8,
           wallLengthFt: wl,
           confidence: 0.8,
-          evidence: 'photo-true inventory door seed (+37)',
+          evidence: 'photo-true inventory door seed (+64)',
         ));
         added++;
       }
       if (added > 0) {
-        notes.add('Photo-true: seeded $added door opening(s) (+37)');
+        notes.add('Photo-true: seeded $added door opening(s) (+64 gold walls)');
       }
     }
 
@@ -449,13 +462,14 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
                 4.5));
     if (wantMesh && !hasWide) {
       final side = pickSide([
+        gold.mesh,
         WallSide.east,
         WallSide.north,
         WallSide.south,
         WallSide.west,
       ]);
       final wl = side.lengthFt(roomWidthFt, roomLengthFt);
-      final span = math.min(6.0, wl * 0.7);
+      final span = math.min(8.0, wl * 0.55);
       opens.add(WallOpeningHint.fromLeft(
         wall: side,
         type: StrokeType.balcony,
@@ -463,9 +477,11 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
         widthFt: span,
         wallLengthFt: wl,
         confidence: 0.8,
-        evidence: 'photo-true inventory mesh/glass seed (+37)',
+        evidence: 'photo-true inventory mesh/glass seed (+64)',
       ));
-      notes.add('Photo-true: seeded mesh/glass balcony on ${side.shortLabel} (+37)');
+      notes.add(
+        'Photo-true: seeded mesh/glass balcony on ${side.shortLabel} (+64)',
+      );
     }
 
     return (openings: opens, furniture: furn);

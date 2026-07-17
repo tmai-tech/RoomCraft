@@ -1038,7 +1038,7 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
     final extra = <ScanFurnitureHint>[...r.furniture];
     final notes = <String>[...r.warnings];
 
-    void seed(FurnitureType type, String mustToken, String wallName) {
+    void seed(FurnitureType type, String mustToken, WallSide wall) {
       if (!inventoryHint.contains(mustToken)) return;
       if (types.contains(type)) return;
       // Approximate catalog sizes
@@ -1052,34 +1052,44 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       final l = r.roomLengthFt;
       double x;
       double y;
-      switch (wallName) {
-        case 'west':
-          x = dim.$2 / 2 + 0.3;
+      final deep = dim.$2 / 2 + 0.3;
+      switch (wall) {
+        case WallSide.west:
+          x = deep;
+          // +64: desk toward north (gold NW); others mid wall
+          y = type == FurnitureType.table ? l * 0.72 : l / 2;
+        case WallSide.east:
+          x = w - deep;
           y = l / 2;
-        case 'east':
-          x = w - dim.$2 / 2 - 0.3;
-          y = l / 2;
-        case 'north':
+        case WallSide.north:
           x = w / 2;
-          y = l - dim.$2 / 2 - 0.3;
-        default:
+          y = l - deep;
+        case WallSide.south:
           x = w / 2;
-          y = dim.$2 / 2 + 0.3;
+          y = deep;
       }
       extra.add(ScanFurnitureHint(
         type: type,
         posFt: Offset(x, y),
         widthFt: dim.$1,
         lengthFt: dim.$2,
-        rotationRad: 0,
+        rotationRad: wall == WallSide.east || wall == WallSide.west
+            ? 1.5708
+            : 0,
       ));
       types.add(type);
-      notes.add('Seeded ${type.name} from inventory on $wallName wall');
+      notes.add(
+        'Seeded ${type.name} from inventory on ${wall.name} wall (+64 gold)',
+      );
     }
 
-    // Prefer longer wall for wardrobe (gold-plan style wall-hugging unit)
-    seed(FurnitureType.wardrobe, 'MUST include WARDROBE', 'west');
-    seed(FurnitureType.table, 'MUST include TABLE', 'south');
+    // +64: gold walls — wardrobe south (wide) / west (deep), desk west
+    final gold = PhotoTrueLayout.defaultStudyWallRoles(
+      r.roomWidthFt,
+      r.roomLengthFt,
+    );
+    seed(FurnitureType.wardrobe, 'MUST include WARDROBE', gold.wardrobe);
+    seed(FurnitureType.table, 'MUST include TABLE', gold.desk);
     if (extra.length == r.furniture.length) return r;
     return ScanRefine.refine(AccurateScan.enforce(
       widthFt: r.roomWidthFt,
@@ -1362,26 +1372,36 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       added++;
     }
 
+    // +64: gold wall roles from room size when present in layout
+    final rw = (layout['roomWidth'] is num)
+        ? (layout['roomWidth'] as num).toDouble()
+        : 20.0;
+    final rl = (layout['roomLength'] is num)
+        ? (layout['roomLength'] as num).toDouble()
+        : 17.0;
+    final goldRoles = PhotoTrueLayout.defaultStudyWallRoles(rw, rl);
     ensure(
       type: 'WARDROBE',
       must: inventoryHint.contains('MUST include WARDROBE'),
-      wall: 'west',
-      fromLeft: 0.5,
-      depth: 1.2,
+      wall: goldRoles.wardrobe.name,
+      fromLeft: (goldRoles.wardrobe.lengthFt(rw, rl) / 2).clamp(3.0, 12.0),
+      depth: 1.6,
       // Gold-plan style long sliding unit (~6.7×1.5)
       w: 6.7,
       l: 1.5,
-      evidence: 'seeded: inventory required WARDROBE',
+      evidence: 'seeded: inventory required WARDROBE (+64 gold)',
     );
     ensure(
       type: 'TABLE',
       must: inventoryHint.contains('MUST include TABLE'),
-      wall: 'south',
-      fromLeft: 2.5,
+      wall: goldRoles.desk.name,
+      fromLeft: goldRoles.desk == WallSide.west
+          ? (goldRoles.desk.lengthFt(rw, rl) * 0.65)
+          : 2.5,
       depth: 1.5,
       w: 4.0,
       l: 2.0,
-      evidence: 'seeded: inventory required TABLE/desk',
+      evidence: 'seeded: inventory required TABLE/desk (+64 gold)',
     );
 
     // Opening seeds: mesh/glass balcony + doorCount from inventory (+36)

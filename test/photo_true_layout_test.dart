@@ -687,6 +687,16 @@ void main() {
     );
   });
 
+  test('+64 gold roles wide vs deep room', () {
+    final wide = PhotoTrueLayout.defaultStudyWallRoles(20, 17);
+    expect(wide.wardrobe, WallSide.south);
+    expect(wide.mesh, WallSide.east);
+    expect(wide.desk, WallSide.west);
+    final deep = PhotoTrueLayout.defaultStudyWallRoles(12, 18);
+    expect(deep.wardrobe, WallSide.west);
+    expect(deep.mesh, WallSide.north);
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
