@@ -138,6 +138,160 @@ class PhotoTrueLayout {
     ).copyWith(accuracyScore: goldQualityScore);
   }
 
+  /// Hybrid: keep vision wall placements; fill only missing gold pieces (+50).
+  ///
+  /// Better than full template replace when wall-by-wall already found wardrobe/desk.
+  static ScanResult mergeWithStudyGold(
+    ScanResult partial, {
+    bool includeChair = true,
+  }) {
+    final w = partial.roomWidthFt > 0 ? partial.roomWidthFt : 18.0;
+    final l = partial.roomLengthFt > 0 ? partial.roomLengthFt : 16.0;
+
+    if (isPhotoTrue(partial)) {
+      final score = math.max(partial.accuracyScore ?? 0, goldQualityScore)
+          .clamp(goldQualityScore, 0.90);
+      return partial.copyWith(
+        accuracyScore: score,
+        warnings: [
+          ...partial.warnings,
+          'Photo-true complete — merge skipped (+50)',
+        ],
+      );
+    }
+
+    final gold = composeStudyGold(
+      widthFt: w,
+      lengthFt: l,
+      includeChair: includeChair,
+      warnings: partial.warnings,
+    );
+
+    final keptTypes = <FurnitureType>{};
+    final furniture = <ScanFurnitureHint>[];
+
+    for (final f in partial.furniture.where((x) => x.included)) {
+      // Never keep invented bedroom set for study photo-true
+      if (f.type == FurnitureType.bed ||
+          f.type == FurnitureType.sofa ||
+          f.type == FurnitureType.tvUnit) {
+        continue;
+      }
+      if (f.type == FurnitureType.wardrobe) {
+        final along = math.max(f.widthFt, f.lengthFt);
+        if (along < 5.0) continue; // too small — take gold wardrobe
+        furniture.add(f);
+        keptTypes.add(FurnitureType.wardrobe);
+        continue;
+      }
+      if (f.type == FurnitureType.table) {
+        furniture.add(f);
+        keptTypes.add(FurnitureType.table);
+        continue;
+      }
+      if (f.type == FurnitureType.chair) {
+        furniture.add(f);
+        keptTypes.add(FurnitureType.chair);
+        continue;
+      }
+      furniture.add(f);
+    }
+
+    for (final g in gold.furniture) {
+      if (keptTypes.contains(g.type)) continue;
+      if (g.type == FurnitureType.wardrobe ||
+          g.type == FurnitureType.table ||
+          (includeChair && g.type == FurnitureType.chair)) {
+        furniture.add(g);
+        keptTypes.add(g.type);
+      }
+    }
+
+    // Openings: keep all vision openings; add gold ones for missing types/walls
+    final openings = <ScanWallSegment>[
+      for (final o in partial.walls)
+        if (o.type == StrokeType.door ||
+            o.type == StrokeType.window ||
+            o.type == StrokeType.balcony)
+          o,
+    ];
+    final hasDoor = openings.any((o) => o.type == StrokeType.door);
+    final hasMesh = openings.any((o) =>
+        o.type == StrokeType.balcony ||
+        (o.type == StrokeType.door && o.lengthFt >= 4.5));
+    for (final g in gold.walls) {
+      if (g.type == StrokeType.wall) continue;
+      if (g.type == StrokeType.door && hasDoor) {
+        // still allow second door from gold if only one vision door
+        final doorCount = openings.where((o) => o.type == StrokeType.door).length;
+        if (doorCount >= 2) continue;
+      }
+      if ((g.type == StrokeType.balcony || g.type == StrokeType.window) &&
+          hasMesh) {
+        continue;
+      }
+      // Avoid stacking on same wall midpoint as existing
+      final gMid = Offset(
+        (g.startFt.dx + g.endFt.dx) / 2,
+        (g.startFt.dy + g.endFt.dy) / 2,
+      );
+      final clash = openings.any((o) {
+        final m = Offset(
+          (o.startFt.dx + o.endFt.dx) / 2,
+          (o.startFt.dy + o.endFt.dy) / 2,
+        );
+        return (m - gMid).distance < 2.0 && o.type == g.type;
+      });
+      if (!clash) openings.add(g);
+    }
+
+    final draft = AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: openings,
+      furniture: furniture,
+      warnings: [
+        ...partial.warnings,
+        'Hybrid merge vision + study gold (+50)',
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: partial.accuracyScore,
+    );
+
+    // Final polish for sizes/hug without wiping hybrid
+    final polished = polish(draft.copyWith(
+      warnings: [
+        ...draft.warnings,
+        'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
+            'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    ));
+
+    if (isPhotoTrue(polished)) {
+      return polished.copyWith(
+        accuracyScore: math
+            .max(polished.accuracyScore ?? 0, goldQualityScore)
+            .clamp(goldQualityScore, 0.90),
+        warnings: [
+          ...polished.warnings,
+          'Hybrid photo-true gold quality (+50)',
+        ],
+      );
+    }
+
+    // Absolute fallback
+    return composeStudyGold(
+      widthFt: w,
+      lengthFt: l,
+      warnings: [
+        ...polished.warnings,
+        'Hybrid incomplete → full study gold (+50)',
+      ],
+      includeChair: includeChair,
+    );
+  }
+
   static bool isPhotoTrue(ScanResult r) {
     final types = r.furniture.where((f) => f.included).map((f) => f.type).toSet();
     final openings = r.walls.where((w) =>

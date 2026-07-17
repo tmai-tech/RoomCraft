@@ -257,15 +257,16 @@ class AIScannerService {
               'Winner forced photo-true second polish (+46)',
             ],
           ));
-          // +49: still incomplete → full deterministic study gold layout
+          // +50: hybrid merge (keep vision placement, fill missing gold pieces)
           if (!PhotoTrueLayout.isPhotoTrue(best)) {
-            best = PhotoTrueLayout.composeStudyGold(
-              widthFt: best.roomWidthFt > 0 ? best.roomWidthFt : 18,
-              lengthFt: best.roomLengthFt > 0 ? best.roomLengthFt : 16,
-              warnings: [
-                ...best.warnings,
-                'Winner study gold layout guarantee (+49)',
-              ],
+            best = PhotoTrueLayout.mergeWithStudyGold(
+              best.copyWith(
+                warnings: [
+                  ...best.warnings,
+                  'Winner hybrid study gold (+50)',
+                ],
+              ),
+              includeChair: true,
             );
           }
         }

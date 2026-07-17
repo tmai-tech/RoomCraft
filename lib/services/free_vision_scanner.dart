@@ -729,14 +729,14 @@ Rules:
         ],
       );
     } else {
-      // +49: full deterministic study gold layout (gold-plan quality, photo-true inventory)
-      result = PhotoTrueLayout.composeStudyGold(
-        widthFt: size.widthFt,
-        lengthFt: size.lengthFt,
-        warnings: [
-          'Offline study gold layout guarantee (+49)',
-          ...result.warnings,
-        ],
+      // +50: hybrid merge keeps any vision pieces; fills rest from study gold
+      result = PhotoTrueLayout.mergeWithStudyGold(
+        result.copyWith(
+          warnings: [
+            'Hybrid study gold guarantee (+50)',
+            ...result.warnings,
+          ],
+        ),
         includeChair: true,
       );
     }

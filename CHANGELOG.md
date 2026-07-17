@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+50 (2026-07-17)
+
+### Hybrid vision + study gold merge
+- **mergeWithStudyGold**: keep vision wardrobe/desk/chair placements; fill only missing pieces and openings from study gold template.
+- Multi-wall incomplete path uses hybrid merge (not full template wipe).
+- Full `composeStudyGold` only if hybrid still incomplete.
+- Version **+50**.
+
 ## 1.0.0-beta.1+49 (2026-07-17)
 
 ### Deterministic study gold layout (photo-true gold quality)

@@ -161,6 +161,39 @@ void main() {
     );
   });
 
+  test('+50 merge keeps east wardrobe and fills openings', () {
+    final partial = AccurateScan.enforce(
+      widthFt: 18,
+      lengthFt: 16,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(16.5, 8),
+          widthFt: 6.5,
+          lengthFt: 1.5,
+          rotationRad: 1.5708,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.4,
+    );
+    final merged = PhotoTrueLayout.mergeWithStudyGold(partial);
+    expect(PhotoTrueLayout.isPhotoTrue(merged), isTrue);
+    final wardrobe =
+        merged.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // Vision east placement preserved (not reset to north template only)
+    expect(wardrobe.posFt.dx, greaterThan(10));
+    expect(
+      merged.furniture.any((f) => f.type == FurnitureType.table),
+      isTrue,
+    );
+    expect(
+      merged.walls.any((w) =>
+          w.type == StrokeType.door || w.type == StrokeType.balcony),
+      isTrue,
+    );
+  });
+
   test('+49 composeStudyGold is photo-true dense gold layout', () {
     final gold = PhotoTrueLayout.composeStudyGold(
       widthFt: 18.5,
