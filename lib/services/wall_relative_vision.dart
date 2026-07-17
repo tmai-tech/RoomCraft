@@ -295,8 +295,16 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       wallPhotos: wallPhotos.length,
       overviewPhotos: overviewPhotos.length,
     ));
-    // +39: gold-plan quality wall-hug + score when photo-true
-    return PhotoTrueLayout.polish(composed);
+    // +79: full ensureGoldQuality (was polish-only — skipped hybrid/full gold).
+    // wall_walk mode calls this path directly without FreeVision finish().
+    var out = composed;
+    if (inventoryHint.isNotEmpty &&
+        !out.warnings.any((w) => w.startsWith('Inventory:'))) {
+      out = out.copyWith(
+        warnings: ['Inventory: $inventoryHint', ...out.warnings],
+      );
+    }
+    return PhotoTrueLayout.ensureGoldQuality(out, includeChair: true);
   }
 
   /// Ensure MUST wardrobe/TABLE and door/mesh openings as high-confidence wall anchors.

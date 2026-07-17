@@ -273,9 +273,18 @@ class FreeVisionScanner {
             wallPhotoMap: wallPhotoMap,
           );
           if (fallback.furniture.isNotEmpty) {
-            return fallback.copyWith(
-              warnings: [...fallback.warnings, ...warnings],
+            // +79: never skip ensureGoldQuality on early wall-by-wall return
+            var out = fallback.copyWith(
+              warnings: [
+                if (inventoryHint.isNotEmpty &&
+                    !fallback.warnings
+                        .any((w) => w.startsWith('Inventory:')))
+                  'Inventory: $inventoryHint',
+                ...fallback.warnings,
+                ...warnings,
+              ],
             );
+            return PhotoTrueLayout.ensureGoldQuality(out, includeChair: true);
           }
         } catch (e2) {
           warnings.add('Wall-by-wall fallback failed: $e2');

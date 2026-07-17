@@ -813,7 +813,12 @@ class PhotoTrueLayout {
       );
     }
 
-    final roles = inferStudyWallRoles(partial);
+    // +79: same as full-gold (+78) — only trust inferred walls when a wardrobe
+    // already exists on the partial plan; else default gold orientation.
+    final roles = partial.furniture.any(
+            (f) => f.included && f.type == FurnitureType.wardrobe)
+        ? inferStudyWallRoles(partial)
+        : defaultStudyWallRoles(w, l);
     final gold = composeStudyGold(
       widthFt: w,
       lengthFt: l,
@@ -1496,10 +1501,11 @@ class PhotoTrueLayout {
         wall: meshWall,
         type: StrokeType.balcony,
         fromLeftFt: 1.5,
-        widthFt: math.min(10.0, mLen * 0.62),
+        // +79: match composeStudyGold mesh span (was min 10 → short on 17ft wall)
+        widthFt: math.min(12.0, mLen * 0.62),
         wallLengthFt: mLen,
         confidence: 0.85,
-        evidence: 'photo-true mesh gold wall (+69)',
+        evidence: 'photo-true mesh gold wall (+69/79)',
       ));
       usedOpenWalls.add(meshWall);
       notes.add('Photo-true (+69): seeded mesh on ${meshWall.name}');

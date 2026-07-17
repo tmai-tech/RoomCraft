@@ -814,6 +814,56 @@ void main() {
     expect(wardrobe.posFt.dx, lessThan(4));
   });
 
+  test('+79 hybrid merge without wardrobe uses default gold south storage', () {
+    final tableOnly = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: const [],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(2, 4),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.25,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final merged = PhotoTrueLayout.mergeWithStudyGold(tableOnly);
+    expect(PhotoTrueLayout.isPhotoTrue(merged), isTrue);
+    final wardrobe =
+        merged.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, lessThan(4), reason: 'default gold south');
+  });
+
+  test('+79 polish mesh span matches gold (~62% wall, cap 12)', () {
+    final empty = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.2,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final polished = PhotoTrueLayout.polish(empty);
+    final mesh =
+        polished.walls.firstWhere((w) => w.type == StrokeType.balcony);
+    final span = (mesh.startFt - mesh.endFt).distance;
+    // 17 * 0.62 ≈ 10.54 (was capped at 10)
+    expect(span, greaterThan(10.2));
+    expect(span, lessThanOrEqualTo(12.1));
+  });
+
   test('+59 preferVisionFurniture keeps east wardrobe through full gold', () {
     final vision = AccurateScan.enforce(
       widthFt: 20,
