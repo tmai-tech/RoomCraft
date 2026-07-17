@@ -58,7 +58,7 @@ class PhotoTrueLayout {
     return false;
   }
 
-  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51–54).
+  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51–57).
   /// Study-gold template only when [isStudyLike] — never wipe a bedroom scan.
   static ScanResult ensureGoldQuality(
     ScanResult input, {
@@ -71,6 +71,7 @@ class PhotoTrueLayout {
     }
     cur = polish(cur);
     if (isPhotoTrue(cur)) {
+      cur = resolveWallClearances(cur);
       return cur.copyWith(
         accuracyScore: math
             .max(cur.accuracyScore ?? 0, goldQualityScore)
@@ -78,40 +79,167 @@ class PhotoTrueLayout {
         warnings: [
           ...cur.warnings,
           if (!cur.warnings.any((w) => w.contains('ensureGoldQuality')))
-            'ensureGoldQuality: polish complete (+54)',
+            'ensureGoldQuality: polish complete (+57)',
         ],
       );
     }
     if (!isStudyLike(cur)) {
-      return cur.copyWith(
+      return resolveWallClearances(cur.copyWith(
         warnings: [
           ...cur.warnings,
           'ensureGoldQuality: non-study room — polish only (+52)',
         ],
-      );
+      ));
     }
     cur = mergeWithStudyGold(cur, includeChair: includeChair);
     if (isPhotoTrue(cur)) {
+      cur = resolveWallClearances(cur);
       return cur.copyWith(
         warnings: [
           ...cur.warnings,
-          'ensureGoldQuality: hybrid complete (+54)',
+          'ensureGoldQuality: hybrid complete (+57)',
         ],
       );
     }
     // +54: full gold uses vision wall roles when partial has any placement signal
     final roles = inferStudyWallRoles(cur);
-    return composeStudyGold(
+    return resolveWallClearances(composeStudyGold(
       widthFt: cur.roomWidthFt > 0 ? cur.roomWidthFt : goldRoomWidthFt,
       lengthFt: cur.roomLengthFt > 0 ? cur.roomLengthFt : goldRoomLengthFt,
       warnings: [
         ...cur.warnings,
-        'ensureGoldQuality: full study gold with vision wall roles (+54) '
+        'ensureGoldQuality: full study gold with vision wall roles (+57) '
             'wardrobe=${roles.wardrobe.name}',
       ],
       includeChair: includeChair,
       roles: roles,
-    );
+    ));
+  }
+
+  /// Slide wall furniture off openings that share the same wall (+57).
+  ///
+  /// Gold plans never put a wardrobe/desk over a door/mesh span — openings win
+  /// the wall segment; furniture moves to the nearest free gap.
+  static ScanResult resolveWallClearances(ScanResult input) {
+    final w = input.roomWidthFt;
+    final l = input.roomLengthFt;
+    if (w <= 0 || l <= 0) return input;
+
+    final opensByWall = <WallSide, List<({double start, double end})>>{};
+    for (final o in input.walls.where((s) =>
+        s.type == StrokeType.door ||
+        s.type == StrokeType.window ||
+        s.type == StrokeType.balcony)) {
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field == null) continue;
+      final start = field.fromLeftFt;
+      final end = start + field.widthFt;
+      opensByWall.putIfAbsent(field.wall, () => []).add((start: start, end: end));
+    }
+    if (opensByWall.isEmpty) return input;
+
+    final fixed = <ScanFurnitureHint>[];
+    var moved = 0;
+    for (final f in input.furniture) {
+      if (!f.included ||
+          (f.type != FurnitureType.wardrobe &&
+              f.type != FurnitureType.table &&
+              f.type != FurnitureType.bookshelf)) {
+        fixed.add(f);
+        continue;
+      }
+      final side = _nearestWall(f.posFt, w, l);
+      final ranges = opensByWall[side];
+      if (ranges == null || ranges.isEmpty) {
+        fixed.add(f);
+        continue;
+      }
+      final wl = side.lengthFt(w, l);
+      final along =
+          math.max(f.widthFt, f.lengthFt).clamp(1.0, wl * 0.92).toDouble();
+      final deep =
+          math.min(f.widthFt, f.lengthFt).clamp(0.8, 3.0).toDouble();
+      final center = _centerFromLeftOnWall(f.posFt, side, w, l);
+      final left = center - along / 2;
+      final right = center + along / 2;
+      final hits = ranges.any(
+        (r) => left < r.end - 0.35 && right > r.start + 0.35,
+      );
+      if (!hits) {
+        fixed.add(f);
+        continue;
+      }
+
+      final sorted = [...ranges]..sort((a, b) => a.start.compareTo(b.start));
+      final gaps = <({double start, double end})>[];
+      var cursor = 0.25;
+      for (final r in sorted) {
+        if (r.start - cursor >= along + 0.5) {
+          gaps.add((start: cursor, end: r.start));
+        }
+        cursor = math.max(cursor, r.end);
+      }
+      if (wl - 0.25 - cursor >= along + 0.5) {
+        gaps.add((start: cursor, end: wl - 0.25));
+      }
+      if (gaps.isEmpty) {
+        fixed.add(f);
+        continue;
+      }
+      gaps.sort((a, b) {
+        final ca = (a.start + a.end) / 2;
+        final cb = (b.start + b.end) / 2;
+        return (ca - center).abs().compareTo((cb - center).abs());
+      });
+      final gap = gaps.first;
+      final newCenter = ((gap.start + gap.end) / 2)
+          .clamp(along / 2 + 0.3, wl - along / 2 - 0.3)
+          .toDouble();
+      final hint = WallFurnitureHint.fromLeft(
+        type: f.type,
+        wall: side,
+        fromLeftFt: newCenter,
+        depthFt: deep,
+        widthFt: along,
+        lengthFt: deep,
+        wallLengthFt: wl,
+        confidence: 0.92,
+        evidence: 'wall clearance off opening (+57)',
+      );
+      final composed = WallRelativeComposer.compose(
+        widthFt: w,
+        lengthFt: l,
+        openings: const [],
+        furniture: [hint],
+        warnings: const [],
+      );
+      if (composed.furniture.isNotEmpty) {
+        fixed.add(composed.furniture.first);
+        moved++;
+      } else {
+        fixed.add(f);
+      }
+    }
+
+    if (moved == 0) return input;
+    final openings = input.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
+    return AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: openings,
+      furniture: fixed,
+      warnings: [
+        ...input.warnings,
+        'Wall clearance: moved $moved piece(s) off openings (+57)',
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: input.accuracyScore,
+    ).copyWith(accuracyScore: input.accuracyScore);
   }
 
   /// Wall roles for study gold (vision-driven when available).
@@ -330,19 +458,24 @@ class PhotoTrueLayout {
             ? 'study gold door secondary same entry wall (+55)'
             : 'study gold door secondary (+55)',
       ),
+      // +57: mesh on lower/left of adjacent wall so desk can sit at wardrobe corner
       WallOpeningHint.fromLeft(
         wall: meshWall,
         type: StrokeType.balcony,
-        fromLeftFt: 1.5,
-        widthFt: math.min(8.0, meshWall.lengthFt(w, l) * 0.55),
+        fromLeftFt: 1.2,
+        widthFt: math.min(7.5, meshWall.lengthFt(w, l) * 0.42),
         wallLengthFt: meshWall.lengthFt(w, l),
         confidence: 0.92,
-        evidence: 'study gold mesh adjacent wardrobe (+55)',
+        evidence: 'study gold mesh adjacent wardrobe (+57)',
       ),
     ];
 
-    // +56: fromLeftFt is CENTER along wall (WallFurnitureHint contract) — was
-    // wrongly passing left-edge, which shifted wardrobes toward one corner.
+    // +56: fromLeftFt is CENTER along wall (WallFurnitureHint contract).
+    // +57: desk at wardrobe corner end of mesh wall (free of mesh span).
+    final dwl = deskWall.lengthFt(w, l);
+    final deskCenter = deskWall == meshWall
+        ? math.max(dwl * 0.72, dwl - 3.0) // high fromLeft = wardrobe corner after mesh
+        : dwl * 0.42;
     final furniture = <WallFurnitureHint>[
       WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
@@ -353,32 +486,31 @@ class PhotoTrueLayout {
         lengthFt: 1.6,
         wallLengthFt: wardrobeWallLen,
         confidence: 0.95,
-        evidence: 'study gold full-wall wardrobe (+56 on ${wardrobeWall.name})',
+        evidence: 'study gold full-wall wardrobe (+57 on ${wardrobeWall.name})',
       ),
       WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
         wall: deskWall,
-        fromLeftFt: deskWall.lengthFt(w, l) * 0.42, // center near mid-left of desk wall
+        fromLeftFt: deskCenter,
         depthFt: 1.6,
         widthFt: 4.0,
         lengthFt: 2.0,
-        wallLengthFt: deskWall.lengthFt(w, l),
+        wallLengthFt: dwl,
         confidence: 0.95,
-        evidence: 'study gold desk (+56 on ${deskWall.name})',
+        evidence: 'study gold desk near mesh/wardrobe corner (+57)',
       ),
     ];
     if (includeChair) {
-      final dwl = deskWall.lengthFt(w, l);
       furniture.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.chair,
         wall: deskWall,
-        fromLeftFt: math.min(dwl * 0.42 + 2.0, dwl - 1.5),
+        fromLeftFt: math.min(deskCenter + 2.0, dwl - 1.5),
         depthFt: 2.5,
         widthFt: 1.8,
         lengthFt: 1.8,
         wallLengthFt: dwl,
         confidence: 0.9,
-        evidence: 'study gold chair (+56)',
+        evidence: 'study gold chair (+57)',
       ));
     }
 
@@ -389,7 +521,7 @@ class PhotoTrueLayout {
       furniture: furniture,
       warnings: [
         ...warnings,
-        'Deterministic study gold layout (+54): wardrobe@${wardrobeWall.name} '
+        'Deterministic study gold layout (+57): wardrobe@${wardrobeWall.name} '
             'desk@${deskWall.name} mesh@${meshWall.name}',
       ],
       wallPhotos: 4,
@@ -403,7 +535,7 @@ class PhotoTrueLayout {
             s.type == StrokeType.balcony)
         .toList();
 
-    return AccurateScan.enforce(
+    final enforced = AccurateScan.enforce(
       widthFt: w,
       lengthFt: l,
       openings: opens,
@@ -414,6 +546,7 @@ class PhotoTrueLayout {
       inventDefaultOpenings: false,
       accuracyScore: goldQualityScore,
     ).copyWith(accuracyScore: goldQualityScore);
+    return resolveWallClearances(enforced);
   }
 
   /// Hybrid: keep vision wall placements; fill only missing gold pieces (+50/54).
@@ -1073,7 +1206,7 @@ class PhotoTrueLayout {
     final score = math.max(draft.accuracyScore ?? 0, goldQualityScore)
         .clamp(goldQualityScore, 0.90);
 
-    return AccurateScan.enforce(
+    final polished = AccurateScan.enforce(
       widthFt: w,
       lengthFt: l,
       openings: openingsOut,
@@ -1085,6 +1218,8 @@ class PhotoTrueLayout {
       inventDefaultOpenings: false,
       accuracyScore: score,
     ).copyWith(accuracyScore: score);
+    // +57: never leave wardrobe/desk covering a door/mesh span
+    return resolveWallClearances(polished);
   }
 
   static ScanFurnitureHint _normalizeGeneric(

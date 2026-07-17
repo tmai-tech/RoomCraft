@@ -437,6 +437,65 @@ void main() {
     expect(wardrobe.posFt.dy, closeTo(8.5, 3.0));
   });
 
+  test('+57 resolveWallClearances moves desk off door span', () {
+    // Desk centered on south wall covering a door → must slide off
+    final conflict = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(8, 0),
+          endFt: Offset(11, 0),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 4),
+          endFt: Offset(20, 11),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 15.5),
+          widthFt: 8,
+          lengthFt: 1.6,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(9.5, 1.5), // overlaps south door mid
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.74,
+    );
+    final out = PhotoTrueLayout.resolveWallClearances(conflict);
+    final table =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    // Table center should leave door mid x=9.5
+    expect((table.posFt.dx - 9.5).abs(), greaterThan(1.5));
+    // Still on south wall (low y)
+    expect(table.posFt.dy, lessThan(4));
+  });
+
+  test('+57 composeStudyGold desk near wardrobe-mesh corner not over mesh mid', () {
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final roles = PhotoTrueLayout.defaultStudyWallRoles(20, 17);
+    // desk wall == mesh wall (west)
+    expect(roles.desk, roles.mesh);
+    final table =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    // west wall x small; wardrobe corner = north → higher y after mesh span
+    expect(table.posFt.dx, lessThan(4));
+    expect(table.posFt.dy, greaterThan(9));
+    // Mesh should not cover table y-band
+    final mesh = gold.walls.firstWhere((w) => w.type == StrokeType.balcony);
+    final meshMidY = (mesh.startFt.dy + mesh.endFt.dy) / 2;
+    expect((table.posFt.dy - meshMidY).abs(), greaterThan(2.0));
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
