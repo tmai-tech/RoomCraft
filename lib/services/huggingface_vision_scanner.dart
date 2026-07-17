@@ -221,7 +221,7 @@ class HuggingFaceVisionScanner {
       ],
     );
     warnings.addAll(size.notes);
-    // +42: same photo-true room floor as Groq path
+    // +42/74: photo-true dense floor before enforce; always rescale vision coords
     final minSize = AutoScale.ensurePhotoTrueMinSize(
       widthFt: size.widthFt,
       lengthFt: size.lengthFt,
@@ -239,39 +239,37 @@ class HuggingFaceVisionScanner {
       );
     }
 
+    ScanResult geometrySource = ScanResult(
+      roomWidthFt: provisionalW,
+      roomLengthFt: provisionalL,
+      walls: parsed.walls,
+      furniture: parsed.furniture,
+      warnings: const [],
+    );
+    if ((provisionalW - size.widthFt).abs() > 0.05 ||
+        (provisionalL - size.lengthFt).abs() > 0.05) {
+      geometrySource = AutoScale.rescaleResult(
+        geometrySource,
+        newWidthFt: size.widthFt,
+        newLengthFt: size.lengthFt,
+        extraNotes: const ['HF geometry rescale to gold/size floor (+74)'],
+      );
+      warnings.add(
+        'HF rescaled ${provisionalW.toStringAsFixed(1)}×'
+        '${provisionalL.toStringAsFixed(1)} → '
+        '${size.widthFt.toStringAsFixed(1)}×${size.lengthFt.toStringAsFixed(1)} ft (+74)',
+      );
+    }
+
     var result = AccurateScan.enforce(
       widthFt: size.widthFt,
       lengthFt: size.lengthFt,
-      openings: parsed.walls,
-      furniture: parsed.furniture,
+      openings: geometrySource.walls,
+      furniture: geometrySource.furniture,
       warnings: warnings,
       sourceLabel: 'Easy plan — HF $modelLabel',
       inventDefaultOpenings: false,
     );
-
-    if ((provisionalW - size.widthFt).abs() > 0.4 ||
-        (provisionalL - size.lengthFt).abs() > 0.4) {
-      final scaled = AutoScale.rescaleResult(
-        ScanResult(
-          roomWidthFt: provisionalW,
-          roomLengthFt: provisionalL,
-          walls: parsed.walls,
-          furniture: parsed.furniture,
-          warnings: const [],
-        ),
-        newWidthFt: size.widthFt,
-        newLengthFt: size.lengthFt,
-      );
-      result = AccurateScan.enforce(
-        widthFt: size.widthFt,
-        lengthFt: size.lengthFt,
-        openings: scaled.walls,
-        furniture: scaled.furniture,
-        warnings: warnings,
-        sourceLabel: 'Easy plan — HF $modelLabel',
-        inventDefaultOpenings: false,
-      );
-    }
 
     final openingsCount = result.walls
         .where((w) =>

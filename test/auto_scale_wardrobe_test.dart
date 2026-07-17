@@ -1,9 +1,10 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_craft/domain/auto_scale.dart';
 import 'package:room_craft/domain/accurate_scan.dart';
+import 'package:room_craft/domain/auto_scale.dart';
 import 'package:room_craft/models/furniture_item.dart';
 import 'package:room_craft/models/scan_result.dart';
-import 'package:flutter/material.dart';
+import 'package:room_craft/models/stroke_model.dart';
 
 void main() {
   test('+38 wardrobe prior does not shrink long unit rooms', () {
@@ -38,8 +39,44 @@ void main() {
       inventoryHint:
           'MUST include WARDROBE; MUST include mesh balcony; about 2 door opening(s)',
     );
-    expect(min.widthFt, greaterThanOrEqualTo(18));
-    expect(min.lengthFt, greaterThanOrEqualTo(16));
+    // +53/74: dense floor is gold ~20×17
+    expect(min.widthFt, greaterThanOrEqualTo(20));
+    expect(min.lengthFt, greaterThanOrEqualTo(17));
+  });
+
+  test('+74 rescale maps east-wall door to new room edge', () {
+    final small = ScanResult(
+      roomWidthFt: 12,
+      roomLengthFt: 10.5,
+      walls: const [
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(12, 3),
+          endFt: Offset(12, 6),
+        ),
+      ],
+      furniture: const [
+        ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(6, 1.2),
+          widthFt: 7,
+          lengthFt: 1.5,
+        ),
+      ],
+    );
+    final scaled = AutoScale.rescaleResult(
+      small,
+      newWidthFt: 20,
+      newLengthFt: 17,
+    );
+    expect(scaled.roomWidthFt, 20);
+    final door = scaled.walls.firstWhere((w) => w.type == StrokeType.door);
+    final midX = (door.startFt.dx + door.endFt.dx) / 2;
+    expect(midX, closeTo(20.0, 0.5));
+    final wardrobe =
+        scaled.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // Center x scales 6/12 * 20 = 10
+    expect(wardrobe.posFt.dx, closeTo(10.0, 0.5));
   });
 
   test('+38 user size not overridden by photo-true floor', () {

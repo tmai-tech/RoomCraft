@@ -352,7 +352,7 @@ class FreeVisionScanner {
         ),
     ];
 
-    final size = AutoScale.resolve(
+    var size = AutoScale.resolve(
       userWidthFt: userWidthFt,
       userLengthFt: userLengthFt,
       visionWidthFt: provisionalW,
@@ -363,40 +363,58 @@ class FreeVisionScanner {
     );
     warnings.addAll(size.notes);
 
+    // +74: raise to gold dense floor *before* wall-by-wall so placement uses
+    // ~20×17 feet (not 12×10.5 then expand later with a second rescale).
+    final minSize = AutoScale.ensurePhotoTrueMinSize(
+      widthFt: size.widthFt,
+      lengthFt: size.lengthFt,
+      inventoryHint: inventoryHint,
+      usedUserSize: size.usedUserSize,
+    );
+    if (minSize.notes.isNotEmpty) {
+      warnings.addAll(minSize.notes);
+      size = (
+        widthFt: minSize.widthFt,
+        lengthFt: minSize.lengthFt,
+        confidence: size.confidence,
+        notes: size.notes,
+        usedUserSize: size.usedUserSize,
+      );
+    }
+
+    // Always map provisional vision coords into final room size when they differ
+    ScanResult geometrySource = ScanResult(
+      roomWidthFt: provisionalW,
+      roomLengthFt: provisionalL,
+      walls: parsed.walls,
+      furniture: parsed.furniture,
+      warnings: const [],
+    );
+    if ((provisionalW - size.widthFt).abs() > 0.05 ||
+        (provisionalL - size.lengthFt).abs() > 0.05) {
+      geometrySource = AutoScale.rescaleResult(
+        geometrySource,
+        newWidthFt: size.widthFt,
+        newLengthFt: size.lengthFt,
+        extraNotes: const ['Bulk geometry rescale to gold/size floor (+74)'],
+      );
+      warnings.add(
+        'Rescaled vision layout ${provisionalW.toStringAsFixed(1)}×'
+        '${provisionalL.toStringAsFixed(1)} → '
+        '${size.widthFt.toStringAsFixed(1)}×${size.lengthFt.toStringAsFixed(1)} ft (+74)',
+      );
+    }
+
     var result = AccurateScan.enforce(
       widthFt: size.widthFt,
       lengthFt: size.lengthFt,
-      openings: parsed.walls,
-      furniture: parsed.furniture,
+      openings: geometrySource.walls,
+      furniture: geometrySource.furniture,
       warnings: warnings,
       sourceLabel: 'Easy photo/video plan — Groq Llama 4 Scout',
       inventDefaultOpenings: false,
       accuracyScore: null,
     );
-
-    if ((provisionalW - size.widthFt).abs() > 0.4 ||
-        (provisionalL - size.lengthFt).abs() > 0.4) {
-      final scaled = AutoScale.rescaleResult(
-        ScanResult(
-          roomWidthFt: provisionalW,
-          roomLengthFt: provisionalL,
-          walls: parsed.walls,
-          furniture: parsed.furniture,
-          warnings: const [],
-        ),
-        newWidthFt: size.widthFt,
-        newLengthFt: size.lengthFt,
-      );
-      result = AccurateScan.enforce(
-        widthFt: size.widthFt,
-        lengthFt: size.lengthFt,
-        openings: scaled.walls,
-        furniture: scaled.furniture,
-        warnings: warnings,
-        sourceLabel: 'Easy photo/video plan — Groq Llama 4 Scout',
-        inventDefaultOpenings: false,
-      );
-    }
 
     final openingsCount = result.walls
         .where((w) =>
