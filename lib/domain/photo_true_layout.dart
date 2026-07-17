@@ -101,19 +101,20 @@ class PhotoTrueLayout {
         ],
       );
     }
-    // +54: full gold uses vision wall roles when partial has any placement signal
+    // +54/58: full gold uses vision wall roles + keeps vision openings
     final roles = inferStudyWallRoles(cur);
-    return resolveWallClearances(composeStudyGold(
+    final gold = composeStudyGold(
       widthFt: cur.roomWidthFt > 0 ? cur.roomWidthFt : goldRoomWidthFt,
       lengthFt: cur.roomLengthFt > 0 ? cur.roomLengthFt : goldRoomLengthFt,
       warnings: [
         ...cur.warnings,
-        'ensureGoldQuality: full study gold with vision wall roles (+57) '
+        'ensureGoldQuality: full study gold with vision wall roles (+58) '
             'wardrobe=${roles.wardrobe.name}',
       ],
       includeChair: includeChair,
       roles: roles,
-    ));
+    );
+    return resolveWallClearances(preferVisionOpenings(gold, cur));
   }
 
   /// Slide wall furniture off openings that share the same wall (+57).
@@ -699,17 +700,75 @@ class PhotoTrueLayout {
       );
     }
 
-    // Absolute fallback still respects vision wall roles
-    return composeStudyGold(
+    // Absolute fallback still respects vision wall roles + vision openings (+58)
+    final fullGold = composeStudyGold(
       widthFt: w,
       lengthFt: l,
       warnings: [
         ...polished.warnings,
-        'Hybrid incomplete → full study gold with vision roles (+54)',
+        'Hybrid incomplete → full study gold with vision roles (+58)',
       ],
       includeChair: includeChair,
       roles: roles,
     );
+    return resolveWallClearances(preferVisionOpenings(fullGold, partial));
+  }
+
+  /// Keep vision door/mesh segments when full gold would wipe them (+58).
+  ///
+  /// Gold template openings fill only missing types; real photo openings win.
+  static ScanResult preferVisionOpenings(ScanResult gold, ScanResult vision) {
+    final w = gold.roomWidthFt;
+    final l = gold.roomLengthFt;
+    final vOpens = vision.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
+    if (vOpens.isEmpty) return gold;
+
+    final openings = <ScanWallSegment>[...vOpens];
+    int doorCount() =>
+        openings.where((o) => o.type == StrokeType.door).length;
+    bool hasMesh() => openings.any((o) =>
+        o.type == StrokeType.balcony ||
+        o.type == StrokeType.window ||
+        (o.type == StrokeType.door && o.lengthFt >= 4.5));
+
+    for (final g in gold.walls) {
+      if (g.type == StrokeType.wall) continue;
+      if (g.type == StrokeType.door && doorCount() >= 2) continue;
+      if ((g.type == StrokeType.balcony || g.type == StrokeType.window) &&
+          hasMesh()) {
+        continue;
+      }
+      final gMid = Offset(
+        (g.startFt.dx + g.endFt.dx) / 2,
+        (g.startFt.dy + g.endFt.dy) / 2,
+      );
+      final clash = openings.any((o) {
+        final m = Offset(
+          (o.startFt.dx + o.endFt.dx) / 2,
+          (o.startFt.dy + o.endFt.dy) / 2,
+        );
+        return (m - gMid).distance < 2.0;
+      });
+      if (!clash) openings.add(g);
+    }
+
+    return AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: openings,
+      furniture: gold.furniture,
+      warnings: [
+        ...gold.warnings,
+        'Prefer vision openings over template (+58): ${vOpens.length} kept',
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: gold.accuracyScore,
+    ).copyWith(accuracyScore: gold.accuracyScore);
   }
 
   static bool isPhotoTrue(ScanResult r) {

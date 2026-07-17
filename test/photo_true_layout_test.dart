@@ -496,6 +496,38 @@ void main() {
     expect((table.posFt.dy - meshMidY).abs(), greaterThan(2.0));
   });
 
+  test('+58 preferVisionOpenings keeps vision door positions', () {
+    final vision = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        // Vision found a door on east wall (unusual for template)
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(20, 2),
+          endFt: Offset(20, 5),
+        ),
+      ],
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    );
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final out = PhotoTrueLayout.preferVisionOpenings(gold, vision);
+    final doors = out.walls.where((w) => w.type == StrokeType.door).toList();
+    expect(doors.length, greaterThanOrEqualTo(1));
+    // At least one door still near east (x≈20)
+    expect(
+      doors.any((d) {
+        final mx = (d.startFt.dx + d.endFt.dx) / 2;
+        return mx > 18;
+      }),
+      isTrue,
+    );
+    // Still dense enough for photo-true after gold furniture
+    expect(out.furniture.any((f) => f.type == FurnitureType.wardrobe), isTrue);
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,

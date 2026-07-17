@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -842,7 +843,8 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
     ));
   }
 
-  /// Keep one of each major type (wardrobe/bed/sofa/tv) to reduce doubles.
+  /// Keep one of each major type (wardrobe/bed/sofa/tv/table) to reduce doubles.
+  /// +58: prefer the **largest** wardrobe/table (first-seen was often a tiny false detect).
   static ScanResult _dedupeMajorFurniture(ScanResult r) {
     const majors = {
       FurnitureType.wardrobe,
@@ -851,21 +853,36 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
       FurnitureType.tvUnit,
       FurnitureType.table,
     };
-    final seen = <FurnitureType>{};
-    final kept = <ScanFurnitureHint>[];
+    final best = <FurnitureType, ScanFurnitureHint>{};
+    final others = <ScanFurnitureHint>[];
     for (final f in r.furniture) {
-      if (majors.contains(f.type)) {
-        if (seen.contains(f.type)) continue;
-        seen.add(f.type);
+      if (!majors.contains(f.type)) {
+        others.add(f);
+        continue;
       }
-      kept.add(f);
+      final prev = best[f.type];
+      if (prev == null) {
+        best[f.type] = f;
+        continue;
+      }
+      final prevAlong = math.max(prev.widthFt, prev.lengthFt);
+      final along = math.max(f.widthFt, f.lengthFt);
+      final prevArea = prev.widthFt * prev.lengthFt;
+      final area = f.widthFt * f.lengthFt;
+      // Prefer longer wall unit (wardrobe), then larger footprint
+      if (along > prevAlong + 0.25 ||
+          (along >= prevAlong - 0.1 && area > prevArea + 0.5)) {
+        best[f.type] = f;
+      }
     }
+    final kept = [...best.values, ...others];
     if (kept.length == r.furniture.length) return r;
     return r.copyWith(
       furniture: kept,
       warnings: [
         ...r.warnings,
-        'Deduped major furniture (${r.furniture.length - kept.length} dropped)',
+        'Deduped major furniture (+58 keep largest): '
+            '${r.furniture.length - kept.length} dropped',
       ],
     );
   }
@@ -930,6 +947,20 @@ Rules: wall = north|south|east|west; fromLeft+depth required; no BED/SOFA/TV unl
     final types = r.furniture.map((f) => f.type).toSet();
     if (types.contains(FurnitureType.wardrobe)) q += 30;
     if (types.contains(FurnitureType.table)) q += 30;
+    // +58: multi openings / photo-true strongly prefer wall-by-wall over bulk scatter
+    final opens = r.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .length;
+    q += opens * 18;
+    if (PhotoTrueLayout.isPhotoTrue(r)) q += 55;
+    final wardrobe = r.furniture.where((f) => f.type == FurnitureType.wardrobe);
+    if (wardrobe.isNotEmpty) {
+      final along = math.max(wardrobe.first.widthFt, wardrobe.first.lengthFt);
+      if (along >= 6.0) q += 20;
+    }
     if (inventoryHint.contains('MUST include WARDROBE') &&
         !types.contains(FurnitureType.wardrobe)) {
       q -= 40;
