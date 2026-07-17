@@ -25,6 +25,9 @@ class PhotoTrueLayout {
   /// Higher bar when vision-preserved wardrobe placement is kept (+51).
   static const double goldVisionScore = 0.82;
 
+  /// Closest to manual gold orientation (S wardrobe / E mesh / multi doors) (+67).
+  static const double goldOrientationScore = 0.88;
+
   /// Cap when plan is incomplete (feedback 443cf0c3: 74% with empty plan).
   static const double incompleteScoreCap = 0.48;
 
@@ -77,29 +80,24 @@ class PhotoTrueLayout {
     return false;
   }
 
-  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51–57).
+  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51–67).
   /// Study-gold template only when [isStudyLike] — never wipe a bedroom scan.
   static ScanResult ensureGoldQuality(
     ScanResult input, {
     bool includeChair = true,
   }) {
     var cur = input;
+    final visionSnapshot = input;
     // +53: raise undersized study plans to gold-plan room floor before polish
     if (isStudyLike(cur)) {
       cur = _ensureGoldRoomSize(cur);
     }
     cur = polish(cur);
     if (isPhotoTrue(cur)) {
-      cur = resolveWallClearances(cur);
-      return cur.copyWith(
-        accuracyScore: math
-            .max(cur.accuracyScore ?? 0, goldQualityScore)
-            .clamp(goldQualityScore, 0.92),
-        warnings: [
-          ...cur.warnings,
-          if (!cur.warnings.any((w) => w.contains('ensureGoldQuality')))
-            'ensureGoldQuality: polish complete (+57)',
-        ],
+      return _finalizePhotoTrue(
+        resolveWallClearances(cur),
+        vision: visionSnapshot,
+        path: 'polish',
       );
     }
     if (!isStudyLike(cur)) {
@@ -112,12 +110,10 @@ class PhotoTrueLayout {
     }
     cur = mergeWithStudyGold(cur, includeChair: includeChair);
     if (isPhotoTrue(cur)) {
-      cur = resolveWallClearances(cur);
-      return cur.copyWith(
-        warnings: [
-          ...cur.warnings,
-          'ensureGoldQuality: hybrid complete (+57)',
-        ],
+      return _finalizePhotoTrue(
+        resolveWallClearances(cur),
+        vision: visionSnapshot,
+        path: 'hybrid',
       );
     }
     // +54/58/59: full gold keeps vision openings + vision wardrobe/desk walls
@@ -127,15 +123,120 @@ class PhotoTrueLayout {
       lengthFt: cur.roomLengthFt > 0 ? cur.roomLengthFt : goldRoomLengthFt,
       warnings: [
         ...cur.warnings,
-        'ensureGoldQuality: full study gold with vision wall roles (+59) '
+        'ensureGoldQuality: full study gold with vision wall roles (+67) '
             'wardrobe=${roles.wardrobe.name}',
       ],
       includeChair: includeChair,
       roles: roles,
     );
-    return resolveWallClearances(
+    var out = resolveWallClearances(
       preferVisionFurniture(preferVisionOpenings(gold, cur), cur),
     );
+    // +67: if vision openings blocked mesh/doors, rebuild openings from gold
+    // while still preferring vision furniture walls.
+    if (!isPhotoTrue(out)) {
+      final rebuilt = composeStudyGold(
+        widthFt: out.roomWidthFt,
+        lengthFt: out.roomLengthFt,
+        warnings: [
+          ...out.warnings,
+          'ensureGoldQuality: re-compose openings for photo-true (+67)',
+        ],
+        includeChair: includeChair,
+        roles: inferStudyWallRoles(out),
+      );
+      out = resolveWallClearances(
+        preferVisionFurniture(rebuilt, visionSnapshot),
+      );
+    }
+    return _finalizePhotoTrue(out, vision: visionSnapshot, path: 'full-gold');
+  }
+
+  /// Score + notes when plan meets photo-true gold quality (+67).
+  static ScanResult _finalizePhotoTrue(
+    ScanResult r, {
+    required ScanResult vision,
+    required String path,
+  }) {
+    if (!isPhotoTrue(r)) {
+      final raw = r.accuracyScore ?? 0.4;
+      return r.copyWith(
+        accuracyScore: math.min(raw, incompleteScoreCap),
+        warnings: [
+          ...r.warnings,
+          'ensureGoldQuality: incomplete after $path (+67) — edit on Review',
+        ],
+      );
+    }
+    final bar = photoTrueScoreBar(r, vision: vision);
+    return r.copyWith(
+      accuracyScore: math.max(r.accuracyScore ?? 0, bar).clamp(bar, 0.92),
+      warnings: [
+        ...r.warnings,
+        if (!r.warnings.any((w) => w.contains('ensureGoldQuality: finalized')))
+          'ensureGoldQuality: finalized photo-true (+67 $path) '
+              'score ${(bar * 100).round()}%'
+              '${matchesDefaultGoldOrientation(r) ? " · gold orientation" : ""}',
+      ],
+    );
+  }
+
+  /// Confidence bar for complete photo-true study plans (+67).
+  static double photoTrueScoreBar(
+    ScanResult r, {
+    ScanResult? vision,
+  }) {
+    var bar = goldQualityScore;
+    final src = vision ?? r;
+    final visionWardrobe = src.furniture.any((f) =>
+        f.included &&
+        f.type == FurnitureType.wardrobe &&
+        math.max(f.widthFt, f.lengthFt) >= 5.0);
+    if (visionWardrobe) bar = goldVisionScore;
+    if (matchesDefaultGoldOrientation(r)) {
+      bar = math.max(bar, goldOrientationScore);
+    }
+    return bar;
+  }
+
+  /// True when wardrobe/mesh/doors sit on default gold walls for this room (+67).
+  ///
+  /// Wide room gold: wardrobe south, mesh east, doors west and/or north.
+  static bool matchesDefaultGoldOrientation(ScanResult r) {
+    if (!isPhotoTrue(r)) return false;
+    final w = r.roomWidthFt;
+    final l = r.roomLengthFt;
+    if (w <= 0 || l <= 0) return false;
+    final roles = defaultStudyWallRoles(w, l);
+    final wardrobe =
+        r.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    final ww = _nearestWall(wardrobe.posFt, w, l);
+    if (ww != roles.wardrobe) return false;
+
+    var meshOk = false;
+    var doorOnPrimary = false;
+    var doorOnSecondary = false;
+    for (final o in r.walls.where((s) =>
+        s.type == StrokeType.door ||
+        s.type == StrokeType.window ||
+        s.type == StrokeType.balcony)) {
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field == null) continue;
+      final isWide = o.type == StrokeType.balcony ||
+          o.type == StrokeType.window ||
+          o.lengthFt >= 4.5;
+      if (isWide && field.wall == roles.mesh) meshOk = true;
+      if (o.type == StrokeType.door && field.wall == roles.doorPrimary) {
+        doorOnPrimary = true;
+      }
+      if (o.type == StrokeType.door && field.wall == roles.doorSecondary) {
+        doorOnSecondary = true;
+      }
+    }
+    if (!meshOk) return false;
+    // At least one gold door wall (vision may only catch one)
+    if (!doorOnPrimary && !doorOnSecondary) return false;
+    return true;
   }
 
   /// Slide wall furniture off openings that share the same wall (+57).

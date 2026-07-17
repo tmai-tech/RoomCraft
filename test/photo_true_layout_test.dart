@@ -746,6 +746,53 @@ void main() {
     );
   });
 
+  test('+67 composeStudyGold matches default gold orientation score bar', () {
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    expect(PhotoTrueLayout.isPhotoTrue(gold), isTrue);
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(gold), isTrue);
+    expect(
+      PhotoTrueLayout.photoTrueScoreBar(gold),
+      greaterThanOrEqualTo(PhotoTrueLayout.goldOrientationScore),
+    );
+  });
+
+  test('+67 ensureGoldQuality recovers when vision openings omit mesh', () {
+    final thinVision = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        // Only one door — incomplete gold openings
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0, 3),
+          endFt: Offset(0, 6),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 1.5),
+          widthFt: 7,
+          lengthFt: 1.6,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.35,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(thinVision);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.74));
+    // Vision wardrobe on south preserved
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, lessThan(4));
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
