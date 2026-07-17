@@ -182,7 +182,10 @@ class WallFurnitureHint {
     this.freeYFt,
   });
 
-  /// Center of piece is [fromLeftFt] from left corner when facing wall.
+  /// [fromLeftFt] = CENTER of piece from left corner when facing wall (+56).
+  ///
+  /// Do not pass the left edge of the piece — that shifts long wardrobes
+  /// toward one corner (gold-plan position error). Openings still use left edge.
   factory WallFurnitureHint.fromLeft({
     required FurnitureType type,
     required WallSide wall,
@@ -195,7 +198,11 @@ class WallFurnitureHint {
     String evidence = 'tape measure',
   }) {
     final wl = wallLengthFt <= 0 ? 1.0 : wallLengthFt;
-    final t = (fromLeftFt / wl).clamp(0.05, 0.95);
+    // Keep long units from clamping hard to 0.05/0.95 midpoints
+    final halfAlong = math.max(widthFt, lengthFt) / (2 * wl);
+    final lo = math.min(0.12, 0.05 + halfAlong * 0.15);
+    final hi = math.max(0.88, 0.95 - halfAlong * 0.15);
+    final t = (fromLeftFt / wl).clamp(lo, hi);
     return WallFurnitureHint(
       type: type,
       wall: wall,

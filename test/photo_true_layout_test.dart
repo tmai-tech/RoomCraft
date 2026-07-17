@@ -381,6 +381,62 @@ void main() {
     }
   });
 
+  test('+56 gold wardrobe is centered on longest wall (fromLeft = center)', () {
+    // Wide room → wardrobe on north (y≈17). Center x should be ~10, not ~4
+    // (old left-edge bug placed center at left edge of unit).
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    final wardrobe =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, greaterThan(14)); // north wall
+    expect(wardrobe.posFt.dx, closeTo(10.0, 2.5));
+    expect(
+      mathMax(wardrobe.widthFt, wardrobe.lengthFt),
+      greaterThanOrEqualTo(6.5),
+    );
+  });
+
+  test('+56 polish preserves east wardrobe center after grow', () {
+    final base = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(2, 0),
+          endFt: Offset(5, 0),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 4),
+          endFt: Offset(20, 11),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(18.5, 8.5),
+          widthFt: 7.0,
+          lengthFt: 1.6,
+          rotationRad: 1.5708,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(8, 2),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.5,
+    );
+    final polished = PhotoTrueLayout.polish(base);
+    final wardrobe =
+        polished.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dx, greaterThan(16)); // still east
+    // Along east wall, y-center should stay near mid room (~8.5)
+    expect(wardrobe.posFt.dy, closeTo(8.5, 3.0));
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,

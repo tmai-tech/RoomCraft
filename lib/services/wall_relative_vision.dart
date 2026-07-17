@@ -362,16 +362,16 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       furn.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
-        fromLeftFt: math.max(0.3, (wl - along) / 2),
+        fromLeftFt: wl / 2, // +56 center along wall
         depthFt: 1.6,
         widthFt: along.toDouble(),
         lengthFt: 1.6,
         wallLengthFt: wl,
         confidence: 0.88,
-        evidence: 'photo-true inventory seed WARDROBE (+54)',
+        evidence: 'photo-true inventory seed WARDROBE (+56)',
       ));
       types.add(FurnitureType.wardrobe);
-      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+54)');
+      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+56)');
     }
 
     if (inventoryHint.contains('MUST include TABLE') &&
@@ -386,13 +386,13 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       furn.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
         wall: side,
-        fromLeftFt: math.min(wl * 0.35, wl - 1),
+        fromLeftFt: wl * 0.42, // +56 center
         depthFt: 1.5,
         widthFt: 4.0,
         lengthFt: 2.0,
         wallLengthFt: wl,
         confidence: 0.88,
-        evidence: 'photo-true inventory seed TABLE (+37)',
+        evidence: 'photo-true inventory seed TABLE (+56)',
       ));
       types.add(FurnitureType.table);
       notes.add('Photo-true: seeded TABLE on ${side.shortLabel} (+37)');

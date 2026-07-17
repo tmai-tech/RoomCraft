@@ -341,31 +341,30 @@ class PhotoTrueLayout {
       ),
     ];
 
+    // +56: fromLeftFt is CENTER along wall (WallFurnitureHint contract) — was
+    // wrongly passing left-edge, which shifted wardrobes toward one corner.
     final furniture = <WallFurnitureHint>[
       WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: wardrobeWall,
-        fromLeftFt: math.max(0.3, (wardrobeWallLen - wardrobeAlong) / 2),
+        fromLeftFt: wardrobeWallLen / 2, // centered full-wall unit
         depthFt: 1.6,
         widthFt: wardrobeAlong.toDouble(),
         lengthFt: 1.6,
         wallLengthFt: wardrobeWallLen,
         confidence: 0.95,
-        evidence: 'study gold full-wall wardrobe (+54 on ${wardrobeWall.name})',
+        evidence: 'study gold full-wall wardrobe (+56 on ${wardrobeWall.name})',
       ),
       WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
         wall: deskWall,
-        fromLeftFt: math.min(
-          deskWall.lengthFt(w, l) * 0.45,
-          deskWall.lengthFt(w, l) - 3.5,
-        ),
+        fromLeftFt: deskWall.lengthFt(w, l) * 0.42, // center near mid-left of desk wall
         depthFt: 1.6,
         widthFt: 4.0,
         lengthFt: 2.0,
         wallLengthFt: deskWall.lengthFt(w, l),
         confidence: 0.95,
-        evidence: 'study gold desk (+54 on ${deskWall.name})',
+        evidence: 'study gold desk (+56 on ${deskWall.name})',
       ),
     ];
     if (includeChair) {
@@ -373,13 +372,13 @@ class PhotoTrueLayout {
       furniture.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.chair,
         wall: deskWall,
-        fromLeftFt: math.min(dwl * 0.45 + 2.0, dwl - 2.0),
+        fromLeftFt: math.min(dwl * 0.42 + 2.0, dwl - 1.5),
         depthFt: 2.5,
         widthFt: 1.8,
         lengthFt: 1.8,
         wallLengthFt: dwl,
         confidence: 0.9,
-        evidence: 'study gold chair (+54)',
+        evidence: 'study gold chair (+56)',
       ));
     }
 
@@ -935,16 +934,16 @@ class PhotoTrueLayout {
       furnHints.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
-        fromLeftFt: math.max(0.3, (wl - along) / 2),
+        fromLeftFt: wl / 2, // +56 center along wall
         depthFt: 1.6,
         widthFt: along.toDouble(),
         lengthFt: 1.6,
         wallLengthFt: wl,
         confidence: 0.92,
-        evidence: 'photo-true seed full-wall wardrobe (+53)',
+        evidence: 'photo-true seed full-wall wardrobe (+56)',
       ));
       usedWalls.add(side);
-      notes.add('Seeded WARDROBE on ${side.name} (+53)');
+      notes.add('Seeded WARDROBE on ${side.name} (+56)');
     }
 
     if (!hasTable &&
@@ -961,13 +960,13 @@ class PhotoTrueLayout {
       furnHints.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
         wall: side,
-        fromLeftFt: math.min(wl * 0.4, wl - 2.5),
+        fromLeftFt: wl * 0.42, // +56 center
         depthFt: 1.6,
         widthFt: 4.0,
         lengthFt: 2.0,
         wallLengthFt: wl,
         confidence: 0.92,
-        evidence: 'photo-true seed desk (+43)',
+        evidence: 'photo-true seed desk (+56)',
       ));
       usedWalls.add(side);
       notes.add('Seeded TABLE on ${side.name} (+43)');
@@ -1130,8 +1129,9 @@ class PhotoTrueLayout {
       along = along.clamp(2.5, wl * 0.6);
       deep = deep.clamp(1.5, 2.5);
     }
-    final fromLeft = _fromLeftOnWall(f.posFt, side, w, l, along)
-        .clamp(0.3, math.max(0.3, wl - along - 0.3))
+    // +56: fromLeft is CENTER of piece (not left edge)
+    final fromLeft = _centerFromLeftOnWall(f.posFt, side, w, l)
+        .clamp(along / 2 + 0.2, math.max(along / 2 + 0.2, wl - along / 2 - 0.2))
         .toDouble();
     return WallFurnitureHint.fromLeft(
       type: f.type,
@@ -1142,7 +1142,7 @@ class PhotoTrueLayout {
       lengthFt: deep,
       wallLengthFt: wl,
       confidence: 0.9,
-      evidence: 'preserved wall placement (+43)',
+      evidence: 'preserved wall placement (+56 center)',
     );
   }
 
@@ -1158,24 +1158,24 @@ class PhotoTrueLayout {
     return WallSide.east;
   }
 
-  static double _fromLeftOnWall(
+  /// Center of piece along wall, feet from LEFT while facing wall (+56).
+  static double _centerFromLeftOnWall(
     Offset pos,
     WallSide side,
     double w,
     double l,
-    double along,
   ) {
-    // Center along wall → fromLeft = center - along/2 (facing L→R)
     switch (side) {
       case WallSide.south:
-        // facing: left = east, x decreases with t → fromLeft ≈ w - x - along/2
-        return (w - pos.dx - along / 2).clamp(0.0, w);
+        // facing: left = east → center fromLeft = w - x
+        return (w - pos.dx).clamp(0.0, w);
       case WallSide.north:
-        return (pos.dx - along / 2).clamp(0.0, w);
+        return pos.dx.clamp(0.0, w);
       case WallSide.east:
-        return (l - pos.dy - along / 2).clamp(0.0, l);
+        // facing: left = north → center fromLeft = l - y
+        return (l - pos.dy).clamp(0.0, l);
       case WallSide.west:
-        return (pos.dy - along / 2).clamp(0.0, l);
+        return pos.dy.clamp(0.0, l);
     }
   }
 
