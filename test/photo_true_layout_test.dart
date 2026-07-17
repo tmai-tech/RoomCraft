@@ -161,6 +161,38 @@ void main() {
     );
   });
 
+  test('+46 second polish from forced inventory reaches photo-true', () {
+    // Simulates weak wall-by-wall then forced inventory second pass (+46)
+    final weak = AccurateScan.enforce(
+      widthFt: 18,
+      lengthFt: 16,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    );
+    final first = PhotoTrueLayout.polish(weak);
+    expect(PhotoTrueLayout.isPhotoTrue(first), isFalse);
+    final second = PhotoTrueLayout.polish(first.copyWith(
+      warnings: [
+        ...first.warnings,
+        'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
+            'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
+            'about 2 door opening(s); MUST include mesh balcony',
+        'Forced photo-true second polish (+46)',
+      ],
+    ));
+    expect(PhotoTrueLayout.isPhotoTrue(second), isTrue);
+    expect(second.accuracyScore, greaterThanOrEqualTo(0.74));
+    final types = second.furniture.map((f) => f.type).toSet();
+    expect(types, contains(FurnitureType.wardrobe));
+    expect(types, contains(FurnitureType.table));
+    expect(
+      second.walls.any((w) =>
+          w.type == StrokeType.door || w.type == StrokeType.balcony),
+      isTrue,
+    );
+  });
+
   test('+44 seeds chair at desk when inventory has chair', () {
     final base = AccurateScan.enforce(
       widthFt: 16,

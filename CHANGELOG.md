@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+46 (2026-07-17)
+
+### Forced second photo-true polish on multi-wall
+- Labeled multi-wall path: if first polish incomplete → **second polish** with full study inventory MUST list.
+- Winner backend path: same forced second polish when multi-wall/3+ photos still incomplete.
+- Longer gold-style wardrobe seed (~6.5–7.5 ft along wall).
+- Version **+46**.
+
 ## 1.0.0-beta.1+45 (2026-07-17)
 
 ### Multi-wall inventory floor + gold-plan room scale

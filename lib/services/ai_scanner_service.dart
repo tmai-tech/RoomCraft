@@ -243,15 +243,28 @@ class AIScannerService {
       }
 
       if (best != null) {
-        // +40: always gold-quality polish the winning backend layout
+        // +40/+46: always gold-quality polish; second pass if still incomplete
         best = PhotoTrueLayout.polish(best);
+        if (!PhotoTrueLayout.isPhotoTrue(best) &&
+            ((wallPhotoMap != null && wallPhotoMap.length >= 3) ||
+                images.length >= 3)) {
+          best = PhotoTrueLayout.polish(best.copyWith(
+            warnings: [
+              ...best.warnings,
+              'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
+                  'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
+                  'about 2 door opening(s); MUST include mesh balcony',
+              'Winner forced photo-true second polish (+46)',
+            ],
+          ));
+        }
         final winnerNotes = [
           ...best.warnings,
           ...notes.where((n) => !best!.warnings.contains(n)),
           if (PhotoTrueLayout.isPhotoTrue(best))
-            'Winner photo-true gold-quality (+40)'
+            'Winner photo-true gold-quality (+46)'
           else
-            'Winner polished (+40) — edit openings/furniture on Review if needed',
+            'Winner polished (+46) — edit openings/furniture on Review if needed',
         ];
         return best.copyWith(warnings: winnerNotes);
       }

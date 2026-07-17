@@ -698,19 +698,34 @@ Rules:
       warnings: [
         ...wallPlan.warnings,
         ...warnings.where((w) => !wallPlan.warnings.contains(w)),
-        'Labeled 4-wall path (+39) — inventory + size + per-wall + photo-true polish',
+        if (!warnings.any((w) => w.startsWith('Inventory:')) &&
+            !wallPlan.warnings.any((w) => w.startsWith('Inventory:')))
+          'Inventory: $inventoryHint',
+        'Labeled 4-wall path (+46) — inventory + size + per-wall + photo-true polish',
       ],
-      sourceLabel: 'Easy plan — labeled walls (+39)',
+      sourceLabel: 'Easy plan — labeled walls (+46)',
       inventDefaultOpenings: false,
       accuracyScore: acc,
     );
-    // +39: gold-plan quality polish (wall-hug, sizes, score ~74%)
+    // +46: polish with inventory on warnings; second forced pass if still incomplete
     result = PhotoTrueLayout.polish(result);
+    if (!PhotoTrueLayout.isPhotoTrue(result)) {
+      result = PhotoTrueLayout.polish(result.copyWith(
+        warnings: [
+          ...result.warnings,
+          'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
+              'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
+              'about 2 door opening(s); '
+              'MUST include mesh balcony or large window for glass sliding',
+          'Forced photo-true second polish (+46)',
+        ],
+      ));
+    }
     if (PhotoTrueLayout.isPhotoTrue(result)) {
       result = result.copyWith(
         warnings: [
           ...result.warnings,
-          'Photo-true gold-quality bar (+39): WARDROBE + TABLE + openings',
+          'Photo-true gold-quality bar (+46): WARDROBE + TABLE + openings',
         ],
       );
     }

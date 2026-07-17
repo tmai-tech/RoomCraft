@@ -224,20 +224,21 @@ class PhotoTrueLayout {
         preferLong: true,
       );
       final wl = side.lengthFt(w, l);
-      final along = math.min(6.7, wl * 0.75);
+      // +46: gold-plan style long sliding unit (~6.7–7.5 on large walls)
+      final along = math.min(7.5, math.max(6.5, wl * 0.38)).clamp(6.0, wl * 0.85);
       furnHints.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
         wall: side,
         fromLeftFt: math.max(0.4, (wl - along) / 2),
-        depthFt: 1.35,
-        widthFt: along,
+        depthFt: 1.5,
+        widthFt: along.toDouble(),
         lengthFt: 1.5,
         wallLengthFt: wl,
         confidence: 0.92,
-        evidence: 'photo-true seed wardrobe (+43)',
+        evidence: 'photo-true seed wardrobe (+46)',
       ));
       usedWalls.add(side);
-      notes.add('Seeded WARDROBE on ${side.name} (+43)');
+      notes.add('Seeded WARDROBE on ${side.name} (+46)');
     }
 
     if (!hasTable &&
