@@ -98,4 +98,68 @@ void main() {
     expect(min.widthFt, greaterThanOrEqualTo(16));
     expect(min.lengthFt, greaterThanOrEqualTo(14));
   });
+
+  test('+41 caps confidence when plan is table-only (feedback 443cf0c3)', () {
+    final thin = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(8, 2),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.74, // falsely high from older builds
+    );
+    final polished = PhotoTrueLayout.polish(thin);
+    // Without inventory MUST wardrobe in warnings, polish may still seed if
+    // table-only — table-only without wardrobe must not stay at 74%.
+    if (!PhotoTrueLayout.isPhotoTrue(polished)) {
+      expect(
+        polished.accuracyScore ?? 0,
+        lessThanOrEqualTo(PhotoTrueLayout.incompleteScoreCap),
+      );
+    } else {
+      // If warnings/seed made it photo-true, wardrobe must be large and visible
+      final w = polished.furniture
+          .firstWhere((f) => f.type == FurnitureType.wardrobe);
+      expect(mathMax(w.widthFt, w.lengthFt), greaterThanOrEqualTo(5.0));
+      expect(polished.accuracyScore, greaterThanOrEqualTo(0.74));
+    }
+  });
+
+  test('+41 inventory MUST in warnings yields wardrobe+table+openings', () {
+    final base = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
+            'NO BED; NO SOFA; NO TV_UNIT; MUST include mesh balcony; '
+            'about 2 door opening(s)',
+      ],
+    );
+    final polished = PhotoTrueLayout.polish(base);
+    expect(PhotoTrueLayout.isPhotoTrue(polished), isTrue);
+    expect(polished.accuracyScore, greaterThanOrEqualTo(0.74));
+    final types = polished.furniture.map((f) => f.type).toSet();
+    expect(types, contains(FurnitureType.wardrobe));
+    expect(types, contains(FurnitureType.table));
+    expect(
+      polished.walls.any((w) =>
+          w.type == StrokeType.door ||
+          w.type == StrokeType.window ||
+          w.type == StrokeType.balcony),
+      isTrue,
+    );
+  });
 }
+
+double mathMax(double a, double b) => a > b ? a : b;
+

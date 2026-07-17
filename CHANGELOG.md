@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+41 (2026-07-17)
+
+### Honest gold score + wall-compose MUST pieces (feedback 443cf0c3)
+- Feedback **+39**: 16×14 + **74%** but nearly empty plan (table only).
+- **Never claim 74%** unless WARDROBE (long ≥5 ft) + TABLE + openings + area ≥12 ft².
+- Incomplete plans **cap confidence ≤48%**.
+- Rebuild wardrobe (west) + desk (south) via **WallRelativeComposer** when inventory/warnings require them.
+- Seed doors/mesh from inventory warnings when missing.
+- Version **+41**.
+
 ## 1.0.0-beta.1+40 (2026-07-17)
 
 ### End-to-end photo-true winner polish

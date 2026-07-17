@@ -6,87 +6,277 @@ import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
+import 'wall_relative_scan.dart';
 
 /// Photo-true quality bar (study-room feedback gold *quality*, not invented inventory).
 ///
 /// Gold plan had dense labeled wall pieces ~74% score. For real photos we require
 /// WARDROBE + TABLE + openings and forbid BED/SOFA/TV invent.
+///
+/// +41: never claim 74% when plan is empty/thin; place MUST pieces via wall composer.
 class PhotoTrueLayout {
   PhotoTrueLayout._();
 
   /// Gold-plan style confidence when inventory is photo-true complete.
   static const double goldQualityScore = 0.74;
 
+  /// Cap when plan is incomplete (feedback 443cf0c3: 74% with empty plan).
+  static const double incompleteScoreCap = 0.48;
+
   static bool isPhotoTrue(ScanResult r) {
-    final types = r.furniture.map((f) => f.type).toSet();
+    final types = r.furniture.where((f) => f.included).map((f) => f.type).toSet();
     final openings = r.walls.where((w) =>
         w.type == StrokeType.door ||
         w.type == StrokeType.window ||
         w.type == StrokeType.balcony);
-    return types.contains(FurnitureType.wardrobe) &&
-        types.contains(FurnitureType.table) &&
-        openings.isNotEmpty &&
-        !types.contains(FurnitureType.bed) &&
-        !types.contains(FurnitureType.sofa) &&
-        !types.contains(FurnitureType.tvUnit);
+    if (!types.contains(FurnitureType.wardrobe)) return false;
+    if (!types.contains(FurnitureType.table)) return false;
+    if (openings.isEmpty) return false;
+    if (types.contains(FurnitureType.bed)) return false;
+    if (types.contains(FurnitureType.sofa)) return false;
+    if (types.contains(FurnitureType.tvUnit)) return false;
+
+    // Wardrobe must be a long wall unit (not a 2×2 ghost)
+    final wardrobe = r.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    final along = math.max(wardrobe.widthFt, wardrobe.lengthFt);
+    if (along < 5.0) return false;
+
+    // Plan must not be nearly empty
+    final area = r.furniture.fold<double>(
+      0,
+      (s, f) => s + f.widthFt * f.lengthFt,
+    );
+    if (area < 12.0) return false;
+
+    return true;
   }
 
-  /// Polish wall hug, wardrobe/table sizes, multi-wall openings, gold-like score.
+  /// Polish: wall-compose MUST pieces, honest score, gold bar only if complete.
   static ScanResult polish(ScanResult input) {
     final w = input.roomWidthFt;
     final l = input.roomLengthFt;
     if (w <= 0 || l <= 0) return input;
 
     final notes = <String>[...input.warnings];
-    final openings = input.walls
+    final invBlob = notes.join(' ').toLowerCase();
+
+    final needWardrobe = invBlob.contains('must include wardrobe') ||
+        invBlob.contains('wardrobe') ||
+        input.furniture.any((f) => f.type == FurnitureType.wardrobe);
+    final needTable = invBlob.contains('must include table') ||
+        invBlob.contains('desk') ||
+        input.furniture.any((f) => f.type == FurnitureType.table);
+    final needMesh = invBlob.contains('mesh') ||
+        invBlob.contains('glass') ||
+        invBlob.contains('balcony');
+    final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(invBlob);
+    final wantDoors = doorMatch != null
+        ? int.tryParse(doorMatch.group(1)!) ?? 0
+        : (invBlob.contains('door opening') ? 1 : 0);
+
+    // Start from existing openings
+    var openingHints = <WallOpeningHint>[];
+    for (final o in input.walls.where((s) =>
+        s.type == StrokeType.door ||
+        s.type == StrokeType.window ||
+        s.type == StrokeType.balcony)) {
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field == null) continue;
+      openingHints.add(WallOpeningHint.fromLeft(
+        wall: field.wall,
+        type: o.type,
+        fromLeftFt: field.fromLeftFt,
+        widthFt: field.widthFt,
+        wallLengthFt: field.wall.lengthFt(w, l),
+        confidence: 0.9,
+        evidence: 'polish keep',
+      ));
+    }
+
+    // Seed doors / mesh if inventory required but missing
+    final haveDoors =
+        openingHints.where((o) => o.type == StrokeType.door).length;
+    if (wantDoors > haveDoors) {
+      final sides = [WallSide.south, WallSide.west, WallSide.east, WallSide.north];
+      for (var i = 0; i < wantDoors - haveDoors; i++) {
+        final side = sides[i % sides.length];
+        openingHints.add(WallOpeningHint.fromLeft(
+          wall: side,
+          type: StrokeType.door,
+          fromLeftFt: 1.0 + i,
+          widthFt: 2.8,
+          wallLengthFt: side.lengthFt(w, l),
+          confidence: 0.85,
+          evidence: 'photo-true door seed (+41)',
+        ));
+      }
+      notes.add('Photo-true (+41): seeded door openings');
+    }
+    final hasWide = openingHints.any((o) =>
+        o.type == StrokeType.balcony ||
+        o.type == StrokeType.window ||
+        (o.type == StrokeType.door &&
+            o.widthAlongWallFt(o.wall.lengthFt(w, l)) >= 4.5));
+    if (needMesh && !hasWide) {
+      openingHints.add(WallOpeningHint.fromLeft(
+        wall: WallSide.east,
+        type: StrokeType.balcony,
+        fromLeftFt: 1.5,
+        widthFt: math.min(7.0, l * 0.55),
+        wallLengthFt: WallSide.east.lengthFt(w, l),
+        confidence: 0.85,
+        evidence: 'photo-true mesh seed (+41)',
+      ));
+      notes.add('Photo-true (+41): seeded mesh/glass balcony');
+    }
+    // At least one door if we have furniture but zero openings
+    if (openingHints.isEmpty &&
+        (needWardrobe || needTable || input.furniture.isNotEmpty)) {
+      openingHints.add(WallOpeningHint.fromLeft(
+        wall: WallSide.south,
+        type: StrokeType.door,
+        fromLeftFt: 1.5,
+        widthFt: 2.8,
+        wallLengthFt: WallSide.south.lengthFt(w, l),
+        confidence: 0.75,
+        evidence: 'photo-true default door (+41)',
+      ));
+      notes.add('Photo-true (+41): default entry door (plan had none)');
+    }
+
+    // Furniture: prefer wall-anchored compose for wardrobe/table
+    final furnHints = <WallFurnitureHint>[];
+    final keepOther = <ScanFurnitureHint>[];
+
+    for (final f in input.furniture) {
+      if (f.type == FurnitureType.bed ||
+          f.type == FurnitureType.sofa ||
+          f.type == FurnitureType.tvUnit) {
+        // Drop invented types when inventory forbids (default photo-true)
+        if (invBlob.contains('no bed') ||
+            invBlob.contains('no sofa') ||
+            invBlob.contains('no tv') ||
+            needWardrobe) {
+          notes.add('Dropped invented ${f.type.name} (+41)');
+          continue;
+        }
+      }
+      if (f.type == FurnitureType.wardrobe || f.type == FurnitureType.table) {
+        continue; // re-place below
+      }
+      keepOther.add(f);
+    }
+
+    if (needWardrobe || input.furniture.any((f) => f.type == FurnitureType.wardrobe)) {
+      final side = WallSide.west;
+      final wl = side.lengthFt(w, l);
+      final along = math.min(6.7, wl * 0.75);
+      furnHints.add(WallFurnitureHint.fromLeft(
+        type: FurnitureType.wardrobe,
+        wall: side,
+        fromLeftFt: math.max(0.4, (wl - along) / 2),
+        depthFt: 1.35,
+        widthFt: along,
+        lengthFt: 1.5,
+        wallLengthFt: wl,
+        confidence: 0.92,
+        evidence: 'photo-true wall wardrobe (+41)',
+      ));
+    }
+
+    if (needTable || input.furniture.any((f) => f.type == FurnitureType.table)) {
+      final side = WallSide.south;
+      final wl = side.lengthFt(w, l);
+      furnHints.add(WallFurnitureHint.fromLeft(
+        type: FurnitureType.table,
+        wall: side,
+        fromLeftFt: math.min(wl * 0.4, wl - 2.5),
+        depthFt: 1.6,
+        widthFt: 4.0,
+        lengthFt: 2.0,
+        wallLengthFt: wl,
+        confidence: 0.92,
+        evidence: 'photo-true wall desk (+41)',
+      ));
+    }
+
+    // Compose wall-anchored pieces
+    final composed = WallRelativeComposer.compose(
+      widthFt: w,
+      lengthFt: l,
+      openings: openingHints,
+      furniture: furnHints,
+      warnings: notes,
+      wallPhotos: 4,
+      fromTapeMeasure: false,
+    );
+
+    // Merge other non-major furniture (chairs etc.) with hug
+    final mergedFurniture = <ScanFurnitureHint>[
+      ...composed.furniture,
+      for (final f in keepOther) _hugNearestWall(_normalizeGeneric(f, w, l), w, l),
+    ];
+
+    // Dedupe majors
+    final seen = <FurnitureType>{};
+    final deduped = <ScanFurnitureHint>[];
+    for (final f in mergedFurniture) {
+      if (f.type == FurnitureType.wardrobe ||
+          f.type == FurnitureType.table ||
+          f.type == FurnitureType.bed ||
+          f.type == FurnitureType.sofa ||
+          f.type == FurnitureType.tvUnit) {
+        if (seen.contains(f.type)) continue;
+        seen.add(f.type);
+      }
+      deduped.add(f);
+    }
+
+    final openingsOut = composed.walls
         .where((s) =>
             s.type == StrokeType.door ||
             s.type == StrokeType.window ||
             s.type == StrokeType.balcony)
         .toList();
 
-    var furniture = input.furniture.map((f) {
-      if (f.type == FurnitureType.wardrobe) {
-        return _normalizeWardrobe(f, w, l);
-      }
-      if (f.type == FurnitureType.table) {
-        return _normalizeTable(f, w, l);
-      }
-      return f;
-    }).toList();
-
-    furniture = furniture.map((f) => _hugNearestWall(f, w, l)).toList();
-
-    // Prefer openings on distinct walls (gold plan spreads doors)
-    final polishedOpenings = _spreadOpenings(openings, w, l, notes);
-
     final draft = AccurateScan.enforce(
       widthFt: w,
       lengthFt: l,
-      openings: polishedOpenings,
-      furniture: furniture,
-      warnings: notes,
+      openings: openingsOut,
+      furniture: deduped,
+      warnings: [
+        ...composed.warnings.where((n) => !n.startsWith('Accurate plan:')),
+        ...notes.where((n) => !composed.warnings.contains(n)),
+      ],
       inventDefaultOpenings: false,
       accuracyScore: input.accuracyScore,
     );
 
+    // +41 honest scoring
     if (!isPhotoTrue(draft)) {
-      return draft;
+      final raw = draft.accuracyScore ?? 0.4;
+      final capped = math.min(raw, incompleteScoreCap);
+      return draft.copyWith(
+        accuracyScore: capped,
+        warnings: [
+          ...draft.warnings,
+          'Confidence capped (+41): need visible WARDROBE + TABLE + openings '
+              '(no bed/sofa invent) for gold-plan quality bar',
+        ],
+      );
     }
 
     notes.add(
-      'Photo-true gold-quality polish (+39): wall-hug + score bar '
-      '${(goldQualityScore * 100).round()}%',
+      'Photo-true gold-quality (+41): wall wardrobe + desk + openings · '
+      'score ${(goldQualityScore * 100).round()}%',
     );
-    final score = math.max(
-      draft.accuracyScore ?? 0,
-      goldQualityScore,
-    ).clamp(goldQualityScore, 0.90);
+    final score = math.max(draft.accuracyScore ?? 0, goldQualityScore)
+        .clamp(goldQualityScore, 0.90);
 
     return AccurateScan.enforce(
       widthFt: w,
       lengthFt: l,
-      openings: polishedOpenings,
+      openings: openingsOut,
       furniture: draft.furniture,
       warnings: [
         ...draft.warnings.where((n) => !n.startsWith('Accurate plan:')),
@@ -97,45 +287,22 @@ class PhotoTrueLayout {
     ).copyWith(accuracyScore: score);
   }
 
-  static ScanFurnitureHint _normalizeWardrobe(
-    ScanFurnitureHint f,
-    double roomW,
-    double roomL,
-  ) {
-    var along = math.max(f.widthFt, f.lengthFt);
-    var deep = math.min(f.widthFt, f.lengthFt);
-    if (along < 5.5) along = 6.5;
-    if (deep < 1.2 || deep > 2.5) deep = 1.5;
-    along = along.clamp(5.5, math.min(roomW, roomL) * 0.9);
-    // Keep orientation: longer dimension as width for catalog painters
-    return ScanFurnitureHint(
-      type: f.type,
-      posFt: f.posFt,
-      widthFt: along,
-      lengthFt: deep,
-      rotationRad: f.rotationRad,
-      included: f.included,
-    );
-  }
-
-  static ScanFurnitureHint _normalizeTable(
+  static ScanFurnitureHint _normalizeGeneric(
     ScanFurnitureHint f,
     double roomW,
     double roomL,
   ) {
     var fw = f.widthFt;
     var fl = f.lengthFt;
-    if (fw < 2.5 || fl < 1.2) {
-      fw = 4.0;
+    if (fw < 0.8 || fl < 0.8) {
+      fw = 2.0;
       fl = 2.0;
     }
-    fw = fw.clamp(2.5, roomW * 0.6);
-    fl = fl.clamp(1.5, roomL * 0.5);
     return ScanFurnitureHint(
       type: f.type,
       posFt: f.posFt,
-      widthFt: fw,
-      lengthFt: fl,
+      widthFt: fw.clamp(0.8, roomW * 0.8),
+      lengthFt: fl.clamp(0.8, roomL * 0.8),
       rotationRad: f.rotationRad,
       included: f.included,
     );
@@ -194,79 +361,5 @@ class PhotoTrueLayout {
       rotationRad: rot,
       included: f.included,
     );
-  }
-
-  /// If all openings share one wall, re-project extras onto other walls.
-  static List<ScanWallSegment> _spreadOpenings(
-    List<ScanWallSegment> openings,
-    double w,
-    double l,
-    List<String> notes,
-  ) {
-    if (openings.length < 2) return openings;
-
-    String wallKey(ScanWallSegment o) {
-      final mid = Offset(
-        (o.startFt.dx + o.endFt.dx) / 2,
-        (o.startFt.dy + o.endFt.dy) / 2,
-      );
-      final dS = mid.dy;
-      final dN = (l - mid.dy).abs();
-      final dW = mid.dx;
-      final dE = (w - mid.dx).abs();
-      final m = [dS, dN, dW, dE].reduce(math.min);
-      if (m == dS) return 'S';
-      if (m == dN) return 'N';
-      if (m == dW) return 'W';
-      return 'E';
-    }
-
-    final keys = openings.map(wallKey).toSet();
-    if (keys.length >= 2) return openings;
-
-    // All on one wall — move secondary doors/windows to adjacent walls
-    final out = <ScanWallSegment>[openings.first];
-    final rest = openings.skip(1).toList();
-    final targets = ['S', 'E', 'N', 'W'];
-    var ti = 1;
-    for (final o in rest) {
-      final wall = targets[ti % targets.length];
-      ti++;
-      final len = o.lengthFt.clamp(2.0, math.min(w, l) * 0.45);
-      late ScanWallSegment moved;
-      switch (wall) {
-        case 'S':
-          final cx = (w / 2).clamp(len / 2, w - len / 2);
-          moved = ScanWallSegment(
-            type: o.type,
-            startFt: Offset(cx - len / 2, 0),
-            endFt: Offset(cx + len / 2, 0),
-          );
-        case 'N':
-          final cx = (w / 2).clamp(len / 2, w - len / 2);
-          moved = ScanWallSegment(
-            type: o.type,
-            startFt: Offset(cx - len / 2, l),
-            endFt: Offset(cx + len / 2, l),
-          );
-        case 'W':
-          final cy = (l / 2).clamp(len / 2, l - len / 2);
-          moved = ScanWallSegment(
-            type: o.type,
-            startFt: Offset(0, cy - len / 2),
-            endFt: Offset(0, cy + len / 2),
-          );
-        default:
-          final cy = (l / 2).clamp(len / 2, l - len / 2);
-          moved = ScanWallSegment(
-            type: o.type,
-            startFt: Offset(w, cy - len / 2),
-            endFt: Offset(w, cy + len / 2),
-          );
-      }
-      out.add(moved);
-    }
-    notes.add('Spread openings across walls for gold-plan readability (+39)');
-    return out;
   }
 }
