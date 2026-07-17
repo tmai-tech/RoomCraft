@@ -485,23 +485,25 @@ class ScanRefine {
     final aspect = widthFt / lengthFt;
     if (aspect > 0.4 && aspect < 2.5) s += 0.03;
 
-    // +39: photo-true gold quality bar (~74%) for wardrobe+table+openings
-    final types = furniture.map((f) => f.type).toSet();
-    final photoTrue = types.contains(FurnitureType.wardrobe) &&
-        types.contains(FurnitureType.table) &&
-        openings.isNotEmpty &&
-        !types.contains(FurnitureType.bed) &&
-        !types.contains(FurnitureType.sofa) &&
-        !types.contains(FurnitureType.tvUnit);
+    // +39/72: use shared photo-true gold bar (mesh + dual doors + long wardrobe)
+    final draft = ScanResult(
+      roomWidthFt: widthFt,
+      roomLengthFt: lengthFt,
+      walls: openings,
+      furniture: furniture,
+      accuracyScore: prior,
+    );
+    final photoTrue = PhotoTrueLayout.isPhotoTrue(draft);
     if (photoTrue) {
-      s = math.max(s, PhotoTrueLayout.goldQualityScore);
+      final bar = PhotoTrueLayout.photoTrueScoreBar(draft);
+      s = math.max(s, bar);
       s += 0.02;
       if (prior != null && prior >= PhotoTrueLayout.goldQualityScore) {
         s = math.max(s, prior);
       }
     }
 
-    final cap = furniture.isEmpty ? 0.52 : (photoTrue ? 0.90 : 0.94);
+    final cap = furniture.isEmpty ? 0.52 : (photoTrue ? 0.92 : 0.88);
     return s.clamp(0.28, cap);
   }
 }

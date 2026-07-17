@@ -199,9 +199,9 @@ class PhotoTrueLayout {
     return bar;
   }
 
-  /// True when wardrobe/mesh/doors sit on default gold walls for this room (+67).
+  /// True when wardrobe/mesh/doors sit on default gold walls for this room (+67/72).
   ///
-  /// Wide room gold: wardrobe south, mesh east, doors west and/or north.
+  /// Wide room gold: wardrobe south (full-wall span), mesh east, doors west and/or north.
   static bool matchesDefaultGoldOrientation(ScanResult r) {
     if (!isPhotoTrue(r)) return false;
     final w = r.roomWidthFt;
@@ -212,6 +212,10 @@ class PhotoTrueLayout {
         r.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
     final ww = _nearestWall(wardrobe.posFt, w, l);
     if (ww != roles.wardrobe) return false;
+    // +72: gold density — wardrobe must span most of the storage wall
+    final along = math.max(wardrobe.widthFt, wardrobe.lengthFt);
+    final storageLen = roles.wardrobe.lengthFt(w, l);
+    if (along < storageLen * 0.55) return false;
 
     var meshOk = false;
     var doorOnPrimary = false;

@@ -805,6 +805,56 @@ void main() {
     expect(mesh.lengthFt, greaterThanOrEqualTo(8.0));
   });
 
+  test('+72 gold orientation requires full-wall wardrobe span', () {
+    // Correct walls but short wardrobe → not gold orientation (88% bar)
+    final short = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0, 2),
+          endFt: Offset(0, 5),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(8, 17),
+          endFt: Offset(11, 17),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 2),
+          endFt: Offset(20, 12),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 1.5),
+          widthFt: 6.5, // only ~32% of 20ft wall
+          lengthFt: 1.6,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(2, 12),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.8,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    expect(PhotoTrueLayout.isPhotoTrue(short), isTrue);
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(short), isFalse);
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(gold), isTrue);
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
