@@ -661,6 +661,72 @@ void main() {
     expect(roles.doorSecondary, WallSide.north);
   });
 
+  test('+77 inferStudyWallRoles desk defaults to west not mesh east', () {
+    // Wardrobe on south, mesh on east, no vision desk → gold west desk
+    final partial = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20, 4),
+          endFt: Offset(20, 14),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0, 2),
+          endFt: Offset(0, 5),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 0.8),
+          widthFt: 14,
+          lengthFt: 1.6,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    );
+    final roles = PhotoTrueLayout.inferStudyWallRoles(partial);
+    expect(roles.wardrobe, WallSide.south);
+    expect(roles.mesh, WallSide.east);
+    expect(roles.desk, WallSide.west); // not east under mesh
+    final gold = PhotoTrueLayout.composeStudyGold(
+      widthFt: 20,
+      lengthFt: 17,
+      roles: roles,
+    );
+    final desk =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    expect(desk.posFt.dx, lessThan(4)); // west wall
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(gold), isTrue);
+  });
+
+  test('+77 empty study ensureGoldQuality desk on west, doors not south', () {
+    final empty = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.2,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(empty);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(PhotoTrueLayout.matchesDefaultGoldOrientation(out), isTrue);
+    final desk =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    expect(desk.posFt.dx, lessThan(4), reason: 'desk on west work wall');
+    final mesh = out.walls.firstWhere((w) => w.type == StrokeType.balcony);
+    expect((mesh.startFt.dx + mesh.endFt.dx) / 2, greaterThan(16));
+  });
+
   test('+59 preferVisionFurniture keeps east wardrobe through full gold', () {
     final vision = AccurateScan.enforce(
       widthFt: 20,

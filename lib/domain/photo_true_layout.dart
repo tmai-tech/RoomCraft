@@ -265,6 +265,19 @@ class PhotoTrueLayout {
     if (!meshOk) return false;
     // At least one gold door wall (vision may only catch one)
     if (!doorOnPrimary && !doorOnSecondary) return false;
+
+    // +77: desk on gold work wall (west for wide) — not under mesh glass
+    ScanFurnitureHint? desk;
+    for (final f in r.furniture.where((x) => x.included)) {
+      if (f.type == FurnitureType.table) {
+        desk = f;
+        break;
+      }
+    }
+    if (desk != null) {
+      final dw = _nearestWall(desk.posFt, w, l);
+      if (dw != roles.desk) return false;
+    }
     return true;
   }
 
@@ -493,9 +506,21 @@ class PhotoTrueLayout {
     if (mw == ww) {
       mw = _adjacentClockwise(ww);
     }
-    var dw = deskWall ?? mw; // desk near mesh by default
+    // +77: default desk to gold work wall (west for wide), NOT mesh wall.
+    // Prior `desk ?? mesh` put the desk on east under mesh glass — opposite of gold.
+    var dw = deskWall ?? def.desk;
     if (dw == ww) {
-      dw = mw != ww ? mw : def.desk;
+      dw = def.desk != ww ? def.desk : _opposite(ww);
+    }
+    if (dw == mw) {
+      // Keep desk off wide mesh span when inventing
+      dw = def.desk != ww && def.desk != mw
+          ? def.desk
+          : _opposite(mw);
+    }
+    if (dw == ww) {
+      dw = _adjacentClockwise(ww);
+      if (dw == mw) dw = _opposite(ww);
     }
 
     // Doors: keep vision walls but NEVER on full storage (wardrobe) wall (+76).
@@ -808,14 +833,19 @@ class PhotoTrueLayout {
       }
     }
 
-    // Openings: keep all vision openings; add gold ones for missing types/walls
-    final openings = <ScanWallSegment>[
-      for (final o in partial.walls)
-        if (o.type == StrokeType.door ||
-            o.type == StrokeType.window ||
-            o.type == StrokeType.balcony)
-          o,
-    ];
+    // Openings: keep vision openings except those on wardrobe storage wall (+77)
+    final storage = roles.wardrobe;
+    final openings = <ScanWallSegment>[];
+    for (final o in partial.walls) {
+      if (o.type != StrokeType.door &&
+          o.type != StrokeType.window &&
+          o.type != StrokeType.balcony) {
+        continue;
+      }
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field != null && field.wall == storage) continue;
+      openings.add(o);
+    }
     final hasDoor = openings.any((o) => o.type == StrokeType.door);
     final hasMesh = openings.any((o) =>
         o.type == StrokeType.balcony ||
@@ -1447,19 +1477,27 @@ class PhotoTrueLayout {
       notes.add('Photo-true (+69): seeded mesh on ${meshWall.name}');
     }
     // At least one door if we have furniture but zero openings
+    // +77: never seed on gold storage wall (was hardcoded south = wardrobe)
     if (openingHints.isEmpty &&
         rawOpeningsKept.isEmpty &&
         (needWardrobe || needTable || input.furniture.isNotEmpty)) {
+      final entry = goldRoles.doorPrimary != storageWall
+          ? goldRoles.doorPrimary
+          : goldRoles.doorSecondary;
+      final entryWall =
+          entry != storageWall ? entry : _opposite(storageWall ?? goldRoles.wardrobe);
       openingHints.add(WallOpeningHint.fromLeft(
-        wall: WallSide.south,
+        wall: entryWall,
         type: StrokeType.door,
         fromLeftFt: 1.5,
         widthFt: 2.8,
-        wallLengthFt: WallSide.south.lengthFt(w, l),
+        wallLengthFt: entryWall.lengthFt(w, l),
         confidence: 0.75,
-        evidence: 'photo-true default door (+44)',
+        evidence: 'photo-true default door on ${entryWall.name} (+77 gold)',
       ));
-      notes.add('Photo-true (+44): default entry door (plan had none)');
+      notes.add(
+        'Photo-true (+77): default entry door on ${entryWall.name} (not storage)',
+      );
     }
 
     // Furniture: +43 preserve wall-by-wall placement; only seed missing pieces.
