@@ -162,4 +162,56 @@ void main() {
     expect(OpeningPriors.clampWidth(StrokeType.door, 0.5, 12), greaterThanOrEqualTo(2.0));
     expect(OpeningPriors.clampWidth(StrokeType.door, 20, 12), lessThanOrEqualTo(4.0));
   });
+
+  test('+37 wall-anchored conf 0.55 is kept (was dropped at 0.70)', () {
+    final result = WallRelativeComposer.compose(
+      widthFt: 12,
+      lengthFt: 14,
+      furniture: const [
+        WallFurnitureHint(
+          type: FurnitureType.wardrobe,
+          wall: WallSide.west,
+          t: 0.4,
+          depthFt: 1.3,
+          widthFt: 6.7,
+          lengthFt: 1.5,
+          confidence: 0.58,
+          evidence: 'sliding wardrobe',
+        ),
+        WallFurnitureHint(
+          type: FurnitureType.table,
+          wall: WallSide.south,
+          t: 0.5,
+          depthFt: 1.5,
+          widthFt: 4,
+          lengthFt: 2,
+          confidence: 0.60,
+          evidence: 'desk',
+        ),
+      ],
+      openings: [
+        WallOpeningHint.fromLeft(
+          wall: WallSide.east,
+          type: StrokeType.balcony,
+          fromLeftFt: 1,
+          widthFt: 6,
+          wallLengthFt: 14,
+          confidence: 0.7,
+        ),
+      ],
+      wallPhotos: 3,
+    );
+    final types = result.furniture.map((f) => f.type).toSet();
+    expect(types, contains(FurnitureType.wardrobe));
+    expect(types, contains(FurnitureType.table));
+    expect(
+      result.walls.any((w) =>
+          w.type == StrokeType.balcony ||
+          w.type == StrokeType.door ||
+          w.type == StrokeType.window),
+      isTrue,
+    );
+    // Photo-true quality score
+    expect(result.accuracyScore, greaterThanOrEqualTo(0.70));
+  });
 }

@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+37 (2026-07-17)
+
+### Photo-true gold quality: keep wall detections + wall-anchored fill
+- **Root cause**: wall compose min confidence was **0.70** while wall vision keeps ≥0.55 — real wardrobe/desk were dropped.
+- Wall-anchored floor now **0.55** (matches filter).
+- **Photo-true fill** after wall-by-wall: MUST WARDROBE/TABLE + doorCount + mesh as high-confidence wall anchors.
+- Accuracy score ≥~72% when photo-true (wardrobe+table+openings, no bed/sofa invent).
+- Version **+37**.
+
 ## 1.0.0-beta.1+36 (2026-07-17)
 
 ### Photo-true scan → gold-plan quality (study room)

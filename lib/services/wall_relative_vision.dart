@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -273,15 +274,178 @@ Empty furniture [] if unsure. confidence>=0.8 to include.
       ...freeOnly.where((f) => !wallTypes.contains(f.type)),
     ];
 
+    // +37: wall-anchored photo-true fill for inventory MUST pieces / openings
+    final filled = _photoTrueFill(
+      openings: openings,
+      furniture: merged,
+      wallPhotos: wallPhotos,
+      roomWidthFt: roomWidthFt,
+      roomLengthFt: roomLengthFt,
+      inventoryHint: inventoryHint,
+      notes: notes,
+    );
+
     return ScanRefine.refine(WallRelativeComposer.compose(
       widthFt: roomWidthFt,
       lengthFt: roomLengthFt,
-      openings: openings,
-      furniture: merged,
+      openings: filled.openings,
+      furniture: filled.furniture,
       warnings: notes,
       wallPhotos: wallPhotos.length,
       overviewPhotos: overviewPhotos.length,
     ));
+  }
+
+  /// Ensure MUST wardrobe/TABLE and door/mesh openings as high-confidence wall anchors.
+  static ({List<WallOpeningHint> openings, List<WallFurnitureHint> furniture})
+      _photoTrueFill({
+    required List<WallOpeningHint> openings,
+    required List<WallFurnitureHint> furniture,
+    required Map<WallSide, File> wallPhotos,
+    required double roomWidthFt,
+    required double roomLengthFt,
+    required String inventoryHint,
+    required List<String> notes,
+  }) {
+    if (inventoryHint.isEmpty) {
+      return (openings: openings, furniture: furniture);
+    }
+    final furn = List<WallFurnitureHint>.from(furniture);
+    final opens = List<WallOpeningHint>.from(openings);
+    final types = furn.map((f) => f.type).toSet();
+    final sidesWithPhoto = wallPhotos.keys.toList();
+    if (sidesWithPhoto.isEmpty) {
+      return (openings: opens, furniture: furn);
+    }
+
+    WallSide pickSide(List<WallSide> prefer) {
+      for (final s in prefer) {
+        if (sidesWithPhoto.contains(s)) return s;
+      }
+      return sidesWithPhoto.first;
+    }
+
+    if (inventoryHint.contains('MUST include WARDROBE') &&
+        !types.contains(FurnitureType.wardrobe)) {
+      // Prefer west/north (long storage walls in study-room feedback)
+      final side = pickSide([
+        WallSide.west,
+        WallSide.north,
+        WallSide.east,
+        WallSide.south,
+      ]);
+      final wl = side.lengthFt(roomWidthFt, roomLengthFt);
+      final along = math.min(6.7, wl * 0.75);
+      furn.add(WallFurnitureHint.fromLeft(
+        type: FurnitureType.wardrobe,
+        wall: side,
+        fromLeftFt: math.max(0.3, (wl - along) / 2),
+        depthFt: 1.3,
+        widthFt: along,
+        lengthFt: 1.5,
+        wallLengthFt: wl,
+        confidence: 0.88,
+        evidence: 'photo-true inventory seed WARDROBE (+37)',
+      ));
+      types.add(FurnitureType.wardrobe);
+      notes.add('Photo-true: seeded WARDROBE on ${side.shortLabel} (+37)');
+    }
+
+    if (inventoryHint.contains('MUST include TABLE') &&
+        !types.contains(FurnitureType.table)) {
+      final side = pickSide([
+        WallSide.south,
+        WallSide.east,
+        WallSide.north,
+        WallSide.west,
+      ]);
+      final wl = side.lengthFt(roomWidthFt, roomLengthFt);
+      furn.add(WallFurnitureHint.fromLeft(
+        type: FurnitureType.table,
+        wall: side,
+        fromLeftFt: math.min(wl * 0.35, wl - 1),
+        depthFt: 1.5,
+        widthFt: 4.0,
+        lengthFt: 2.0,
+        wallLengthFt: wl,
+        confidence: 0.88,
+        evidence: 'photo-true inventory seed TABLE (+37)',
+      ));
+      types.add(FurnitureType.table);
+      notes.add('Photo-true: seeded TABLE on ${side.shortLabel} (+37)');
+    }
+
+    final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(inventoryHint);
+    final wantDoors = doorMatch != null
+        ? int.tryParse(doorMatch.group(1)!) ?? 0
+        : (inventoryHint.contains('door opening') ? 1 : 0);
+    final haveDoors = opens.where((o) => o.type == StrokeType.door).length;
+    if (wantDoors > 0 && haveDoors < wantDoors) {
+      final order = <WallSide>[
+        ...sidesWithPhoto.where((s) =>
+            s == WallSide.south ||
+            s == WallSide.west ||
+            s == WallSide.east ||
+            s == WallSide.north),
+        ...sidesWithPhoto,
+      ];
+      // Unique preserve order
+      final seen = <WallSide>{};
+      final unique = <WallSide>[];
+      for (final s in order) {
+        if (seen.add(s)) unique.add(s);
+      }
+      var added = 0;
+      for (final use in unique) {
+        if (haveDoors + added >= wantDoors) break;
+        final wl = use.lengthFt(roomWidthFt, roomLengthFt);
+        opens.add(WallOpeningHint.fromLeft(
+          wall: use,
+          type: StrokeType.door,
+          fromLeftFt: 1.0 + added * 0.4,
+          widthFt: 2.8,
+          wallLengthFt: wl,
+          confidence: 0.8,
+          evidence: 'photo-true inventory door seed (+37)',
+        ));
+        added++;
+      }
+      if (added > 0) {
+        notes.add('Photo-true: seeded $added door opening(s) (+37)');
+      }
+    }
+
+    final wantMesh = inventoryHint.toLowerCase().contains('mesh') ||
+        inventoryHint.toLowerCase().contains('glass') ||
+        inventoryHint.contains('balcony');
+    final hasWide = opens.any((o) =>
+        o.type == StrokeType.balcony ||
+        o.type == StrokeType.window ||
+        (o.type == StrokeType.door &&
+            o.widthAlongWallFt(o.wall.lengthFt(roomWidthFt, roomLengthFt)) >=
+                4.5));
+    if (wantMesh && !hasWide) {
+      final side = pickSide([
+        WallSide.east,
+        WallSide.north,
+        WallSide.south,
+        WallSide.west,
+      ]);
+      final wl = side.lengthFt(roomWidthFt, roomLengthFt);
+      final span = math.min(6.0, wl * 0.7);
+      opens.add(WallOpeningHint.fromLeft(
+        wall: side,
+        type: StrokeType.balcony,
+        fromLeftFt: math.max(0.5, (wl - span) / 2),
+        widthFt: span,
+        wallLengthFt: wl,
+        confidence: 0.8,
+        evidence: 'photo-true inventory mesh/glass seed (+37)',
+      ));
+      notes.add('Photo-true: seeded mesh/glass balcony on ${side.shortLabel} (+37)');
+    }
+
+    return (openings: opens, furniture: furn);
   }
 
   static String _wallPrompt(

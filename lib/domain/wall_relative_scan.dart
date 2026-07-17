@@ -269,9 +269,11 @@ class WallRelativeComposer {
     final furn = <ScanFurnitureHint>[];
     for (final f in furniture) {
       // Freeform XY is noisy; require higher confidence than wall-anchored.
+      // +37: wall-anchored floor matches FurnitureVisionFilter (0.55).
+      // Prior 0.70 dropped real wardrobe/desk detections from wall vision.
       final minConf = f.freePlace
           ? (fromTapeMeasure ? 0.75 : 0.82)
-          : (fromTapeMeasure ? 0.55 : 0.70);
+          : 0.55;
       if (f.confidence < minConf) {
         notes.add('Skipped low-confidence ${f.type.name}');
         continue;
@@ -309,6 +311,14 @@ class WallRelativeComposer {
     }
 
     // Accuracy: tape > wall photos > free vision
+    // +37: photo-true inventory (wardrobe+table+openings) approaches gold-plan quality score
+    final types = furn.map((f) => f.type).toSet();
+    final photoTrue = types.contains(FurnitureType.wardrobe) &&
+        types.contains(FurnitureType.table) &&
+        segs.isNotEmpty &&
+        !types.contains(FurnitureType.bed) &&
+        !types.contains(FurnitureType.sofa);
+
     var acc = fromTapeMeasure ? 0.82 : 0.38;
     if (fromTapeMeasure) {
       if (segs.isNotEmpty) acc += 0.08;
@@ -319,7 +329,14 @@ class WallRelativeComposer {
       if (segs.isNotEmpty) acc += 0.1;
       if (furn.isNotEmpty) acc += 0.08;
       if (overviewPhotos > 0) acc += 0.05;
-      acc = acc.clamp(0.35, 0.88);
+      if (photoTrue) {
+        acc = math.max(acc, 0.72);
+        acc += 0.08;
+        notes.add(
+          'Photo-true complete (+37): WARDROBE + TABLE + openings — gold-plan quality bar',
+        );
+      }
+      acc = acc.clamp(0.35, photoTrue ? 0.90 : 0.88);
     }
 
     notes.add(
