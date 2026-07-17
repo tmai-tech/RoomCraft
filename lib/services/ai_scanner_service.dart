@@ -243,10 +243,12 @@ class AIScannerService {
       }
 
       if (best != null) {
-        // +51: always ensureGoldQuality on winner (polish → hybrid → full gold)
+        // +52: study-gold only when study-like (never force NO BED on bedrooms)
         final multi = (wallPhotoMap != null && wallPhotoMap.length >= 3) ||
             images.length >= 3;
+        final studyLike = PhotoTrueLayout.isStudyLike(best);
         if (multi &&
+            studyLike &&
             !best.warnings.any((w) => w.contains('MUST include WARDROBE'))) {
           best = best.copyWith(
             warnings: [
@@ -254,19 +256,20 @@ class AIScannerService {
               'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
                   'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
                   'about 2 door opening(s); MUST include mesh balcony',
+              'Multi-wall study inventory (+52)',
             ],
           );
         }
-        best = multi
+        best = multi && studyLike
             ? PhotoTrueLayout.ensureGoldQuality(best, includeChair: true)
             : PhotoTrueLayout.polish(best);
         final winnerNotes = [
           ...best.warnings,
           ...notes.where((n) => !best!.warnings.contains(n)),
           if (PhotoTrueLayout.isPhotoTrue(best))
-            'Winner photo-true gold-quality (+51)'
+            'Winner photo-true gold-quality (+52)'
           else
-            'Winner polished (+51) — edit openings/furniture on Review if needed',
+            'Winner polished (+52) — edit openings/furniture on Review if needed',
         ];
         return best.copyWith(warnings: winnerNotes);
       }

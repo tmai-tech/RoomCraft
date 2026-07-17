@@ -26,7 +26,34 @@ class PhotoTrueLayout {
   /// Cap when plan is incomplete (feedback 443cf0c3: 74% with empty plan).
   static const double incompleteScoreCap = 0.48;
 
-  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51).
+  /// True when plan/inventory looks like study (no bed) — safe for study-gold fill.
+  static bool isStudyLike(ScanResult r) {
+    final blob = r.warnings.join(' ').toLowerCase();
+    if (blob.contains('must include bed') && !blob.contains('no bed')) {
+      return false;
+    }
+    if (r.furniture.any((f) => f.type == FurnitureType.bed && f.included)) {
+      return false;
+    }
+    // Explicit study cues or photo-true wardrobe path
+    if (blob.contains('no bed') ||
+        blob.contains('study') ||
+        blob.contains('must include wardrobe') ||
+        blob.contains('photo-true') ||
+        blob.contains('multi-wall')) {
+      return true;
+    }
+    // Empty multi-wall with no bed claim → study-like for feedback fixtures
+    if (r.furniture.where((f) => f.included).isEmpty &&
+        !blob.contains('sofa') &&
+        !blob.contains('bedroom')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Single entry: polish → hybrid merge → full study gold until photo-true (+51/52).
+  /// Study-gold template only when [isStudyLike] — never wipe a bedroom scan.
   static ScanResult ensureGoldQuality(
     ScanResult input, {
     bool includeChair = true,
@@ -44,6 +71,14 @@ class PhotoTrueLayout {
         ],
       );
     }
+    if (!isStudyLike(cur)) {
+      return cur.copyWith(
+        warnings: [
+          ...cur.warnings,
+          'ensureGoldQuality: non-study room — polish only (+52)',
+        ],
+      );
+    }
     cur = mergeWithStudyGold(cur, includeChair: includeChair);
     if (isPhotoTrue(cur)) {
       return cur.copyWith(
@@ -58,7 +93,7 @@ class PhotoTrueLayout {
       lengthFt: cur.roomLengthFt > 0 ? cur.roomLengthFt : 16,
       warnings: [
         ...cur.warnings,
-        'ensureGoldQuality: full study gold (+51)',
+        'ensureGoldQuality: full study gold (+52)',
       ],
       includeChair: includeChair,
     );
@@ -76,73 +111,85 @@ class PhotoTrueLayout {
   }) {
     final w = widthFt > 0 ? widthFt : 18.0;
     final l = lengthFt > 0 ? lengthFt : 16.0;
-    final wardrobeAlong = math.min(7.2, math.max(6.5, l * 0.42)).clamp(6.0, l * 0.85);
+    // +52: wardrobe on longest wall (N/S length=w, E/W length=l)
+    final wardrobeWall = w >= l ? WallSide.north : WallSide.west;
+    final deskWall = w >= l ? WallSide.south : WallSide.east;
+    final meshWall = w >= l ? WallSide.east : WallSide.north;
+    final door2Wall = w >= l ? WallSide.west : WallSide.south;
+    final wardrobeWallLen = wardrobeWall.lengthFt(w, l);
+    final wardrobeAlong = math
+        .min(7.2, math.max(6.5, wardrobeWallLen * 0.42))
+        .clamp(6.0, wardrobeWallLen * 0.85);
 
     final openings = <WallOpeningHint>[
       WallOpeningHint.fromLeft(
-        wall: WallSide.south,
+        wall: deskWall,
         type: StrokeType.door,
         fromLeftFt: 1.2,
         widthFt: 2.8,
-        wallLengthFt: WallSide.south.lengthFt(w, l),
+        wallLengthFt: deskWall.lengthFt(w, l),
         confidence: 0.95,
-        evidence: 'study gold door south (+49)',
+        evidence: 'study gold door primary (+52)',
       ),
       WallOpeningHint.fromLeft(
-        wall: WallSide.west,
+        wall: door2Wall,
         type: StrokeType.door,
         fromLeftFt: 1.0,
         widthFt: 2.8,
-        wallLengthFt: WallSide.west.lengthFt(w, l),
+        wallLengthFt: door2Wall.lengthFt(w, l),
         confidence: 0.9,
-        evidence: 'study gold door west (+49)',
+        evidence: 'study gold door secondary (+52)',
       ),
       WallOpeningHint.fromLeft(
-        wall: WallSide.east,
+        wall: meshWall,
         type: StrokeType.balcony,
         fromLeftFt: 1.5,
-        widthFt: math.min(7.0, l * 0.5),
-        wallLengthFt: WallSide.east.lengthFt(w, l),
+        widthFt: math.min(7.0, meshWall.lengthFt(w, l) * 0.5),
+        wallLengthFt: meshWall.lengthFt(w, l),
         confidence: 0.92,
-        evidence: 'study gold mesh east (+49)',
+        evidence: 'study gold mesh (+52)',
       ),
     ];
 
     final furniture = <WallFurnitureHint>[
       WallFurnitureHint.fromLeft(
         type: FurnitureType.wardrobe,
-        wall: WallSide.north,
-        fromLeftFt: math.max(0.4, (w - wardrobeAlong) / 2),
+        wall: wardrobeWall,
+        fromLeftFt: math.max(0.4, (wardrobeWallLen - wardrobeAlong) / 2),
         depthFt: 1.5,
         widthFt: wardrobeAlong.toDouble(),
         lengthFt: 1.5,
-        wallLengthFt: WallSide.north.lengthFt(w, l),
+        wallLengthFt: wardrobeWallLen,
         confidence: 0.95,
-        evidence: 'study gold wardrobe (+49)',
+        evidence: 'study gold wardrobe on longest wall (+52)',
       ),
       WallFurnitureHint.fromLeft(
         type: FurnitureType.table,
-        wall: WallSide.south,
-        fromLeftFt: math.min(w * 0.45, w - 3.5),
+        wall: deskWall,
+        fromLeftFt: math.min(
+          deskWall.lengthFt(w, l) * 0.45,
+          deskWall.lengthFt(w, l) - 3.5,
+        ),
         depthFt: 1.6,
         widthFt: 4.0,
         lengthFt: 2.0,
-        wallLengthFt: WallSide.south.lengthFt(w, l),
+        wallLengthFt: deskWall.lengthFt(w, l),
         confidence: 0.95,
-        evidence: 'study gold desk (+49)',
+        evidence: 'study gold desk (+52)',
       ),
     ];
     if (includeChair) {
+      final dwl = deskWall.lengthFt(w, l);
       furniture.add(WallFurnitureHint.fromLeft(
         type: FurnitureType.chair,
-        wall: WallSide.south,
-        fromLeftFt: math.min(w * 0.45 + 2.0, w - 2.0),
+        wall: deskWall,
+        fromLeftFt: math.min(dwl * 0.45 + 2.0, dwl - 2.0),
         depthFt: 2.5,
         widthFt: 1.8,
         lengthFt: 1.8,
-        wallLengthFt: WallSide.south.lengthFt(w, l),
+        wallLengthFt: dwl,
         confidence: 0.9,
-        evidence: 'study gold chair (+49)',
+        evidence: 'study gold chair (+52)',
       ));
     }
 

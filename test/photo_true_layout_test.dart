@@ -161,6 +161,40 @@ void main() {
     );
   });
 
+  test('+52 bedroom with bed is not wiped by study gold', () {
+    final bedroom = AccurateScan.enforce(
+      widthFt: 14,
+      lengthFt: 12,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.bed,
+          posFt: Offset(7, 6),
+          widthFt: 5,
+          lengthFt: 6.5,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.5,
+    ).copyWith(warnings: ['Bedroom scan']);
+    expect(PhotoTrueLayout.isStudyLike(bedroom), isFalse);
+    final out = PhotoTrueLayout.ensureGoldQuality(bedroom);
+    expect(
+      out.furniture.any((f) => f.type == FurnitureType.bed),
+      isTrue,
+    );
+    // Must not force study-only (no bed)
+    expect(PhotoTrueLayout.isPhotoTrue(out), isFalse);
+  });
+
+  test('+52 composeStudyGold puts wardrobe on longest wall', () {
+    // Wide room: N/S walls are longer (w=20 > l=12)
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 12);
+    final wardrobe =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // North wall furniture sits near y≈length
+    expect(wardrobe.posFt.dy, greaterThan(12 - 3));
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
