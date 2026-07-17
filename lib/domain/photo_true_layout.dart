@@ -925,6 +925,31 @@ class PhotoTrueLayout {
     if (!openings.any((o) => o.type == StrokeType.door)) return false;
     if (_distinctOpeningWallCount(r) < 2) return false;
 
+    // +65: inventory-aware gold density (feedback 32ffdc65)
+    final inv = r.warnings.join(' ').toLowerCase();
+    final doorCount =
+        openings.where((o) => o.type == StrokeType.door).length;
+    final hasMesh = openings.any((o) =>
+        o.type == StrokeType.balcony ||
+        o.type == StrokeType.window ||
+        (o.type == StrokeType.door && o.lengthFt >= 4.5));
+    // Study inventory with mesh/balcony must include a wide opening
+    if ((inv.contains('mesh') ||
+            inv.contains('balcony') ||
+            inv.contains('glass sliding') ||
+            inv.contains('must include mesh')) &&
+        !hasMesh) {
+      return false;
+    }
+    // "about 2 door" → require two walk-through doors (not wardrobe shutters)
+    final wantDoors = RegExp(r'about\s+(\d+)\s+door').firstMatch(inv);
+    if (wantDoors != null) {
+      final n = int.tryParse(wantDoors.group(1)!) ?? 0;
+      if (n >= 2 && doorCount < 2) return false;
+    } else if (inv.contains('2 door') && doorCount < 2) {
+      return false;
+    }
+
     // Wardrobe must be a long sliding wall unit (gold ~full wall, min 6 ft)
     final wardrobe =
         r.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
@@ -1320,7 +1345,7 @@ class PhotoTrueLayout {
       for (final f in keepOther) _hugNearestWall(_normalizeGeneric(f, w, l), w, l),
     ];
 
-    // +44: place chair in free space next to desk after compose (more reliable)
+    // +44/65: place chair in free space next to desk after compose (more reliable)
     final hasChairAlready =
         mergedFurniture.any((f) => f.type == FurnitureType.chair) ||
             input.furniture.any((f) => f.type == FurnitureType.chair);
@@ -1331,10 +1356,19 @@ class PhotoTrueLayout {
         break;
       }
     }
-    if (needChair && !hasChairAlready && tablePiece != null) {
+    // Gold study inventory: chair when inventory mentions chair OR study path
+    final forceChair = needChair ||
+        (needWardrobe &&
+            needTable &&
+            invBlob.contains('no bed') &&
+            invBlob.contains('chair'));
+    if (forceChair && !hasChairAlready && tablePiece != null) {
       final t = tablePiece;
-      final cx = (t.posFt.dx + 2.2).clamp(1.0, w - 1.0);
-      final cy = (t.posFt.dy + 2.0).clamp(1.0, l - 1.0);
+      // Offset into room from desk (not through walls)
+      final cx = (t.posFt.dx + (t.posFt.dx < w / 2 ? 2.0 : -2.0))
+          .clamp(1.2, w - 1.2);
+      final cy = (t.posFt.dy + (t.posFt.dy < l / 2 ? 2.0 : -2.0))
+          .clamp(1.2, l - 1.2);
       mergedFurniture.add(ScanFurnitureHint(
         type: FurnitureType.chair,
         posFt: Offset(cx, cy),
@@ -1343,7 +1377,7 @@ class PhotoTrueLayout {
         rotationRad: 0,
         included: true,
       ));
-      notes.add('Seeded CHAIR near desk (+44)');
+      notes.add('Seeded CHAIR near desk (+65)');
     }
 
     // Dedupe majors (allow multiple chairs)

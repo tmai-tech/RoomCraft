@@ -697,6 +697,55 @@ void main() {
     expect(deep.mesh, WallSide.north);
   });
 
+  test('+65 isPhotoTrue requires mesh when inventory demands mesh', () {
+    // Wardrobe+table+2 doors but no mesh → incomplete for gold study inventory
+    final noMesh = AccurateScan.enforce(
+      widthFt: 20,
+      lengthFt: 17,
+      openings: [
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0, 2),
+          endFt: Offset(0, 5),
+        ),
+        const ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(8, 17),
+          endFt: Offset(11, 17),
+        ),
+      ],
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10, 1.5),
+          widthFt: 8,
+          lengthFt: 1.6,
+        ),
+        const ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(2, 12),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.7,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; NO BED; '
+            'about 2 door opening(s); MUST include mesh balcony',
+      ],
+    );
+    expect(PhotoTrueLayout.isPhotoTrue(noMesh), isFalse);
+    final fixed = PhotoTrueLayout.ensureGoldQuality(noMesh);
+    expect(PhotoTrueLayout.isPhotoTrue(fixed), isTrue);
+    expect(
+      fixed.walls.any((w) =>
+          w.type == StrokeType.balcony || w.type == StrokeType.window),
+      isTrue,
+    );
+  });
+
   test('+51 ensureGoldQuality upgrades empty multi-wall plan', () {
     final empty = AccurateScan.enforce(
       widthFt: 18,
