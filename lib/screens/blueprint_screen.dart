@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
+import '../models/furniture_item.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
@@ -12,6 +13,7 @@ import '../services/export_service.dart';
 import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
 import '../domain/layout/ai_designer.dart';
+import '../domain/layout/ai_styler.dart';
 import '../domain/layout/layout_alternatives.dart';
 import '../screens/isometric_preview_screen.dart';
 import '../widgets/furniture_catalog_sheet.dart';
@@ -98,17 +100,23 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             IconButton(
               icon: const Icon(Icons.view_in_ar),
               tooltip: '3D preview',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
+              onPressed: () async {
+                final result = await Navigator.of(context).push<List<FurnitureItem>>(
+                  MaterialPageRoute(
                     builder: (_) => IsometricPreviewScreen(
                       room: roomState.room,
                       pixelsPerFoot: roomState.pixelsPerFoot,
                       unitSystem: roomState.unitSystem,
+                      onFurnitureChanged: (items) {
+                        roomNotifier.applyLayoutAlternative(items);
+                      },
                     ),
                   ),
                 );
-                AnalyticsService.instance.logEvent('isometric_preview');
+                if (result != null) {
+                  roomNotifier.applyLayoutAlternative(result);
+                }
+                AnalyticsService.instance.logEvent('isometric_edit');
               },
             ),
             PopupMenuButton<String>(
@@ -566,6 +574,65 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                     AnalyticsService.instance.autoArrange(type: 'design_${style.name}');
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Applied AI Designer: ${style.label}')),
+                    );
+                  },
+                ),
+              const Divider(),
+              Text(
+                'AI Styler',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Palette + materials tips and restyle furniture layout (free on-device)',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              for (final style in DesignStyle.values)
+                ListTile(
+                  dense: true,
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.pink.shade50,
+                    child: Icon(Icons.palette, color: Colors.pink.shade700, size: 20),
+                  ),
+                  title: Text('Style: ${style.label}'),
+                  subtitle: Text(style.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    final report = AiStyler.apply(
+                      room: state.room,
+                      pixelsPerFoot: state.pixelsPerFoot,
+                      style: style,
+                    );
+                    notifier.applyLayoutAlternative(report.furniture);
+                    AnalyticsService.instance.autoArrange(type: 'styler_${style.name}');
+                    showModalBottomSheet<void>(
+                      context: context,
+                      showDragHandle: true,
+                      builder: (c2) => Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: ListView(
+                          children: [
+                            Text('AI Styler · ${style.label}',
+                                style: Theme.of(context).textTheme.titleLarge),
+                            const SizedBox(height: 8),
+                            Text('Palette: ${report.palette}'),
+                            Text('Materials: ${report.materials}'),
+                            Text('Layout score: ${report.score}'),
+                            const SizedBox(height: 8),
+                            for (final tip in report.tips)
+                              ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.check_circle_outline),
+                                title: Text(tip),
+                              ),
+                          ],
+                        ),
+                      ),
                     );
                   },
                 ),

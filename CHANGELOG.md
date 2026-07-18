@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+85 (2026-07-18)
+
+### Interactive 3D editor · AI Styler · AR entry
+- **3D room editor**: tap-select, rotate, delete, nudge; apply edits back to 2D plan.
+- **AI Styler**: palette/materials tips + style restyle (Furnisher pipeline), free on-device.
+- **AR Room Planner** entry on Home create sheet (ARCore real dimensions path).
+- Tests + evidence for styler, interactive 3D, catalog type count.
+- Version **+85**.
+
+
 ## 1.0.0-beta.1+84 (2026-07-18)
 
 ### Planner 5D level-up: catalog, AI Designer, 3D evidence

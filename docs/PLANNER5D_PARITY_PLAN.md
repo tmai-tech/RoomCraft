@@ -153,3 +153,13 @@ That is **not** full Planner 5D feature parity — it is **production-competitiv
 
 **Honest scorecard after +84:** catalog **6/10** · layout intelligence **9/10** · 3D wow **5.5/10** · free scan **8.5/10**.  
 Still not a clone of Planner 5D’s paid 3D/AR stack — competitive on the **measured layout + AI furnish** job with free resources.
+
+
+### +85 follow-up
+| Item | Status |
+|------|--------|
+| Interactive 3D select/rotate/delete/nudge + apply to plan | ✅ |
+| AI Styler (palette/materials tips + restyle) | ✅ free on-device |
+| AR Room Planner home entry | ✅ → scanner ARCore path |
+| Photoreal HD / 10k brand SKUs | still ❌ free scope |
+

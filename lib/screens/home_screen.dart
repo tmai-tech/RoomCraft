@@ -9,6 +9,7 @@ import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/room_thumbnail.dart';
 import 'blueprint_screen.dart';
+import '../services/ar_measure_service.dart';
 import 'scanner_screen.dart';
 import 'settings_screen.dart';
 
@@ -330,8 +331,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(height: 28),
             FilledButton.icon(
               onPressed: _createNewAI,
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Scan room'),
+              icon: const Icon(Icons.view_in_ar),
+              label: const Text('AR / Scan room'),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -488,8 +489,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.view_in_ar, color: Colors.teal),
+              title: const Text('AR Room Planner'),
+              subtitle: Text(
+                ArMeasureService.isPlatformSupported
+                    ? 'ARCore real dimensions → plan → furnish'
+                    : 'Needs Android + ARCore (photo scan still available)',
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _createNewAI(); // Scanner opens with AR modes first-class
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.auto_awesome, color: Colors.blue),
-              title: const Text('Scan with AI'),
+              title: const Text('Scan with AI photos'),
               subtitle: const Text('Photos → top-down plan'),
               onTap: () {
                 Navigator.pop(ctx);

@@ -17,6 +17,7 @@ class IsometricPainter extends CustomPainter {
   /// Extra yaw in radians around the room center (user orbit).
   final double yaw;
   final double wallHeightFt;
+  final String? selectedId;
 
   IsometricPainter({
     required this.room,
@@ -24,6 +25,7 @@ class IsometricPainter extends CustomPainter {
     this.unitSystem = UnitSystem.feet,
     this.yaw = 0,
     this.wallHeightFt = 8.0,
+    this.selectedId,
   });
 
   double get _scale => pixelsPerFoot;
@@ -179,7 +181,15 @@ class IsometricPainter extends CustomPainter {
     boxes.sort((a, b) => a.depthKey.compareTo(b.depthKey));
 
     for (final box in boxes) {
-      _drawFurnitureBox(canvas, map, box.item, box.height, w, d);
+      _drawFurnitureBox(
+        canvas,
+        map,
+        box.item,
+        box.height,
+        w,
+        d,
+        selected: box.item.id == selectedId,
+      );
     }
 
     // Dimension label
@@ -238,8 +248,9 @@ class IsometricPainter extends CustomPainter {
     FurnitureItem item,
     double h,
     double roomW,
-    double roomD,
-  ) {
+    double roomD, {
+    bool selected = false,
+  }) {
     final fw = item.widthInFeet * _scale;
     final fd = item.lengthInFeet * _scale;
     final corners = Iso.boxCorners(
@@ -295,6 +306,15 @@ class IsometricPainter extends CustomPainter {
     face([bottom[0], bottom[1], top[1], top[0]], side);
     face([bottom[1], bottom[2], top[2], top[1]], Color.lerp(side, Colors.black, 0.1)!);
     face([top[0], top[1], top[2], top[3]], topC);
+
+    if (selected) {
+      final outline = Paint()
+        ..color = Colors.amber.shade700
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3;
+      canvas.drawPath(Path()..addPolygon(top, true), outline);
+      canvas.drawPath(Path()..addPolygon([bottom[0], bottom[1], top[1], top[0]], true), outline);
+    }
 
     // Label
     final mid = Offset(
@@ -373,7 +393,8 @@ class IsometricPainter extends CustomPainter {
         old.pixelsPerFoot != pixelsPerFoot ||
         old.unitSystem != unitSystem ||
         old.yaw != yaw ||
-        old.wallHeightFt != wallHeightFt;
+        old.wallHeightFt != wallHeightFt ||
+        old.selectedId != selectedId;
   }
 }
 

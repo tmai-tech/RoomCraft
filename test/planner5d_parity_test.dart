@@ -220,8 +220,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('3D preview'), findsOneWidget);
-      expect(find.textContaining('Drag horizontally'), findsOneWidget);
+      expect(find.textContaining('3D'), findsOneWidget);
+      expect(find.textContaining('Tap a piece'), findsOneWidget);
       expect(find.byType(CustomPaint), findsWidgets);
 
       // Exercise orbit gesture on the 3D surface
