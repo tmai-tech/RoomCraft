@@ -21,6 +21,7 @@ import '../services/analytics_service.dart';
 import '../services/ar_measure_service.dart';
 import '../services/free_vision_scanner.dart';
 import '../services/wall_relative_vision.dart';
+import 'ar_place_layout_screen.dart';
 import 'blueprint_screen.dart';
 import 'scan_review_screen.dart';
 import 'settings_screen.dart';
@@ -910,9 +911,21 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         emptyFurniture: included == 0,
       );
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ScanReviewScreen(initial: result)),
-      );
+      // AR Room Planner product path: real dimensions → place layout → 3D
+      if (mode == 'ar_guided' && _arMeasure != null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ArPlaceLayoutScreen(
+              measure: _arMeasure!,
+              roomName: 'AR Room',
+            ),
+          ),
+        );
+      } else {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ScanReviewScreen(initial: result)),
+        );
+      }
     } catch (e) {
       await AnalyticsService.instance.scanFail(mode: mode, reason: e.toString());
       if (!mounted) return;
@@ -1281,6 +1294,22 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                               : 'From ARCore floor hit-testing',
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.tonalIcon(
+                      key: const Key('ar_place_layout_now'),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => ArPlaceLayoutScreen(
+                              measure: _arMeasure!,
+                              roomName: 'AR Room',
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.weekend),
+                      label: const Text('Place furniture at AR size'),
                     ),
                   ],
                   const SizedBox(height: 16),

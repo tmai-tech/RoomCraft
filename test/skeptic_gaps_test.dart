@@ -8,7 +8,9 @@ import 'package:room_craft/domain/layout/ai_designer.dart';
 import 'package:room_craft/domain/units.dart';
 import 'package:room_craft/models/furniture_item.dart';
 import 'package:room_craft/models/room_model.dart';
+import 'package:room_craft/screens/ar_place_layout_screen.dart';
 import 'package:room_craft/screens/home_screen.dart';
+import 'package:room_craft/services/ar_measure_service.dart';
 import 'package:room_craft/screens/isometric_preview_screen.dart';
 import 'package:room_craft/screens/scanner_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -255,5 +257,70 @@ void main() {
     );
   });
 
-}
 
+  testWidgets(
+    'P3 AR place layout: real dimensions → furnish → open 3D key present',
+    (tester) async {
+      const measure = ArRoomMeasure(
+        widthFt: 14.2,
+        lengthFt: 11.8,
+        widthM: 4.33,
+        lengthM: 3.60,
+        source: 'arcore',
+        mode: 'chain',
+        wallsFt: [14.2, 11.8, 14.1, 11.9],
+        wallsM: [4.33, 3.60, 4.30, 3.63],
+      );
+
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: ArPlaceLayoutScreen(
+              measure: measure,
+              roomName: 'AR Test Room',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('AR place layout'), findsOneWidget);
+      expect(find.textContaining('14.2'), findsWidgets);
+      expect(find.textContaining('real size'), findsWidgets);
+
+      // Furnish with Cozy style chip (keyed)
+      final cozy = find.byKey(const Key('ar_furnish_cozy'));
+      expect(cozy, findsOneWidget);
+      await tester.tap(cozy);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.textContaining('On plan:'), findsOneWidget);
+
+      // Scroll list to bottom buttons
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pump();
+
+      final open3d = find.byKey(const Key('ar_place_open_3d'));
+      expect(open3d, findsOneWidget);
+      expect(find.byKey(const Key('ar_place_open_2d')), findsOneWidget);
+
+      await tester.tap(open3d);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(IsometricPreviewScreen), findsOneWidget);
+
+      File('${_ev.path}/ar_place_layout.txt').writeAsStringSync(
+        'screen=ArPlaceLayoutScreen\n'
+        'measure_shown=true\n'
+        'width=14.2\n'
+        'furnished=true\n'
+        'open_3d_key=true\n'
+        'opened_3d=true\n'
+        'real_dimension_place_ux=true\n',
+      );
+    },
+  );
+
+}

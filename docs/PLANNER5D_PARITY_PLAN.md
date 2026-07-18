@@ -124,15 +124,15 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 |---|-------------|------------------|----------|
 | P1 | 10,000+ décor catalogue | **Shipped free 10,000+ SKUs** (seed × material × size × line). Brand commerce SKUs need partners | `catalog_10k.txt` |
 | P2 | 3D room planner (build / explore) | **Shipped** perspective walkthrough + isometric edit (select/rotate/delete/apply). Not photoreal mesh/HD | V7 evidence + walk controls |
-| P3 | AR room planner with real dimensions | **Shipped distinct** ARCore measure path → plan → furnish. Live AR place-furniture-in-camera is next native step | `ar_distinct_path.txt` |
+| P3 | AR room planner with real dimensions | **Shipped** distinct ARCore measure → **ArPlaceLayoutScreen** (place at real size) → 3D. Live-camera furniture anchors next | `ar_distinct_path.txt` + AR place tests |
 | P4 | Floor plan 2D + furniture arrange | **Shipped** full 2D editor, snap, multi-select, score | existing MVP |
 | P5 | AI Designer (Furnisher + Styler) | **Shipped** on-device free Furnisher + Styler | AI Designer/Styler tests |
 | P6 | HD realistic snapshots | **Not free** — deferred (paid render) | — |
 | P7 | Cross-platform / offline / gallery | Android beta + local save + Gallery of ideas | Gallery evidence |
 
-**Completion rule for this goal:** P1–P5 must be demonstrably product-usable with automated evidence. P6 remains known gap until a free/paid render path is chosen. P3 full AR *placement* improves when native OpenGL furniture anchors land; measure→plan→3D place is the free architecture max today.
+**Goal = full Play listing parity.** The table above is a **status tracker**, not a reduced definition of done. Ship continuously on free/current architecture; P6 (HD photoreal) and live-camera AR furniture anchors remain open engineering work, not “out of scope by redefinition.”
 
-**This section does not redefine the Play objective away.** It tracks every listing pillar and records free-path delivery vs remaining paid/native work.
+**AR place loop shipped free path:** ARCore measure → [ArPlaceLayoutScreen] (AI furnish / catalogue place at real size) → 3D walkthrough edit. Live OpenGL furniture anchors in camera are the next native increment.
 
 ---
 
@@ -149,7 +149,7 @@ flutter test test/skeptic_gaps_test.dart \
 | V1 P1 Catalog | skus≥10000, types≥18 | `catalog_10k.txt` |
 | V2 P2 3D path | Blueprint 3D mode / editor | `blueprint_to_3d_path.txt` |
 | V3 P2 Edit-in-3D | select+rotate+delete+onFurnitureChanged | `interactive_3d_widget.txt` (must include rotated=true, onFurnitureChanged_fired=true) |
-| V4 P3 Distinct AR | Home AR tile → ar_guided Scanner | `ar_distinct_path.txt`, `scanner_ar_initial_mode.txt` |
+| V4 P3 Distinct AR | Home AR → ar_guided; place-layout screen after measure | `ar_distinct_path.txt`, `ar_place_layout.txt` |
 | V5 P4 Compare layouts | Auto → Compare → apply → undo | `compare_layouts_ui_path.txt` |
 | V6 P5 AI Designer | empty → multi-piece | `ai_designer_autofurnish.txt` |
 | V7 P5 AI Styler | palette+tips | `ai_styler_cozy.txt` |

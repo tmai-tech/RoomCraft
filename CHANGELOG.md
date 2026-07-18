@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+90 (2026-07-18)
+
+### AR place layout loop (measure → place → 3D)
+- New **ArPlaceLayoutScreen**: after ARCore measure, place furniture at real size (AI Designer or catalogue).
+- Scanner AR path navigates to place layout; shortcut “Place furniture at AR size”.
+- Plan §5 tracks full Play objective; no reduced completion definition.
+- Tests prove AR place → furnish → open 3D.
+- Version **+90**.
+
+
 ## 1.0.0-beta.1+89 (2026-07-18)
 
 ### Walkthrough 3D explore · plan §5 tracks full Play objective
