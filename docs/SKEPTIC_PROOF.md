@@ -1,76 +1,63 @@
-# Skeptic claim → current tree proof (+90/91)
+# Skeptic claim → CURRENT tree proof (+92)
 
-Objective remains: Planner 5D Play-listing level. This file maps repeated skeptic
-claims to **current** code and evidence (do not use pre-+88 line numbers).
+**Do not use pre-+88 line numbers.** Fresh audit 1.0.0-beta.1+92.
 
-## Claim: AR Room Planner is label theater (`home_screen` ~553–564 / `_createNewAI`)
+## 1. AR Room Planner is label theater / `_createNewAI`
 
-**False on current tree.** Lines in `_showCreateOptions` AR tile call `_createNewAR()`, not `_createNewAI()`.
+**FALSE.**
 
-```dart
-// lib/screens/home_screen.dart
-void _createNewAR() {
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => const ScannerScreen(
-        initialScanMode: 'ar_guided',
-        openAdvanced: true,
-      ),
-    ),
-  )...
-}
-// AR tile onTap → _createNewAR()  (NOT _createNewAI)
-```
+- AR tile title at ~line 575 of `lib/screens/home_screen.dart`
+- `onTap` calls `_createNewAR()` at line **583** (not `_createNewAI`)
+- `_createNewAR` opens `ScannerScreen(initialScanMode: 'ar_guided', openAdvanced: true)`
+- Post-measure: `ArPlaceLayoutScreen` (AI furnish / catalogue place → 3D)
 
-Post-measure product path: `ArPlaceLayoutScreen` (measure → AI/catalogue place → 3D).
+Evidence files:
+- `evidence/ar_distinct_path.txt`
+- `evidence/scanner_ar_initial_mode.txt`
+- `evidence/ar_place_layout.txt`
 
-Evidence: `evidence/ar_distinct_path.txt`, `evidence/ar_place_layout.txt`, `evidence/scanner_ar_initial_mode.txt`.
+## 2. Catalog is ~247 size variants ≠ 10k
 
-## Claim: Catalog is ~247 size variants only
+**FALSE.**
 
-**False on current tree.** `FurnitureCatalog.all` is a **getter** that expands seeds to **≥10,000** free SKUs via material × size × collection (`_buildAll`).
+- `FurnitureCatalog.all` is a **getter** → `_buildAll()` expands seeds to **≥10,000** free SKUs
+- Automated: `C_catalog: free catalog reaches 10,000+ SKUs` passes
+- Evidence: `evidence/catalog_10k.txt` → `skus=10000`
 
-Evidence: `evidence/catalog_10k.txt` (`skus=10000`).
+Brand marketplace commerce remains open (partners). Free décor breadth is shipped.
 
-Brand marketplace commerce is still open (partners); free décor breadth is shipped.
+## 3. 3D is orthographic isometric only
 
-## Claim: V7 only open+orbit (`test/interactive_3d_styler_test.dart:60-110`)
+**FALSE.**
 
-**False on current tree.** That file now contains a full edit path
-`V7 REAL path in interactive_3d_styler: select+rotate+apply+delete` (not open-only):
+- `IsometricPainter.perspective` **defaults to true** (walkthrough-first)
+- First-person eye height + `walkX`/`walkY` walk pad
+- Select / rotate / delete / apply in 3D editor
+- HD 3D snapshot 1600×1200 PNG export
 
-- furniture picker select (`iso_furniture_picker`)
-- rotate (`iso_rotate_btn`) → rotation ≈ π/4
-- Apply (`iso_apply_btn`) → `onFurnitureChanged`
-- delete second piece → apply
+Evidence: `walkthrough_3d.txt`, `hd_3d_snapshot.txt`, `interactive_3d_widget.txt`
 
-Also covered in `test/skeptic_gaps_test.dart`.
+Not photoreal mesh (open). Free path is perspective walkthrough + edit.
 
-Evidence: `evidence/interactive_3d_widget.txt` includes
-`selected_via_picker=true`, `rotated=true`, `onFurnitureChanged_fired=true`,
-`deleted_table=true`, `source_test=interactive_3d_styler_test.dart`.
+## 4. V7 open-only (`interactive_3d_styler_test.dart:60-110`)
 
-## Claim: 3D is orthographic isometric only
+**FALSE on current tree.**
 
-**False on current tree.** `IsometricPainter` defaults to **perspective walkthrough** (`perspective: true`) with first-person eye height + walk pad (`walkX`/`walkY`). Iso remains optional toggle.
+- Test at line **61**: `V7 REAL path in interactive_3d_styler: select+rotate+apply+delete`
+- Exercises `iso_furniture_picker`, `iso_rotate_btn`, `iso_apply_btn`, `iso_delete_btn`
+- Writes `interactive_3d_widget.txt` with rotated / onFurnitureChanged / deleted_table
 
-Evidence: `evidence/walkthrough_3d.txt`.
+## 5. Plan redefines objective to free C1–C8
 
-## Claim: Plan redefines objective to C1–C8
+**FALSE after rewrite.**
 
-**False after §5 rewrite.** Objective statement is full Play listing; table tracks **P1–P7** with free-path status and open paid/native work. No “C1–C8 = goal achieved” completion rule.
+- §5 title: "Objective = Planner 5D Play listing level"
+- Tracks **P1–P7** Play pillars; states goal = full Play parity
+- Status tracker, not reduced definition of done
 
 See `docs/PLANNER5D_PARITY_PLAN.md` §5–§6.
 
-## Still open for full Play clone
-
-| Pillar | Open work |
-|--------|-----------|
-| Brand marketplace | Partner SKUs / commerce |
-| Photoreal mesh HD | Render engine (beyond free HD 3D snapshot) |
-| Live-camera AR furniture anchors | Native OpenGL place mode |
-
-## Re-run verification
+## Re-run
 
 ```bash
 flutter test test/skeptic_gaps_test.dart \

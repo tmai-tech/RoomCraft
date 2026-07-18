@@ -127,6 +127,28 @@ class IsometricPainter extends CustomPainter {
         ..strokeWidth = 1.5,
     );
 
+    // Ceiling plane (perspective walkthrough feel)
+    if (perspective) {
+      final ceilPts = [
+        map(_rotThenProject(0, 0, h, w, d)),
+        map(_rotThenProject(w, 0, h, w, d)),
+        map(_rotThenProject(w, d, h, w, d)),
+        map(_rotThenProject(0, d, h, w, d)),
+      ];
+      final ceilPath = Path()..addPolygon(ceilPts, true);
+      canvas.drawPath(
+        ceilPath,
+        Paint()..color = Colors.blueGrey.shade100.withValues(alpha: 0.35),
+      );
+      canvas.drawPath(
+        ceilPath,
+        Paint()
+          ..color = Colors.blueGrey.shade300.withValues(alpha: 0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+    }
+
     // Grid on floor
     final gridPaint = Paint()
       ..color = Colors.blueGrey.withValues(alpha: 0.2)
@@ -299,8 +321,6 @@ class IsometricPainter extends CustomPainter {
     assert(corners.length == 8);
 
     final fill = _colorFor(item.type);
-    final side = Color.lerp(fill, Colors.black, 0.15)!;
-    final topC = Color.lerp(fill, Colors.white, 0.2)!;
 
     // Draw three visible faces (simple)
     void face(List<Offset> pts, Color c) {
@@ -315,9 +335,11 @@ class IsometricPainter extends CustomPainter {
       );
     }
 
-    face([bottom[0], bottom[1], top[1], top[0]], side);
-    face([bottom[1], bottom[2], top[2], top[1]], Color.lerp(side, Colors.black, 0.1)!);
-    face([top[0], top[1], top[2], top[3]], topC);
+    // Lit faces: left darker, right mid, top brightest (cheap Phong stand-in)
+    face([bottom[0], bottom[1], top[1], top[0]], Color.lerp(fill, Colors.black, 0.28)!);
+    face([bottom[1], bottom[2], top[2], top[1]], Color.lerp(fill, Colors.black, 0.12)!);
+    face([bottom[3], bottom[0], top[0], top[3]], Color.lerp(fill, Colors.black, 0.22)!);
+    face([top[0], top[1], top[2], top[3]], Color.lerp(fill, Colors.white, 0.25)!);
 
     if (selected) {
       final outline = Paint()

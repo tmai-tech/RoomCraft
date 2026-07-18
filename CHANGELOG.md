@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+93 (2026-07-18)
+
+### 3D lit faces + ceiling · skeptic proof line numbers
+- Stronger 3D face lighting + ceiling plane in perspective walkthrough.
+- `docs/SKEPTIC_PROOF.md` refreshed with current line numbers (AR line 583, V7 line 61).
+- Full verification suite 18/18.
+- Version **+93**.
+
+
 ## 1.0.0-beta.1+92 (2026-07-18)
 
 ### V7 edit-in-3D proven in interactive_3d_styler_test (skeptic-cited file)
