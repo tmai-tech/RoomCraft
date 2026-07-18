@@ -203,27 +203,146 @@ class PhotoTrueLayout {
     required ScanResult vision,
     required String path,
   }) {
-    if (!isPhotoTrue(r)) {
-      final raw = r.accuracyScore ?? 0.4;
-      return r.copyWith(
+    // +82: last-mile gold details (desk on work wall + chair) before score bar
+    var cur = alignGoldStudyDetails(r);
+    if (!isPhotoTrue(cur)) {
+      final raw = cur.accuracyScore ?? 0.4;
+      return cur.copyWith(
         accuracyScore: math.min(raw, incompleteScoreCap),
         warnings: [
-          ...r.warnings,
+          ...cur.warnings,
           'ensureGoldQuality: incomplete after $path (+67) — edit on Review',
         ],
       );
     }
-    final bar = photoTrueScoreBar(r, vision: vision);
-    return r.copyWith(
-      accuracyScore: math.max(r.accuracyScore ?? 0, bar).clamp(bar, 0.92),
+    final bar = photoTrueScoreBar(cur, vision: vision);
+    return cur.copyWith(
+      accuracyScore: math.max(cur.accuracyScore ?? 0, bar).clamp(bar, 0.92),
       warnings: [
-        ...r.warnings,
-        if (!r.warnings.any((w) => w.contains('ensureGoldQuality: finalized')))
+        ...cur.warnings,
+        if (!cur.warnings.any((w) => w.contains('ensureGoldQuality: finalized')))
           'ensureGoldQuality: finalized photo-true (+67 $path) '
               'score ${(bar * 100).round()}%'
-              '${matchesDefaultGoldOrientation(r) ? " · gold orientation" : ""}',
+              '${matchesDefaultGoldOrientation(cur) ? " · gold orientation" : ""}',
       ],
     );
+  }
+
+  /// When wardrobe already sits on default gold storage wall, force desk onto
+  /// the gold work wall and seed a chair — matches gold-plan density (+82).
+  ///
+  /// Does not move a vision wardrobe on a non-default wall (+54 east trust).
+  static ScanResult alignGoldStudyDetails(ScanResult r) {
+    if (!isStudyLike(r)) return r;
+    final w = r.roomWidthFt;
+    final l = r.roomLengthFt;
+    if (w <= 0 || l <= 0) return r;
+    final roles = defaultStudyWallRoles(w, l);
+
+    ScanFurnitureHint? wardrobe;
+    ScanFurnitureHint? desk;
+    var hasChair = false;
+    final others = <ScanFurnitureHint>[];
+    for (final f in r.furniture.where((x) => x.included)) {
+      if (f.type == FurnitureType.wardrobe) {
+        if (wardrobe == null ||
+            math.max(f.widthFt, f.lengthFt) >
+                math.max(wardrobe.widthFt, wardrobe.lengthFt)) {
+          wardrobe = f;
+        }
+        continue;
+      }
+      if (f.type == FurnitureType.table) {
+        desk = f;
+        continue;
+      }
+      if (f.type == FurnitureType.chair) {
+        hasChair = true;
+        others.add(f);
+        continue;
+      }
+      others.add(f);
+    }
+    if (wardrobe == null) return r;
+    final ww = _nearestWall(wardrobe.posFt, w, l);
+    // Only tighten when storage already matches gold orientation
+    if (ww != roles.wardrobe) return r;
+
+    var notes = <String>[];
+    var deskOut = desk;
+    final deskOk = desk != null && _nearestWall(desk.posFt, w, l) == roles.desk;
+    if (!deskOk) {
+      final dwl = roles.desk.lengthFt(w, l);
+      final deskCenter = roles.desk == WallSide.west
+          ? math.max(dwl * 0.65, dwl - 3.5)
+          : dwl * 0.42;
+      final hint = WallFurnitureHint.fromLeft(
+        type: FurnitureType.table,
+        wall: roles.desk,
+        fromLeftFt: deskCenter,
+        depthFt: 1.6,
+        widthFt: 4.0,
+        lengthFt: 2.0,
+        wallLengthFt: dwl,
+        confidence: 0.94,
+        evidence: 'gold study desk on ${roles.desk.name} work wall (+82)',
+      );
+      final composed = WallRelativeComposer.compose(
+        widthFt: w,
+        lengthFt: l,
+        openings: const [],
+        furniture: [hint],
+        warnings: const [],
+      );
+      if (composed.furniture.isNotEmpty) {
+        deskOut = composed.furniture.first;
+        notes.add(
+          'Aligned desk to gold ${roles.desk.name} work wall (+82)',
+        );
+      }
+    }
+
+    ScanFurnitureHint? chairOut;
+    if (!hasChair && deskOut != null) {
+      final t = deskOut;
+      final cx = (t.posFt.dx + (t.posFt.dx < w / 2 ? 2.0 : -2.0))
+          .clamp(1.2, w - 1.2);
+      final cy = (t.posFt.dy + (t.posFt.dy < l / 2 ? 2.0 : -2.0))
+          .clamp(1.2, l - 1.2);
+      chairOut = ScanFurnitureHint(
+        type: FurnitureType.chair,
+        posFt: Offset(cx, cy),
+        widthFt: 1.8,
+        lengthFt: 1.8,
+        rotationRad: 0,
+        included: true,
+      );
+      notes.add('Seeded chair near gold desk (+82)');
+    }
+
+    if (notes.isEmpty && deskOk) return r;
+
+    final furniture = <ScanFurnitureHint>[
+      wardrobe,
+      if (deskOut != null) deskOut,
+      if (chairOut != null) chairOut,
+      ...others,
+    ];
+    final openings = r.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
+    return resolveWallClearances(AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: openings,
+      furniture: furniture,
+      warnings: [...r.warnings, ...notes],
+      inventDefaultOpenings: false,
+      accuracyScore: r.accuracyScore,
+    ).copyWith(accuracyScore: r.accuracyScore));
   }
 
   /// Confidence bar for complete photo-true study plans (+67).
@@ -1768,12 +1887,10 @@ class PhotoTrueLayout {
         break;
       }
     }
-    // Gold study inventory: chair when inventory mentions chair OR study path
+    // +82: gold study path seeds chair with wardrobe+desk+no bed (not only when
+    // inventory text mentions "chair" — gold plan always has a desk chair).
     final forceChair = needChair ||
-        (needWardrobe &&
-            needTable &&
-            invBlob.contains('no bed') &&
-            invBlob.contains('chair'));
+        (needWardrobe && needTable && invBlob.contains('no bed'));
     if (forceChair && !hasChairAlready && tablePiece != null) {
       final t = tablePiece;
       // Offset into room from desk (not through walls)
@@ -1789,7 +1906,7 @@ class PhotoTrueLayout {
         rotationRad: 0,
         included: true,
       ));
-      notes.add('Seeded CHAIR near desk (+65)');
+      notes.add('Seeded CHAIR near desk (+65/82 gold study)');
     }
 
     // Dedupe majors (allow multiple chairs)
