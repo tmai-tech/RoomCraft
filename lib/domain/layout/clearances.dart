@@ -5,6 +5,7 @@ import '../../models/room_model.dart';
 import '../../models/stroke_model.dart';
 import 'collision.dart';
 import 'furniture_bounds.dart';
+import 'room_geometry.dart';
 
 /// Clearance rules (feet) for layout tips and soft keep-outs.
 class ClearanceRules {
@@ -105,8 +106,28 @@ class Clearances {
       }
     }
 
+    // L-shape / polygon: furniture centers must stay on the floor plate
+    if (room.isPolygonFloor) {
+      final poly = room.floorPolygonFt!;
+      for (final f in room.furniture) {
+        final cFt = Offset(
+          f.position.dx / pixelsPerFoot,
+          f.position.dy / pixelsPerFoot,
+        );
+        if (!RoomGeometry.containsPoint(poly, cFt)) {
+          tips.add(const LayoutTip(
+            'Furniture sits outside the L-shape floor — move onto the plan',
+            severity: 'error',
+          ));
+          break;
+        }
+      }
+    }
+
     // Walkway heuristic: if filled area > 70% of room
-    final total = room.widthInFeet * room.lengthInFeet;
+    final total = room.isPolygonFloor
+        ? RoomGeometry.polygonAreaFt(room.floorPolygonFt!)
+        : room.widthInFeet * room.lengthInFeet;
     final filled = room.furniture.fold<double>(
       0,
       (s, f) => s + f.widthInFeet * f.lengthInFeet,

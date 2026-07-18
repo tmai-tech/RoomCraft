@@ -145,7 +145,7 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 | Play public listing | Firebase beta → closed track docs | Store assets + policy |
 | Device QA AR place | Manual on ARCore phones | — |
 
-**Next free sprint order:** (1)~~AR clamp~~✅+95 (2)~~3D materials~~✅+95 (3)~~walkway heatmap~~✅+96 (4)~~L-shape floor~~✅+97 (5) Play closed-track checklist (6) multi-floor / exterior.
+**Next free sprint order:** (1–4)✅+95–97 (5)~~polygon clamp + Play checklist~~✅+98 (6) multi-floor / exterior (7) store listing assets.
 
 ---
 
@@ -242,4 +242,13 @@ flutter test test/source_proof_test.dart \
 | Blueprint + 3D floor draw L; room size L-shape action | ✅ |
 | Gallery L-shape living plan | ✅ `l_living` |
 | Photoreal mesh / brand / multi-floor | ❌ still open |
+
+### +98
+| Item | Status |
+|------|--------|
+| Polygon-aware furniture clamp (no cutout rest) | ✅ |
+| Clearances tip for furniture outside L floor | ✅ |
+| PDF shape line + export heatmap option | ✅ |
+| Play closed-track checklist updated | ✅ docs/BETA_CHECKLIST.md |
+| Photoreal / brand / multi-floor exterior | ❌ still open |
 | 3D orthographic only | Perspective projection mode |

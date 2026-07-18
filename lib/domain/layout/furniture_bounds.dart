@@ -91,11 +91,15 @@ class FurnitureBounds {
   }
 
   /// Clamp furniture center so its AABB stays inside [room].
+  ///
+  /// When [floorPolygonPx] is set (L-shape / polygon floors), also pulls the
+  /// center into the polygon so pieces do not rest in the cutout.
   static Offset clampCenterInRoom(
     FurnitureItem item,
     double pixelsPerFoot,
     Rect room, {
     double margin = 2,
+    List<Offset>? floorPolygonPx,
   }) {
     final r = itemRect(item, pixelsPerFoot);
     final halfW = r.width / 2;
@@ -109,9 +113,44 @@ class FurnitureBounds {
       return room.center;
     }
 
-    return Offset(
-      item.position.dx.clamp(minX, maxX),
-      item.position.dy.clamp(minY, maxY),
-    );
+    var cx = item.position.dx.clamp(minX, maxX);
+    var cy = item.position.dy.clamp(minY, maxY);
+
+    final poly = floorPolygonPx;
+    if (poly != null && poly.length >= 3) {
+      // Local import avoided — ray cast inline for center containment.
+      if (!_pointInPolygon(poly, Offset(cx, cy))) {
+        final cx0 =
+            poly.map((e) => e.dx).reduce((a, b) => a + b) / poly.length;
+        final cy0 =
+            poly.map((e) => e.dy).reduce((a, b) => a + b) / poly.length;
+        for (var t = 0.0; t <= 1.0; t += 0.04) {
+          final q = Offset(cx + (cx0 - cx) * t, cy + (cy0 - cy) * t);
+          final qx = q.dx.clamp(minX, maxX);
+          final qy = q.dy.clamp(minY, maxY);
+          if (_pointInPolygon(poly, Offset(qx, qy))) {
+            cx = qx;
+            cy = qy;
+            break;
+          }
+        }
+      }
+    }
+
+    return Offset(cx, cy);
+  }
+
+  static bool _pointInPolygon(List<Offset> poly, Offset p) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      final xi = poly[i].dx, yi = poly[i].dy;
+      final xj = poly[j].dx, yj = poly[j].dy;
+      final intersect = ((yi > p.dy) != (yj > p.dy)) &&
+          (p.dx <
+              (xj - xi) * (p.dy - yi) / ((yj - yi) == 0 ? 1e-9 : (yj - yi)) +
+                  xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
   }
 }

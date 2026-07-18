@@ -3,7 +3,7 @@
 ## Before inviting testers
 
 - [x] MVP phases 0–4 on `dev`
-- [x] Version `1.0.0-beta.1+12` (field measure + stable CI signing)
+- [x] Version `1.0.0-beta.1+98` (AR place, L-shape, heatmap, 10k catalog, 3D walkthrough)
 - [x] Firebase App Distribution wired + green CI distribute
 - [x] Tester group `testers` exists
 - [x] Stable CI keystore SHA for Google Sign-In (see PLAY_AND_SIGNING.md)
@@ -34,6 +34,19 @@
 6. Export PNG → share sheet opens  
 7. Save → home shows thumbnail  
 8. Duplicate plan → delete copy  
+9. Home → Gallery → open **L-shape living** → 2D floor shows cutout  
+10. Room size → **L-shape** → walkway heatmap toggle  
+11. AR Room Planner (ARCore device) → measure → place layout → 3D  
+12. Export PDF lists shape + furniture  
+
+## Play closed track (free path remaining)
+
+- [x] Signed debug APK + Firebase App Distribution  
+- [x] Stable CI keystore SHA  
+- [ ] Store listing assets (feature graphic, screenshots 2D/3D/AR)  
+- [ ] Privacy policy URL + data safety form  
+- [ ] Closed testing track upload (Play Console)  
+- [ ] 12+ testers for 14 days (when targeting open testing)  
 
 ## Metrics to watch
 

@@ -27,6 +27,7 @@ class ExportService {
     RoomModel room, {
     double pixelsPerFoot = 20,
     UnitSystem unitSystem = UnitSystem.feet,
+    bool showWalkwayHeatmap = false,
   }) async {
     final size = exportSize(room, pixelsPerFoot);
     final recorder = ui.PictureRecorder();
@@ -49,6 +50,7 @@ class ExportService {
       room: room,
       pixelsPerFoot: pixelsPerFoot,
       unitSystem: unitSystem,
+      showWalkwayHeatmap: showWalkwayHeatmap,
     ).paint(canvas, paintSize);
 
     FurniturePainter(
@@ -141,10 +143,14 @@ class ExportService {
     final dim =
         '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × '
         '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)}';
+    final shape = room.isPolygonFloor
+        ? 'L-shape / polygon floor (${room.floorPolygonFt!.length} pts)'
+        : 'Rectangle floor';
     final lines = <String>[
       'RoomCraft plan',
       room.name,
       'Size: $dim',
+      'Shape: $shape',
       'Furniture: ${room.furniture.length} · Lines: ${room.strokes.length}',
       '',
       'Furniture list:',

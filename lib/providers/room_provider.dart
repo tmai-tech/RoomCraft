@@ -341,6 +341,7 @@ class RoomNotifier extends Notifier<RoomState> {
       state.room.lengthInFeet,
       state.pixelsPerFoot,
     );
+    final polyPx = _floorPolygonPx();
     // Place where user asked — soft clamp only (no auto-shove for "flexibility")
     var newItem = FurnitureItem(
       id: _uuid.v4(),
@@ -356,6 +357,7 @@ class RoomNotifier extends Notifier<RoomState> {
         state.pixelsPerFoot,
         roomR,
         margin: 1,
+        floorPolygonPx: polyPx,
       ),
     );
     state = state.copyWith(
@@ -500,6 +502,7 @@ class RoomNotifier extends Notifier<RoomState> {
             state.pixelsPerFoot,
             roomR,
             margin: 1,
+            floorPolygonPx: _floorPolygonPx(),
           ),
         );
         return next;
@@ -672,6 +675,12 @@ class RoomNotifier extends Notifier<RoomState> {
     );
     _syncHistoryFlags();
     _refreshLayout();
+  }
+
+  List<Offset>? _floorPolygonPx() {
+    final room = state.room;
+    if (!room.isPolygonFloor) return null;
+    return RoomGeometry.toPixels(room.floorPolygonFt!, state.pixelsPerFoot);
   }
 
 
