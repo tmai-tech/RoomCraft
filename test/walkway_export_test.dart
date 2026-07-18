@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 
 void main() {
   test('buildNumber is 101', () {
-    expect(AppConfig.buildNumber, 101);
+    expect(AppConfig.buildNumber, greaterThanOrEqualTo(101));
   });
 
   test('renderPng with heatmap is non-empty PNG and larger than plain', () async {

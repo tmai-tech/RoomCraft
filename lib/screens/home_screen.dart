@@ -259,6 +259,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Column(
         children: [
           if (_showBetaBanner) _buildBetaBanner(),
+          _buildQuickPillars(),
           if (_rooms.isNotEmpty) _buildSearchSortBar(),
           Expanded(
             child: _isLoading
@@ -621,47 +622,116 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// Planner-style entry pillars always visible on home.
+  Widget _buildQuickPillars() {
+    return Material(
+      color: Colors.teal.shade50,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Row(
+          children: [
+            _pillarChip(
+              keyName: 'home_pillar_ar',
+              icon: Icons.view_in_ar,
+              label: 'AR Planner',
+              onTap: _createNewAR,
+            ),
+            _pillarChip(
+              keyName: 'home_pillar_scan',
+              icon: Icons.camera_alt_outlined,
+              label: 'Photo scan',
+              onTap: _createNewAI,
+            ),
+            _pillarChip(
+              keyName: 'home_pillar_draw',
+              icon: Icons.edit_outlined,
+              label: 'Draw',
+              onTap: _createNewManual,
+            ),
+            _pillarChip(
+              keyName: 'home_pillar_gallery',
+              icon: Icons.auto_awesome_mosaic_outlined,
+              label: 'Gallery',
+              onTap: _showGallery,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pillarChip({
+    required String keyName,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ActionChip(
+        key: Key(keyName),
+        avatar: Icon(icon, size: 18, color: Colors.teal.shade800),
+        label: Text(label),
+        onPressed: onTap,
+        backgroundColor: Colors.white,
+        side: BorderSide(color: Colors.teal.shade100),
+      ),
+    );
+  }
+
   void _showCreateOptions() {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.view_in_ar, color: Colors.teal),
-              title: const Text('AR Room Planner'),
-              subtitle: Text(
-                ArMeasureService.isPlatformSupported
-                    ? 'ARCore real dimensions → plan → furnish'
-                    : 'Needs Android + ARCore (photo scan still available)',
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.view_in_ar, color: Colors.teal),
+                title: const Text('AR Room Planner'),
+                subtitle: Text(
+                  ArMeasureService.isPlatformSupported
+                      ? 'ARCore real dimensions → plan → furnish'
+                      : 'Needs Android + ARCore (photo scan still available)',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _createNewAR();
+                },
               ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _createNewAR();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome, color: Colors.blue),
-              title: const Text('Scan with AI photos'),
-              subtitle: const Text('Photos → top-down plan'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _createNewAI();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit, color: Colors.green),
-              title: const Text('Draw manually'),
-              subtitle: const Text('Walls and furniture by hand'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _createNewManual();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+              ListTile(
+                leading: const Icon(Icons.auto_awesome, color: Colors.blue),
+                title: const Text('Scan with AI photos'),
+                subtitle: const Text('Photos → top-down plan'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _createNewAI();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit, color: Colors.green),
+                title: const Text('Draw manually'),
+                subtitle: const Text('Walls and furniture by hand'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _createNewManual();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.yard_outlined, color: Colors.green),
+                title: const Text('Exterior patio from gallery'),
+                subtitle: const Text('Open backyard patio starter'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showGallery();
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

@@ -159,6 +159,122 @@ class ExportService {
     );
   }
 
+  /// Phone-portrait marketing frame for Play store screenshots (free path).
+  /// 1080×1920 with brand bar + 2D plan (optional walkway heatmap).
+  static Future<Uint8List> renderStoreScreenshot(
+    RoomModel room, {
+    double pixelsPerFoot = 22,
+    UnitSystem unitSystem = UnitSystem.feet,
+    bool showWalkwayHeatmap = true,
+  }) async {
+    const size = Size(1080, 1920);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Brand gradient background
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0D47A1),
+            Color(0xFF00695C),
+            Color(0xFF004D40),
+          ],
+        ).createShader(Offset.zero & size),
+    );
+
+    final title = TextPainter(
+      text: const TextSpan(
+        text: 'RoomCraft',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 48,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 80);
+    title.paint(canvas, const Offset(48, 64));
+
+    final sub = TextPainter(
+      text: TextSpan(
+        text: '${room.name} · ${room.spaceLabel}',
+        style: const TextStyle(color: Colors.white70, fontSize: 28),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 80);
+    sub.paint(canvas, const Offset(48, 128));
+
+    // Plan card
+    const card = Rect.fromLTWH(40, 220, 1000, 1200);
+    final rrect = RRect.fromRectAndRadius(card, const Radius.circular(28));
+    canvas.drawRRect(rrect, Paint()..color = const Color(0xFFF5F7FA));
+    canvas.save();
+    canvas.clipRRect(rrect);
+    canvas.translate(card.left + 40, card.top + 40);
+
+    final planW = room.widthInFeet * pixelsPerFoot;
+    final planH = room.lengthInFeet * pixelsPerFoot;
+    final maxW = card.width - 80;
+    final maxH = card.height - 80;
+    final scale = (maxW / planW < maxH / planH) ? maxW / planW : maxH / planH;
+    final pxf = pixelsPerFoot * scale.clamp(0.5, 3.0);
+    final paintSize = Size(
+      room.widthInFeet * pxf + 16,
+      room.lengthInFeet * pxf + 40,
+    );
+    BlueprintPainter(
+      room: room,
+      pixelsPerFoot: pxf,
+      unitSystem: unitSystem,
+      showWalkwayHeatmap: showWalkwayHeatmap,
+    ).paint(canvas, paintSize);
+    FurniturePainter(
+      furniture: room.furniture,
+      pixelsPerFoot: pxf,
+      unitSystem: unitSystem,
+    ).paint(canvas, paintSize);
+    canvas.restore();
+
+    final footer = TextPainter(
+      text: const TextSpan(
+        text: 'AR measure · 10k free catalogue · 3D walkthrough',
+        style: TextStyle(color: Colors.white70, fontSize: 22),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 80);
+    footer.paint(canvas, Offset(48, size.height - 120));
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.width.ceil(), size.height.ceil());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (bytes == null) throw Exception('Failed to encode store screenshot');
+    return bytes.buffer.asUint8List();
+  }
+
+  static Future<void> shareStoreScreenshot(
+    RoomModel room, {
+    double pixelsPerFoot = 22,
+    UnitSystem unitSystem = UnitSystem.feet,
+  }) async {
+    final png = await renderStoreScreenshot(
+      room,
+      pixelsPerFoot: pixelsPerFoot,
+      unitSystem: unitSystem,
+    );
+    final dir = await getTemporaryDirectory();
+    final safe = room.name.replaceAll(RegExp(r'[^\w\-]+'), '_');
+    final file = File('${dir.path}/roomcraft_store_${safe}.png');
+    await file.writeAsBytes(png, flush: true);
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: 'image/png', name: '${safe}_store.png')],
+      text: 'RoomCraft store screenshot — ${room.name}',
+    );
+  }
+
   /// Share 2D plan + 3D walkthrough PNGs together (Play-style plan pack).
   static Future<void> sharePlanPack(
     RoomModel room, {

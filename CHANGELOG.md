@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+102 (2026-07-18)
+
+### Home pillars · store screenshot · exterior furnish
+- Home quick-action pillars: AR, Photo scan, Draw, Gallery.
+- Export **store screenshot** 1080×1920 marketing frame for Play assets.
+- Exterior patio rooms get outdoor furniture recipe (grill, patio sofa…).
+- Version **+102**.
+
 ## 1.0.0-beta.1+101 (2026-07-18)
 
 ### Walkway free-% · heatmap PNG · onboarding refresh

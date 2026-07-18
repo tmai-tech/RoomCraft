@@ -3,7 +3,7 @@
 ## Before inviting testers
 
 - [x] MVP phases 0–4 on `dev`
-- [x] Version `1.0.0-beta.1+101` (AR place, L-shape, heatmap, multi-floor/exterior, 10k catalog)
+- [x] Version `1.0.0-beta.1+102` (AR place, L-shape, heatmap, multi-floor/exterior, 10k catalog)
 - [x] Firebase App Distribution wired + green CI distribute
 - [x] Tester group `testers` exists
 - [x] Stable CI keystore SHA for Google Sign-In (see PLAY_AND_SIGNING.md)

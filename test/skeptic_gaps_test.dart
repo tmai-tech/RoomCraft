@@ -55,10 +55,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.text('AR Room Planner'), findsOneWidget);
+      // Empty state + bottom sheet can both mention AR — require sheet row present.
+      expect(find.text('AR Room Planner'), findsWidgets);
       expect(find.text('Scan with AI photos'), findsOneWidget);
 
-      await tester.tap(find.text('AR Room Planner'));
+      await tester.tap(find.text('AR Room Planner').last);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 

@@ -168,6 +168,14 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                       unitSystem: roomState.unitSystem,
                     );
                     await AnalyticsService.instance.logEvent('export_plan_pack');
+                  } else if (v == 'store') {
+                    await ExportService.shareStoreScreenshot(
+                      roomState.room,
+                      pixelsPerFoot: roomState.pixelsPerFoot,
+                      unitSystem: roomState.unitSystem,
+                    );
+                    await AnalyticsService.instance
+                        .logEvent('export_store_screenshot');
                   }
                 } catch (e) {
                   if (context.mounted) {
@@ -187,6 +195,10 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                 PopupMenuItem(
                   value: 'pack',
                   child: Text('Share plan pack (2D + 3D)'),
+                ),
+                PopupMenuItem(
+                  value: 'store',
+                  child: Text('Share store screenshot (1080×1920)'),
                 ),
               ],
             ),

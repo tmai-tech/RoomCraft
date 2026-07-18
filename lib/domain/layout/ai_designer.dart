@@ -81,7 +81,9 @@ class AiDesigner {
     required double pixelsPerFoot,
     required DesignStyle style,
   }) {
-    final specs = _recipe(style, room.widthInFeet, room.lengthInFeet);
+    final specs = room.isExterior
+        ? _exteriorRecipe(room.widthInFeet, room.lengthInFeet)
+        : _recipe(style, room.widthInFeet, room.lengthInFeet);
     final seed = <FurnitureItem>[];
     for (final s in specs) {
       final entry = FurnitureCatalog.byId(s) ?? FurnitureCatalog.all.first;
@@ -213,5 +215,21 @@ class AiDesigner {
           'plant_stand',
         ];
     }
+  }
+
+  /// Outdoor / patio free-path recipe (Planner exterior lite).
+  static List<String> _exteriorRecipe(double w, double l) {
+    final area = w * l;
+    final large = area >= 180;
+    return [
+      'patio_sofa',
+      'picnic_table',
+      if (large) 'patio_dining',
+      'grill',
+      'plant_large',
+      'plant_stand',
+      if (large) 'plant_stand',
+      'floor_lamp',
+    ];
   }
 }
