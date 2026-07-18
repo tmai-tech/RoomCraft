@@ -90,6 +90,7 @@ class StorageService {
       floorLevel: source.floorLevel,
       isExterior: source.isExterior,
       wallHeightFt: source.wallHeightFt,
+      notes: source.notes,
     );
     await saveRoom(room);
     return room;
@@ -118,6 +119,7 @@ class StorageService {
       floorLevel: nextLevel,
       isExterior: false,
       wallHeightFt: source.wallHeightFt,
+      notes: source.notes,
     );
     await saveRoom(room);
     return room;

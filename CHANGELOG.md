@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+104 (2026-07-18)
+
+### Room notes · smart search · feature graphic
+- Plan notes (client/address/goals) + home search across notes/space/shape.
+- Play **feature graphic 1024×500** export from Settings and blueprint.
+- PDF includes notes. Version **+104**.
+
 ## 1.0.0-beta.1+103 (2026-07-18)
 
 ### Dark theme · wall height · Play listing copy

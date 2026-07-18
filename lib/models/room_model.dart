@@ -22,6 +22,8 @@ class RoomModel {
   bool isExterior;
   /// Interior wall height in feet (3D extrusion).
   double wallHeightFt;
+  /// Optional project notes (client, address, style goals).
+  String? notes;
 
   RoomModel({
     required this.id,
@@ -37,6 +39,7 @@ class RoomModel {
     this.floorLevel = 0,
     this.isExterior = false,
     this.wallHeightFt = 8.0,
+    this.notes,
   })  : strokes = List<StrokeModel>.from(strokes ?? const []),
         furniture = List<FurnitureItem>.from(furniture ?? const []),
         floorPolygonFt = floorPolygonFt == null
@@ -70,6 +73,7 @@ class RoomModel {
       'floorLevel': floorLevel,
       'isExterior': isExterior,
       'wallHeightFt': wallHeightFt,
+      if (notes != null && notes!.trim().isNotEmpty) 'notes': notes,
       if (floorPolygonFt != null)
         'floorPolygonFt': [
           for (final p in floorPolygonFt!)
@@ -115,6 +119,7 @@ class RoomModel {
       floorLevel: (map['floorLevel'] as num?)?.toInt() ?? 0,
       isExterior: map['isExterior'] == true,
       wallHeightFt: (map['wallHeightFt'] as num?)?.toDouble() ?? 8.0,
+      notes: map['notes'] as String?,
     );
   }
 
@@ -182,6 +187,8 @@ class RoomModel {
     int? floorLevel,
     bool? isExterior,
     double? wallHeightFt,
+    String? notes,
+    bool clearNotes = false,
   }) {
     return RoomModel(
       id: id ?? this.id,
@@ -202,6 +209,20 @@ class RoomModel {
       floorLevel: floorLevel ?? this.floorLevel,
       isExterior: isExterior ?? this.isExterior,
       wallHeightFt: wallHeightFt ?? this.wallHeightFt,
+      notes: clearNotes ? null : (notes ?? this.notes),
     );
   }
+
+  /// Search haystack for home filter (name, notes, space, shape).
+  String get searchText {
+    final parts = <String>[
+      name,
+      spaceLabel,
+      if (notes != null) notes!,
+      if (isPolygonFloor) 'l-shape polygon',
+      if (isExterior) 'patio outdoor exterior',
+    ];
+    return parts.join(' ').toLowerCase();
+  }
 }
+

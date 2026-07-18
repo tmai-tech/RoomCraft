@@ -51,9 +51,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     var list = List<RoomModel>.from(_rooms);
     final q = _query.trim().toLowerCase();
     if (q.isNotEmpty) {
-      list = list
-          .where((r) => r.name.toLowerCase().contains(q))
-          .toList();
+      list = list.where((r) => r.searchText.contains(q)).toList();
     }
     switch (_sort) {
       case _HomeSort.updatedDesc:
@@ -391,7 +389,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: TextField(
               controller: _searchCtrl,
               decoration: InputDecoration(
-                hintText: 'Search plans…',
+                hintText: 'Search name, notes, exterior, L-shape…',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 isDense: true,
                 border: const OutlineInputBorder(),
@@ -522,6 +520,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                           ],
                         ),
+                        if (room.notes != null &&
+                            room.notes!.trim().isNotEmpty)
+                          Text(
+                            room.notes!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                         if (when.isNotEmpty)
                           Text(
                             'Updated $when',

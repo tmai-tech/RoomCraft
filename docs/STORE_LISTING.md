@@ -7,7 +7,7 @@ Use with [PLAY_AND_SIGNING.md](PLAY_AND_SIGNING.md) and [BETA_CHECKLIST.md](BETA
 | Asset | Spec | Content ideas |
 |-------|------|----------------|
 | App icon | 512×512 | Existing launcher icon |
-| Feature graphic | 1024×500 | “Scan · Arrange · 3D · AR” |
+| Feature graphic | 1024×500 | In-app: Settings → Feature graphic, or Export → feature graphic |
 | Phone screenshots (min 2) | 16:9 or device | Home, 2D editor + heatmap, 3D day/evening, AR place, gallery L-shape |
 | Short description | ≤80 chars | Room planner: photo/AR → plan → 3D walkthrough |
 | Full description | bullets | 10k free catalogue, AI furnish, L-shape, multi-floor, exterior patio |

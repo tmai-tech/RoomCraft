@@ -9,6 +9,7 @@ import '../services/free_vision_scanner.dart';
 import '../services/huggingface_vision_scanner.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/prefs_service.dart';
+import '../services/export_service.dart';
 import '../services/training_export_service.dart';
 import '../main.dart';
 import 'feedback_screen.dart';
@@ -241,6 +242,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Full description copied')),
                   );
+                },
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Feature graphic 1024×500'),
+              subtitle: const Text('Share PNG for Play Console'),
+              trailing: IconButton(
+                key: const Key('share_feature_graphic'),
+                icon: const Icon(Icons.share),
+                onPressed: () async {
+                  try {
+                    await ExportService.shareFeatureGraphic();
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Export failed: $e')),
+                    );
+                  }
                 },
               ),
             ),

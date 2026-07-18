@@ -632,6 +632,19 @@ class RoomNotifier extends Notifier<RoomState> {
     _syncHistoryFlags();
   }
 
+  void updateNotes(String notes) {
+    _pushHistory();
+    final trimmed = notes.trim();
+    state = state.copyWith(
+      room: state.room.copyWith(
+        notes: trimmed.isEmpty ? null : trimmed,
+        clearNotes: trimmed.isEmpty,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _syncHistoryFlags();
+  }
+
   void updateRoomSize(double width, double length) {
     _pushHistory();
     state = state.copyWith(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
 import '../models/furniture_item.dart';
+import '../models/room_model.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
@@ -82,7 +83,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
         appBar: AppBar(
           title: InkWell(
             onTap: () =>
-                _showRenameDialog(context, roomNotifier, roomState.room.name),
+                _showRenameDialog(context, roomNotifier, roomState.room),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -176,6 +177,10 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                     );
                     await AnalyticsService.instance
                         .logEvent('export_store_screenshot');
+                  } else if (v == 'feature') {
+                    await ExportService.shareFeatureGraphic();
+                    await AnalyticsService.instance
+                        .logEvent('export_feature_graphic');
                   }
                 } catch (e) {
                   if (context.mounted) {
@@ -199,6 +204,10 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                 PopupMenuItem(
                   value: 'store',
                   child: Text('Share store screenshot (1080×1920)'),
+                ),
+                PopupMenuItem(
+                  value: 'feature',
+                  child: Text('Share feature graphic (1024×500)'),
                 ),
               ],
             ),
@@ -1312,17 +1321,36 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
   void _showRenameDialog(
     BuildContext context,
     RoomNotifier notifier,
-    String currentName,
+    RoomModel room,
   ) {
-    final controller = TextEditingController(text: currentName);
+    final controller = TextEditingController(text: room.name);
+    final notesCtrl = TextEditingController(text: room.notes ?? '');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rename Blueprint'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'Room Name'),
-          autofocus: true,
+        title: const Text('Plan details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(labelText: 'Room name'),
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('room_notes_field'),
+                controller: notesCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Notes',
+                  hintText: 'Client, address, style goals…',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1332,9 +1360,10 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
           TextButton(
             onPressed: () {
               notifier.updateName(controller.text);
+              notifier.updateNotes(notesCtrl.text);
               Navigator.pop(ctx);
             },
-            child: const Text('Rename'),
+            child: const Text('Save'),
           ),
         ],
       ),

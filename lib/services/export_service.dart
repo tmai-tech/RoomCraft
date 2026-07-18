@@ -275,6 +275,90 @@ class ExportService {
     );
   }
 
+  /// Play feature graphic 1024×500 (free path for STORE_LISTING.md).
+  static Future<Uint8List> renderFeatureGraphic({
+    String headline = 'RoomCraft',
+    String subline = 'AR measure · 10k free catalogue · 3D walkthrough',
+  }) async {
+    const size = Size(1024, 500);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF004D40),
+            Color(0xFF00695C),
+            Color(0xFF0D47A1),
+          ],
+        ).createShader(Offset.zero & size),
+    );
+    // Soft circles for depth
+    canvas.drawCircle(
+      const Offset(900, 80),
+      160,
+      Paint()..color = Colors.white.withValues(alpha: 0.06),
+    );
+    canvas.drawCircle(
+      const Offset(120, 420),
+      200,
+      Paint()..color = Colors.white.withValues(alpha: 0.05),
+    );
+    final title = TextPainter(
+      text: TextSpan(
+        text: headline,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 64,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 96);
+    title.paint(canvas, const Offset(48, 160));
+    final sub = TextPainter(
+      text: TextSpan(
+        text: subline,
+        style: const TextStyle(color: Colors.white70, fontSize: 26),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 96);
+    sub.paint(canvas, const Offset(48, 250));
+    final foot = TextPainter(
+      text: const TextSpan(
+        text: 'Free-first room planner for real homes',
+        style: TextStyle(color: Colors.white54, fontSize: 18),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 96);
+    foot.paint(canvas, Offset(48, size.height - 72));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.width.ceil(), size.height.ceil());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (bytes == null) throw Exception('Failed to encode feature graphic');
+    return bytes.buffer.asUint8List();
+  }
+
+  static Future<void> shareFeatureGraphic() async {
+    final png = await renderFeatureGraphic();
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/roomcraft_feature_graphic_1024x500.png');
+    await file.writeAsBytes(png, flush: true);
+    await Share.shareXFiles(
+      [
+        XFile(
+          file.path,
+          mimeType: 'image/png',
+          name: 'roomcraft_feature_graphic.png',
+        ),
+      ],
+      text: 'RoomCraft Play feature graphic 1024×500',
+    );
+  }
+
   /// Share 2D plan + 3D walkthrough PNGs together (Play-style plan pack).
   static Future<void> sharePlanPack(
     RoomModel room, {
@@ -327,6 +411,8 @@ class ExportService {
       'Level: ${room.spaceLabel}',
       'Wall height: ${LengthFormat.formatFeet(room.wallHeightFt, unitSystem)}',
       'Furniture: ${room.furniture.length} · Lines: ${room.strokes.length}',
+      if (room.notes != null && room.notes!.trim().isNotEmpty)
+        'Notes: ${room.notes!.trim()}',
       '',
       'Furniture list:',
     ];
