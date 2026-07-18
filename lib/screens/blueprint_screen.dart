@@ -352,6 +352,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                       yaw: _isoYaw,
                       wallHeightFt: 7.0 + _isoPitch * 3,
                       selectedId: roomState.selectedFurnitureId,
+                      perspective: true,
                     ),
                     child: const SizedBox.expand(),
                   ),

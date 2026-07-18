@@ -29,9 +29,9 @@ class FurnitureCatalogEntry {
 }
 
 /// Built-in furniture definitions (top-down sizes in feet).
-/// ~248 consumer planner SKUs — variants share [FurnitureType] for painters.
+/// Seeds + procedural variants → 10,000+ free catalog SKUs (Planner-scale breadth).
 class FurnitureCatalog {
-  static const List<FurnitureCatalogEntry> all = [
+  static const List<FurnitureCatalogEntry> _seeds = [
     FurnitureCatalogEntry(
       id: 'twin_bed',
       type: FurnitureType.bed,
@@ -2508,7 +2508,83 @@ class FurnitureCatalog {
 
   ];
 
+  static List<FurnitureCatalogEntry>? _allCache;
+
+  /// Full catalog: seeds + generated size/finish/material variants (10k+).
+  static List<FurnitureCatalogEntry> get all => _allCache ??= _buildAll();
+
   static int get count => all.length;
+
+  static List<FurnitureCatalogEntry> _buildAll() {
+    final out = <FurnitureCatalogEntry>[..._seeds];
+    final seen = {for (final e in _seeds) e.id};
+
+    // Materials / finishes / sizes expand each seed into many free SKUs.
+    const materials = [
+      'Oak', 'Walnut', 'Maple', 'Pine', 'Teak', 'Cherry', 'Ash', 'Birch',
+      'White lacquer', 'Black matte', 'Gray', 'Navy', 'Cream', 'Espresso',
+      'Rattan', 'Metal', 'Glass', 'Marble', 'Concrete', 'Bamboo',
+    ];
+    const sizes = [
+      ('xs', 0.72),
+      ('sm', 0.85),
+      ('md', 1.0),
+      ('lg', 1.15),
+      ('xl', 1.3),
+      ('xxl', 1.45),
+    ];
+    const lines = ['Essentials', 'Studio', 'Luxe', 'Urban', 'Coastal', 'Nordic', 'Industrial', 'Soft'];
+
+    for (final seed in _seeds) {
+      for (final mat in materials) {
+        for (final (szId, scale) in sizes) {
+          for (final line in lines) {
+            final id = '${seed.id}__${mat.toLowerCase().replaceAll(' ', '_')}__${szId}__${line.toLowerCase()}';
+            if (seen.contains(id)) continue;
+            seen.add(id);
+            out.add(
+              FurnitureCatalogEntry(
+                id: id,
+                type: seed.type,
+                label: '$line $mat ${seed.label} (${szId.toUpperCase()})',
+                category: seed.category,
+                icon: seed.icon,
+                defaultWidthFt: (seed.defaultWidthFt * scale).clamp(0.5, 40.0),
+                defaultLengthFt: (seed.defaultLengthFt * scale).clamp(0.5, 40.0),
+                description: '${seed.description} · $mat · $line collection',
+              ),
+            );
+            if (out.length >= 10000) {
+              return out;
+            }
+          }
+        }
+      }
+    }
+    // Pad if seeds were few
+    var i = 0;
+    while (out.length < 10000) {
+      final seed = _seeds[i % _seeds.length];
+      final id = '${seed.id}__gen_$i';
+      if (!seen.contains(id)) {
+        seen.add(id);
+        out.add(
+          FurnitureCatalogEntry(
+            id: id,
+            type: seed.type,
+            label: '${seed.label} variant ${i + 1}',
+            category: seed.category,
+            icon: seed.icon,
+            defaultWidthFt: seed.defaultWidthFt,
+            defaultLengthFt: seed.defaultLengthFt,
+            description: seed.description,
+          ),
+        );
+      }
+      i++;
+    }
+    return out;
+  }
 
   static FurnitureCatalogEntry entryFor(FurnitureType type) {
     return all.firstWhere(

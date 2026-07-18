@@ -204,6 +204,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .then((_) => _loadRooms());
   }
 
+  /// Distinct AR Room Planner path — opens scanner in AR guided measure mode.
+  void _createNewAR() {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => const ScannerScreen(
+              initialScanMode: 'ar_guided',
+              openAdvanced: true,
+            ),
+          ),
+        )
+        .then((_) => _loadRooms());
+  }
+
   void _editRoom(RoomModel room) {
     ref.read(roomProvider.notifier).loadRoom(room);
     Navigator.of(context)
@@ -336,9 +350,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const SizedBox(height: 28),
             FilledButton.icon(
-              onPressed: _createNewAI,
+              onPressed: _createNewAR,
               icon: const Icon(Icons.view_in_ar),
-              label: const Text('AR / Scan room'),
+              label: const Text('AR Room Planner'),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: _createNewAI,
+              icon: const Icon(Icons.camera_alt),
+              label: const Text('Scan with photos'),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -560,7 +580,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               onTap: () {
                 Navigator.pop(ctx);
-                _createNewAI(); // Scanner opens with AR modes first-class
+                _createNewAR();
               },
             ),
             ListTile(

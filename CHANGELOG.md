@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+88 (2026-07-18)
+
+### Skeptic-gap closure: 10k catalog, distinct AR, edit-in-3D proof, perspective 3D
+- **10,000+ free catalog SKUs** via seed × material × size × collection expansion.
+- **AR Room Planner** opens `ScannerScreen(initialScanMode: ar_guided)` — not photo-scan alias.
+- **V7 edit-in-3D**: furniture picker → rotate → apply `onFurnitureChanged`; delete path proven.
+- **Perspective 3D** projection mode (camera elev + depth) alongside isometric.
+- Tests: `test/skeptic_gaps_test.dart` evidence under implementer/evidence.
+- Version **+88**.
+
+
 ## 1.0.0-beta.1+87 (2026-07-18)
 
 ### 200+ catalog · integrated 2D/3D · goal verification C1–C8

@@ -74,7 +74,16 @@ class _FurnDraft {
 
 /// Guided field-measure (designer tape) + wall photos + free multi-frame scan.
 class ScannerScreen extends ConsumerStatefulWidget {
-  const ScannerScreen({super.key});
+  /// When set (e.g. `ar_guided`), opens that mode instead of easy photo scan.
+  final String? initialScanMode;
+  /// Expand advanced/AR options on open (used by AR Room Planner entry).
+  final bool openAdvanced;
+
+  const ScannerScreen({
+    super.key,
+    this.initialScanMode,
+    this.openAdvanced = false,
+  });
 
   @override
   ConsumerState<ScannerScreen> createState() => _ScannerScreenState();
@@ -89,13 +98,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   /// Primary path is always simple photo/video scan.
   /// Advanced modes live under "More options".
-  String _scanMode = 'easy_scan';
+  late String _scanMode;
 
   /// When false (default), size is estimated from photos.
   bool _knowRoomSize = false;
 
   /// Show AR / tape / advanced modes (hidden by default — user feedback).
-  bool _showAdvanced = false;
+  late bool _showAdvanced;
 
   ArAvailability? _arStatus;
   ArRoomMeasure? _arMeasure;
@@ -118,6 +127,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   @override
   void initState() {
     super.initState();
+    _scanMode = widget.initialScanMode ?? 'easy_scan';
+    _showAdvanced = widget.openAdvanced || widget.initialScanMode == 'ar_guided';
+    if (_scanMode == 'ar_guided') {
+      // Ensure AR status is probed immediately for AR Room Planner entry.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshArStatus());
+    }
     _refreshVisionStatus();
     _refreshArStatus();
   }

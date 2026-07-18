@@ -35,6 +35,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
   late List<FurnitureItem> _furniture;
   double _yaw = 0;
   double _pitch = 0.35;
+  bool _perspective = true;
   String? _selectedId;
   bool _dirty = false;
 
@@ -180,6 +181,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
             ),
             if (_dirty)
               TextButton(
+                key: const Key('iso_apply_btn'),
                 onPressed: () {
                   _commit();
                   setState(() => _dirty = false);
@@ -196,8 +198,51 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Text(
-                'Tap a piece to select · drag to orbit · edit with tools below',
+                'Select a piece · drag to orbit · rotate / delete / nudge · Apply',
                 style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+              ),
+            ),
+            if (_furniture.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                child: DropdownButtonFormField<String>(
+                  key: const Key('iso_furniture_picker'),
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Select furniture',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  value: _selectedId != null &&
+                          _furniture.any((f) => f.id == _selectedId)
+                      ? _selectedId
+                      : null,
+                  items: [
+                    for (final f in _furniture)
+                      DropdownMenuItem(
+                        value: f.id,
+                        child: Text(
+                          '${f.type.shortLabel}'
+                          '${f.catalogId != null ? ' · ${f.catalogId}' : ''} '
+                          '(${f.widthInFeet.toStringAsFixed(1)}×${f.lengthInFeet.toStringAsFixed(1)})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (id) => setState(() => _selectedId = id),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  FilterChip(
+                    key: const Key('iso_perspective_chip'),
+                    label: Text(_perspective ? 'Perspective 3D' : 'Isometric'),
+                    selected: _perspective,
+                    onSelected: (v) => setState(() => _perspective = v),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -219,6 +264,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                         yaw: _yaw,
                         wallHeightFt: _wallH,
                         selectedId: _selectedId,
+                        perspective: _perspective,
                       ),
                       child: const SizedBox.expand(),
                     ),
@@ -243,11 +289,13 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                     spacing: 4,
                     children: [
                       IconButton(
+                        key: const Key('iso_rotate_btn'),
                         tooltip: 'Rotate 45°',
                         icon: const Icon(Icons.rotate_right),
                         onPressed: () => _rotateSelected(degrees: 45),
                       ),
                       IconButton(
+                        key: const Key('iso_delete_btn'),
                         tooltip: 'Delete',
                         icon: const Icon(Icons.delete, color: Colors.red),
                         onPressed: _deleteSelected,

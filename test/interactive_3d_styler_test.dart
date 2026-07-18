@@ -22,8 +22,8 @@ Directory get _ev {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('catalog still ≥200 SKUs and 18 types (skeptic: not 8 types)', () {
-    expect(FurnitureCatalog.count, greaterThanOrEqualTo(200));
+  test('catalog still ≥10000 SKUs and 18 types (skeptic: not 8 types)', () {
+    expect(FurnitureCatalog.count, greaterThanOrEqualTo(10000));
     expect(FurnitureType.values.length, greaterThanOrEqualTo(18));
     File('${_ev.path}/catalog_not_eight_types.txt').writeAsStringSync(
       'types=${FurnitureType.values.length}\n'

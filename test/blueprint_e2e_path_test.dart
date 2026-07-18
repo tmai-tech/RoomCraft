@@ -23,8 +23,8 @@ Directory get _ev {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('catalog product scale: ≥200 SKUs, ≥18 types', () {
-    expect(FurnitureCatalog.count, greaterThanOrEqualTo(200));
+  test('catalog product scale: ≥10000 SKUs, ≥18 types', () {
+    expect(FurnitureCatalog.count, greaterThanOrEqualTo(10000));
     expect(FurnitureType.values.length, greaterThanOrEqualTo(18));
     File('${_ev.path}/catalog_product_scale.txt').writeAsStringSync(
       'skus=${FurnitureCatalog.count}\n'

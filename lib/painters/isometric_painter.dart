@@ -18,6 +18,8 @@ class IsometricPainter extends CustomPainter {
   final double yaw;
   final double wallHeightFt;
   final String? selectedId;
+  /// When true, use perspective projection (vanishing depth) instead of pure iso.
+  final bool perspective;
 
   IsometricPainter({
     required this.room,
@@ -26,6 +28,7 @@ class IsometricPainter extends CustomPainter {
     this.yaw = 0,
     this.wallHeightFt = 8.0,
     this.selectedId,
+    this.perspective = false,
   });
 
   double get _scale => pixelsPerFoot;
@@ -195,7 +198,8 @@ class IsometricPainter extends CustomPainter {
     // Dimension label
     final label =
         '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × '
-        '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)} · 3D preview';
+        '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)} · '
+        '${perspective ? 'Perspective 3D' : 'Isometric 3D'}';
     final tp = TextPainter(
       text: TextSpan(
         text: label,
@@ -364,7 +368,8 @@ class IsometricPainter extends CustomPainter {
     return out;
   }
 
-  /// Rotate plan around room center by [yaw], then isometric project.
+  /// Rotate plan around room center by [yaw], then project.
+  /// [perspective] uses a simple camera sitting above-front looking at room center.
   Offset _rotThenProject(
     double x,
     double y,
@@ -380,7 +385,22 @@ class IsometricPainter extends CustomPainter {
     final sin = math.sin(yaw);
     final rx = dx * cos - dy * sin + cx;
     final ry = dx * sin + dy * cos + cy;
-    return Iso.project(rx, ry, z);
+
+    if (!perspective) {
+      return Iso.project(rx, ry, z);
+    }
+
+    // Camera-space: room on XZ ground (Y up). View from elevated front.
+    final camX = rx - cx;
+    final camY = z; // height
+    final camZ = (ry - cy) + roomD * 0.85; // depth forward
+    final elev = 0.55; // look-down
+    // Pitch rotate around X
+    final y2 = camY * math.cos(elev) - camZ * math.sin(elev);
+    final z2 = camY * math.sin(elev) + camZ * math.cos(elev);
+    final dist = math.max(40.0, z2 + roomD * 1.2);
+    final f = roomD * 1.1; // focal length in px units
+    return Offset(camX * f / dist, -y2 * f / dist);
   }
 
   static double _heightFor(FurnitureType t) => t.defaultHeightFt;
@@ -394,7 +414,8 @@ class IsometricPainter extends CustomPainter {
         old.unitSystem != unitSystem ||
         old.yaw != yaw ||
         old.wallHeightFt != wallHeightFt ||
-        old.selectedId != selectedId;
+        old.selectedId != selectedId ||
+        old.perspective != perspective;
   }
 }
 

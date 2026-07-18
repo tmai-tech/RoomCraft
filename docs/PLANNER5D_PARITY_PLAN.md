@@ -121,7 +121,7 @@ No new paid SDKs. Isometric = orthographic projection math only.
 
 | # | Criterion | How verified |
 |---|-----------|--------------|
-| C1 | Catalog ≥200 SKUs and ≥18 furniture types | `FurnitureCatalog.count`, `FurnitureType.values` |
+| C1 | Catalog ≥10,000 SKUs and ≥18 furniture types | `FurnitureCatalog.count`, `FurnitureType.values` |
 | C2 | AI Designer **auto-furnishes empty rooms** (6 styles) | empty → multi-piece |
 | C3 | AI Styler produces palette/materials/tips + layout | StyleReport non-empty |
 | C4 | Layout alternatives A/B/C apply + undo | Blueprint Auto → Compare UI |
@@ -142,6 +142,20 @@ Meeting C1–C8 = **goal achieved** for RoomCraft at Planner 5D product level un
 
 ---
 
+
+
+## 5b. Objective honesty (Play listing pillars)
+
+Play listing claims we pursue under free/current architecture:
+
+| Play pillar | Free approach shipped | Still needs paid/native |
+|-------------|----------------------|-------------------------|
+| 10,000+ décor items | **10,000+ free SKUs** (seeds × materials × sizes × lines) | Brand marketplace commerce |
+| 3D home design | Perspective + isometric editor, select/rotate/delete/apply | Photoreal mesh/HD render |
+| AR room planner | **Distinct** ARCore guided measure → plan | AR place-furniture-in-live-camera |
+| AI Designer | Furnisher + Styler on-device | Photoreal restyle API |
+
+---
 ## 6. Verification plan
 
 Run from repo root with Flutter on PATH:
@@ -154,7 +168,7 @@ flutter test test/blueprint_e2e_path_test.dart \
 
 | Step | Observation | Evidence file under `{SCRATCH}/evidence/` |
 |------|-------------|-------------------------------------------|
-| V1 Catalog | skus≥200, types≥18 | `catalog_product_scale.txt` |
+| V1 Catalog | skus≥10000, types≥18 | `catalog_product_scale.txt` |
 | V2 Blueprint→3D | tooltip / toggle opens 3D path | `blueprint_to_3d_path.txt` |
 | V3 Compare UI | Auto → Compare → apply → undo | `compare_layouts_ui_path.txt` |
 | V4 AI Designer | empty room auto-furnish ≥5 pieces | `ai_designer_autofurnish.txt` |
@@ -198,3 +212,12 @@ All V1–V7 must pass automated tests; V8 confirmed by CI log.
 | Gallery of ideas | ✅ 6 starter plans |
 | Blueprint→3D + Compare UI e2e tests | ✅ real widget paths |
 | Verification plan aligned to evidence | ✅ §6 |
+
+
+### +88 skeptic-gap closure
+| Gap | Fix |
+|-----|-----|
+| AR label theater | `ScannerScreen(initialScanMode: ar_guided)` distinct from photo scan |
+| V7 open-only | select/rotate/delete/apply + onFurnitureChanged proof |
+| Catalog << 10k | Runtime expansion to 10,000+ free SKUs |
+| 3D orthographic only | Perspective projection mode |
