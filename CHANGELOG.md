@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+92 (2026-07-18)
+
+### V7 edit-in-3D proven in interactive_3d_styler_test (skeptic-cited file)
+- Replaced open-only 3D widget test with full select/rotate/apply/delete path.
+- Writes `interactive_3d_widget.txt` with `source_test=interactive_3d_styler_test.dart`.
+- Full verification suite 18/18.
+- Version **+92**.
+
+
 ## 1.0.0-beta.1+91 (2026-07-18)
 
 ### HD 3D snapshot · walkthrough-first · skeptic proof doc

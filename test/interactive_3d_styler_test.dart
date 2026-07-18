@@ -57,58 +57,106 @@ void main() {
     );
   });
 
-  testWidgets('interactive 3D editor: open, select via list tools path, rotate',
-      (tester) async {
-    final items = AiDesigner.furnish(
-      room: RoomModel(
+  testWidgets(
+    'V7 REAL path in interactive_3d_styler: select+rotate+apply+delete',
+    (tester) async {
+      // Fixed furniture (not only AI) so selection is deterministic
+      final room = RoomModel(
         id: 'r',
         name: '3D',
         widthInFeet: 14,
         lengthInFeet: 12,
-      ),
-      pixelsPerFoot: 20,
-      style: DesignStyle.modernMinimal,
-    );
-    final room = RoomModel(
-      id: 'r',
-      name: '3D',
-      widthInFeet: 14,
-      lengthInFeet: 12,
-      furniture: items,
-    );
+        furniture: const [
+          FurnitureItem(
+            id: 'sofa_a',
+            type: FurnitureType.sofa,
+            position: Offset(140, 120),
+            widthInFeet: 7,
+            lengthInFeet: 3,
+            catalogId: 'sofa_3',
+          ),
+          FurnitureItem(
+            id: 'table_a',
+            type: FurnitureType.table,
+            position: Offset(140, 180),
+            widthInFeet: 3.5,
+            lengthInFeet: 2,
+            catalogId: 'coffee_table',
+          ),
+        ],
+      );
 
-    List<FurnitureItem>? applied;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: IsometricPreviewScreen(
-          room: room,
-          pixelsPerFoot: 20,
-          unitSystem: UnitSystem.feet,
-          onFurnitureChanged: (f) => applied = f,
+      List<FurnitureItem>? applied;
+      var applyCount = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: IsometricPreviewScreen(
+            room: room,
+            pixelsPerFoot: 20,
+            unitSystem: UnitSystem.feet,
+            onFurnitureChanged: (f) {
+              applied = f;
+              applyCount++;
+            },
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.textContaining('3D'), findsWidgets);
-    // Tap center of paint area to attempt selection
-    final paint = find.byType(CustomPaint).first;
-    await tester.tap(paint);
-    await tester.pump();
+      expect(find.textContaining('3D'), findsWidgets);
+      expect(find.byKey(const Key('iso_furniture_picker')), findsOneWidget);
 
-    // Orbit drag = real interactive path
-    await tester.drag(paint, const Offset(60, 0));
-    await tester.pump();
+      // Select sofa via dropdown
+      await tester.tap(find.byKey(const Key('iso_furniture_picker')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.textContaining('Sofa').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    File('${_ev.path}/interactive_3d_open_only.txt').writeAsStringSync(
-      'opened=true\n'
-      'furniture_in=${room.furniture.length}\n'
-      'title_present=true\n'
-      'orbit_drag=true\n'
-      'applied_callback_null_until_edit=${applied == null}\n',
-    );
-  });
+      expect(find.byKey(const Key('iso_rotate_btn')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('iso_rotate_btn')));
+      await tester.pump();
+
+      expect(find.byKey(const Key('iso_apply_btn')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('iso_apply_btn')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(applyCount, greaterThanOrEqualTo(1));
+      expect(applied, isNotNull);
+      final sofa = applied!.firstWhere((f) => f.id == 'sofa_a');
+      expect(sofa.rotationAngle, closeTo(0.7853981633974483, 0.02));
+
+      // Delete table
+      await tester.tap(find.byKey(const Key('iso_furniture_picker')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.textContaining('Table').last);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('iso_delete_btn')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('iso_apply_btn')));
+      await tester.pump();
+
+      expect(applied!.length, 1);
+      expect(applied!.first.id, 'sofa_a');
+
+      // Primary V7 evidence file (what verification plan requires)
+      File('${_ev.path}/interactive_3d_widget.txt').writeAsStringSync(
+        'opened=true\n'
+        'selected_via_picker=true\n'
+        'rotated=true\n'
+        'rotation_rad=${sofa.rotationAngle}\n'
+        'apply_count=$applyCount\n'
+        'onFurnitureChanged_fired=true\n'
+        'deleted_table=true\n'
+        'final_count=${applied!.length}\n'
+        'source_test=interactive_3d_styler_test.dart\n',
+      );
+    },
+  );
 
   test('provider: styler furniture applied via applyLayoutAlternative', () {
     final container = ProviderContainer();

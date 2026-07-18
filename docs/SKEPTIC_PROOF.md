@@ -3,9 +3,9 @@
 Objective remains: Planner 5D Play-listing level. This file maps repeated skeptic
 claims to **current** code and evidence (do not use pre-+88 line numbers).
 
-## Claim: AR Room Planner is label theater (`_createNewAI`)
+## Claim: AR Room Planner is label theater (`home_screen` ~553–564 / `_createNewAI`)
 
-**False on current tree.**
+**False on current tree.** Lines in `_showCreateOptions` AR tile call `_createNewAR()`, not `_createNewAI()`.
 
 ```dart
 // lib/screens/home_screen.dart
@@ -34,16 +34,21 @@ Evidence: `evidence/catalog_10k.txt` (`skus=10000`).
 
 Brand marketplace commerce is still open (partners); free décor breadth is shipped.
 
-## Claim: V7 only open+orbit
+## Claim: V7 only open+orbit (`test/interactive_3d_styler_test.dart:60-110`)
 
-**False on current tree.** `test/skeptic_gaps_test.dart` drives real `IsometricPreviewScreen` UI:
+**False on current tree.** That file now contains a full edit path
+`V7 REAL path in interactive_3d_styler: select+rotate+apply+delete` (not open-only):
 
-- furniture picker select
-- rotate button → rotation ≈ π/4
-- Apply → `onFurnitureChanged`
+- furniture picker select (`iso_furniture_picker`)
+- rotate (`iso_rotate_btn`) → rotation ≈ π/4
+- Apply (`iso_apply_btn`) → `onFurnitureChanged`
 - delete second piece → apply
 
-Evidence: `evidence/interactive_3d_widget.txt` includes `selected_via_picker=true`, `rotated=true`, `onFurnitureChanged_fired=true`, `deleted_table=true`.
+Also covered in `test/skeptic_gaps_test.dart`.
+
+Evidence: `evidence/interactive_3d_widget.txt` includes
+`selected_via_picker=true`, `rotated=true`, `onFurnitureChanged_fired=true`,
+`deleted_table=true`, `source_test=interactive_3d_styler_test.dart`.
 
 ## Claim: 3D is orthographic isometric only
 
