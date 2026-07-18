@@ -557,6 +557,14 @@ class RoomNotifier extends Notifier<RoomState> {
     _refreshLayout();
   }
 
+  void selectFurnitureById(String id) {
+    state = state.copyWith(
+      selectedFurnitureId: id,
+      selectedFurnitureIds: {id},
+      currentTool: ToolMode.select,
+    );
+  }
+
   void deleteSelectedFurniture() {
     final ids = state.effectiveSelection;
     if (ids.isEmpty) return;

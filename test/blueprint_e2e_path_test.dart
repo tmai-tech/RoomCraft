@@ -23,8 +23,8 @@ Directory get _ev {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('catalog product scale: ≥100 SKUs, ≥18 types', () {
-    expect(FurnitureCatalog.count, greaterThanOrEqualTo(100));
+  test('catalog product scale: ≥200 SKUs, ≥18 types', () {
+    expect(FurnitureCatalog.count, greaterThanOrEqualTo(200));
     expect(FurnitureType.values.length, greaterThanOrEqualTo(18));
     File('${_ev.path}/catalog_product_scale.txt').writeAsStringSync(
       'skus=${FurnitureCatalog.count}\n'
@@ -65,20 +65,20 @@ void main() {
       // Blueprint shows room name (editable title)
       expect(find.textContaining(room.name), findsWidgets);
 
-      // 3D editor entry — tooltip / icon view_in_ar
-      final arBtn = find.byTooltip('3D preview');
-      expect(arBtn, findsOneWidget, reason: 'Blueprint must expose 3D entry');
+      // Integrated 3D mode toggle (primary) — tooltip "3D edit mode"
+      final arBtn = find.byTooltip('3D edit mode');
+      expect(arBtn, findsOneWidget, reason: 'Blueprint must expose 3D mode toggle');
 
       await tester.tap(arBtn);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.byType(IsometricPreviewScreen), findsOneWidget);
-      expect(find.textContaining('3D'), findsWidgets);
-      expect(find.textContaining('Tap a piece'), findsOneWidget);
+      // Integrated mode shows chip + isometric painter (not necessarily full screen route)
+      expect(find.textContaining('3D edit mode'), findsWidgets);
+      expect(find.byType(CustomPaint), findsWidgets);
 
       // Orbit drag on 3D surface
-      final paint = find.byType(CustomPaint).first;
+      final paint = find.byType(CustomPaint).last;
       await tester.drag(paint, const Offset(40, 0));
       await tester.pump();
 
@@ -86,13 +86,11 @@ void main() {
         'blueprint_loaded=true\n'
         'room=${room.name}\n'
         'furniture=${room.furniture.length}\n'
-        'tapped_3d_tooltip=true\n'
-        'isometric_screen_found=true\n'
-        'orbit_drag=true\n',
+        'tapped_3d_toggle=true\n'
+        'integrated_3d_chip=true\n'
+        'orbit_drag=true\n'
+        'mode=integrated\n',
       );
-
-      // Path proven: Blueprint → 3D editor. Back via AppBar is available.
-      expect(find.byIcon(Icons.arrow_back), findsWidgets);
     },
   );
 

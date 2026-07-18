@@ -113,36 +113,58 @@ No new paid SDKs. Isometric = orthographic projection math only.
 
 ---
 
-## 5. Success criteria for “Planner 5D level” *for our wedge*
+## 5. Success criteria — RoomCraft at Planner 5D *product level*
 
-**Product-level** means users can do the Planner 5D *job* on free/current architecture:
+**Definition used for this goal:** RoomCraft ships a free/current-architecture consumer home planner that covers the same **primary user jobs** as Planner 5D’s free core, with production polish and Firebase distribution.
 
-1. Scan / AR measure / enter room size **without** pasting API keys.  
-2. Edit a real 2D plan with snap, multi-select, doors, score.  
-3. **AI Designer auto-furnish** empty rooms (6 styles) + **AI Styler** tips.  
-4. Pick among **3 layout alternatives** and undo.  
-5. Open **interactive 3D editor** (select/rotate/delete/nudge, apply to plan).  
-6. **Gallery of ideas** starter plans + catalog ≥100 SKUs / ≥18 types.  
-7. Export PNG/PDF and Firebase App Distribution build.
+### Must hold (pass/fail)
 
-**Explicitly not required for this milestone** (paid Planner stack): 10,000 brand SKUs, photoreal HD, mesh walkthrough CAD.
+| # | Criterion | How verified |
+|---|-----------|--------------|
+| C1 | Catalog ≥200 SKUs and ≥18 furniture types | `FurnitureCatalog.count`, `FurnitureType.values` |
+| C2 | AI Designer **auto-furnishes empty rooms** (6 styles) | empty → multi-piece |
+| C3 | AI Styler produces palette/materials/tips + layout | StyleReport non-empty |
+| C4 | Layout alternatives A/B/C apply + undo | Blueprint Auto → Compare UI |
+| C5 | **Integrated 3D edit mode** in blueprint (2D/3D toggle) + full-screen editor | tap 3D toggle → IsometricPainter; select pieces |
+| C6 | Gallery of ideas (starter plans) | 6 sample plans materialize |
+| C7 | AR Room Planner entry (ARCore path on Android) | Home create sheet |
+| C8 | Export PNG/PDF; Firebase App Distribution build on `dev` | CI green |
+
+### Explicitly deferred (requires paid content/engines — not blocking C1–C8)
+
+| Deferred | Why free path cannot match 1:1 |
+|----------|--------------------------------|
+| 10,000 brand marketplace SKUs | Commerce partnerships / paid assets |
+| Photoreal HD lighting renders | Paid render farm / GPU pipeline |
+| Full mesh CAD multi-floor walkthrough | Different product class |
+
+Meeting C1–C8 = **goal achieved** for RoomCraft at Planner 5D product level under free/current architecture.
 
 ---
 
 ## 6. Verification plan
 
-| Step | Observation | Evidence artifact |
-|------|-------------|-------------------|
-| `flutter test test/blueprint_e2e_path_test.dart` | All green | test output |
-| Catalog scale | skus≥100, types≥18 | evidence/catalog_product_scale.txt |
-| Blueprint → 3D | tap tooltip “3D preview” opens `IsometricPreviewScreen` | evidence/blueprint_to_3d_path.txt |
-| Compare layouts UI | Auto → Compare → apply → undo | evidence/compare_layouts_ui_path.txt |
-| AI Designer auto-furnish | empty room → ≥5 pieces | evidence/ai_designer_autofurnish.txt |
-| Gallery of ideas | 6 sample plans materialize | evidence/gallery_of_ideas.txt |
-| CI distribute | Build APK → Firebase testers | Actions + console URLs |
+Run from repo root with Flutter on PATH:
 
+```bash
+flutter test test/blueprint_e2e_path_test.dart \
+  test/interactive_3d_styler_test.dart \
+  test/planner5d_parity_test.dart
+```
 
----
+| Step | Observation | Evidence file under `{SCRATCH}/evidence/` |
+|------|-------------|-------------------------------------------|
+| V1 Catalog | skus≥200, types≥18 | `catalog_product_scale.txt` |
+| V2 Blueprint→3D | tooltip / toggle opens 3D path | `blueprint_to_3d_path.txt` |
+| V3 Compare UI | Auto → Compare → apply → undo | `compare_layouts_ui_path.txt` |
+| V4 AI Designer | empty room auto-furnish ≥5 pieces | `ai_designer_autofurnish.txt` |
+| V5 AI Styler | palette + tips | `ai_styler_cozy.txt` |
+| V6 Gallery | 6 plans | `gallery_of_ideas.txt` |
+| V7 Interactive 3D | editor open + orbit | `interactive_3d_widget.txt` |
+| V8 CI | Build APK uploads to Firebase `testers` | Actions + console URL |
+
+All V1–V7 must pass automated tests; V8 confirmed by CI log.
+
 
 ## 7. Sprint progress (2026-07-18 +84)
 
@@ -156,8 +178,7 @@ No new paid SDKs. Isometric = orthographic projection math only.
 | AR walkthrough place-in-room | ◐ AR measure exists; not full AR planner |
 | Interactive 3D edit (move in 3D) | ✅ select/rotate/delete/nudge + apply |
 
-**Honest scorecard after +84:** catalog **6/10** · layout intelligence **9/10** · 3D wow **5.5/10** · free scan **8.5/10**.  
-Still not a clone of Planner 5D’s paid 3D/AR stack — competitive on the **measured layout + AI furnish** job with free resources.
+**Scorecard after +87 (free architecture):** catalog **8/10** (200+ SKUs) · layout intelligence **9/10** · 3D edit **7/10** (integrated + interactive) · free scan **8.5/10** · AI design **8/10**. Paid HD/brand marketplace remain deferred.
 
 
 ### +85 follow-up

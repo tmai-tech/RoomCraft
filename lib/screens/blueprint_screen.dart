@@ -7,6 +7,7 @@ import '../domain/layout/auto_arrange.dart';
 import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
+import '../painters/isometric_painter.dart';
 import '../providers/room_provider.dart';
 import '../services/analytics_service.dart';
 import '../services/export_service.dart';
@@ -28,6 +29,10 @@ class BlueprintScreen extends ConsumerStatefulWidget {
 class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
   final TransformationController _transformController = TransformationController();
   final PrefsService _prefs = PrefsService();
+  /// Integrated 3D edit mode (Planner-style 2D/3D toggle).
+  bool _view3d = false;
+  double _isoYaw = 0;
+  double _isoPitch = 0.35;
 
   static const Offset _canvasOrigin =
       Offset(AppConfig.canvasOriginPx, AppConfig.canvasOriginPx);
@@ -98,9 +103,16 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               tooltip: 'Save',
             ),
             IconButton(
-              icon: const Icon(Icons.view_in_ar),
-              tooltip: '3D preview',
-              onPressed: () async {
+              icon: Icon(_view3d ? Icons.grid_on : Icons.view_in_ar),
+              tooltip: _view3d ? '2D plan' : '3D edit mode',
+              onPressed: () {
+                setState(() => _view3d = !_view3d);
+                AnalyticsService.instance.logEvent(
+                  _view3d ? 'blueprint_3d_mode' : 'blueprint_2d_mode',
+                );
+              },
+              onLongPress: () async {
+                // Full-screen 3D editor
                 final result = await Navigator.of(context).push<List<FurnitureItem>>(
                   MaterialPageRoute(
                     builder: (_) => IsometricPreviewScreen(
@@ -116,7 +128,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                 if (result != null) {
                   roomNotifier.applyLayoutAlternative(result);
                 }
-                AnalyticsService.instance.logEvent('isometric_edit');
+                AnalyticsService.instance.logEvent('isometric_edit_fullscreen');
               },
             ),
             PopupMenuButton<String>(
@@ -174,68 +186,97 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             _buildModeHint(roomState),
             _buildStatsPanel(context, roomState, roomNotifier),
             _buildLayoutBar(context, roomState, roomNotifier),
-            Expanded(
-              child: ColoredBox(
-                color: Colors.grey.shade100,
-                child: InteractiveViewer(
-                  transformationController: _transformController,
-                  minScale: 0.4,
-                  maxScale: 4.0,
-                  boundaryMargin: const EdgeInsets.all(double.infinity),
-                  panEnabled: panEnabled,
-                  scaleEnabled: true,
-                  child: SizedBox(
-                    width: 1200,
-                    height: 1200,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onPanStart: (details) {
-                        final model = _toModel(details.localPosition);
-                        if (roomState.isDrawTool) {
-                          roomNotifier.startStroke(model);
-                        } else if (roomState.currentTool == ToolMode.select) {
-                          roomNotifier.selectFurnitureAt(model);
-                        }
-                      },
-                      onPanUpdate: (details) {
-                        if (roomState.isDrawTool) {
-                          roomNotifier
-                              .updateStroke(_toModel(details.localPosition));
-                        } else if (roomState.currentTool == ToolMode.select &&
-                            roomState.hasSelection) {
-                          roomNotifier.updateFurniturePosition(details.delta);
-                        }
-                      },
-                      onPanEnd: (_) {
-                        if (roomState.isDrawTool) {
-                          roomNotifier.endStroke();
-                        } else if (roomState.currentTool == ToolMode.select) {
-                          roomNotifier.endFurnitureDrag();
-                        }
-                      },
-                      child: CustomPaint(
-                        size: const Size(1200, 1200),
-                        painter: BlueprintPainter(
-                          room: roomState.room,
-                          currentStroke: roomState.currentStroke,
-                          pixelsPerFoot: roomState.pixelsPerFoot,
-                          unitSystem: roomState.unitSystem,
-                          origin: _canvasOrigin,
+            if (_view3d)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Chip(
+                        avatar: const Icon(Icons.view_in_ar, size: 16),
+                        label: const Text(
+                          '3D edit mode',
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        foregroundPainter: FurniturePainter(
-                          furniture: roomState.room.furniture,
-                          selectedId: roomState.selectedFurnitureId,
-                          selectedIds: roomState.selectedFurnitureIds,
-                          pixelsPerFoot: roomState.pixelsPerFoot,
-                          unitSystem: roomState.unitSystem,
-                          collisionIds: roomState.collisionIds,
-                          origin: _canvasOrigin,
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: Colors.teal.shade50,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _view3d = false),
+                      child: const Text('2D'),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: _view3d
+                  ? _buildIntegrated3d(roomState, roomNotifier)
+                  : ColoredBox(
+                      color: Colors.grey.shade100,
+                      child: InteractiveViewer(
+                        transformationController: _transformController,
+                        minScale: 0.4,
+                        maxScale: 4.0,
+                        boundaryMargin: const EdgeInsets.all(double.infinity),
+                        panEnabled: panEnabled,
+                        scaleEnabled: true,
+                        child: SizedBox(
+                          width: 1200,
+                          height: 1200,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onPanStart: (details) {
+                              final model = _toModel(details.localPosition);
+                              if (roomState.isDrawTool) {
+                                roomNotifier.startStroke(model);
+                              } else if (roomState.currentTool ==
+                                  ToolMode.select) {
+                                roomNotifier.selectFurnitureAt(model);
+                              }
+                            },
+                            onPanUpdate: (details) {
+                              if (roomState.isDrawTool) {
+                                roomNotifier.updateStroke(
+                                    _toModel(details.localPosition));
+                              } else if (roomState.currentTool ==
+                                      ToolMode.select &&
+                                  roomState.hasSelection) {
+                                roomNotifier
+                                    .updateFurniturePosition(details.delta);
+                              }
+                            },
+                            onPanEnd: (_) {
+                              if (roomState.isDrawTool) {
+                                roomNotifier.endStroke();
+                              } else if (roomState.currentTool ==
+                                  ToolMode.select) {
+                                roomNotifier.endFurnitureDrag();
+                              }
+                            },
+                            child: CustomPaint(
+                              size: const Size(1200, 1200),
+                              painter: BlueprintPainter(
+                                room: roomState.room,
+                                currentStroke: roomState.currentStroke,
+                                pixelsPerFoot: roomState.pixelsPerFoot,
+                                unitSystem: roomState.unitSystem,
+                                origin: _canvasOrigin,
+                              ),
+                              foregroundPainter: FurniturePainter(
+                                furniture: roomState.room.furniture,
+                                selectedId: roomState.selectedFurnitureId,
+                                selectedIds: roomState.selectedFurnitureIds,
+                                pixelsPerFoot: roomState.pixelsPerFoot,
+                                unitSystem: roomState.unitSystem,
+                                collisionIds: roomState.collisionIds,
+                                origin: _canvasOrigin,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-              ),
             ),
           ],
         ),
@@ -285,6 +326,82 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     );
   }
 
+
+
+  Widget _buildIntegrated3d(RoomState roomState, RoomNotifier roomNotifier) {
+    return ColoredBox(
+      color: const Color(0xFFF4F6F8),
+      child: Column(
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final size = Size(constraints.maxWidth, constraints.maxHeight);
+                return GestureDetector(
+                  onTapUp: (d) {
+                    _selectInIso(d.localPosition, size, roomState, roomNotifier);
+                  },
+                  onHorizontalDragUpdate: (d) {
+                    setState(() => _isoYaw += d.delta.dx * 0.01);
+                  },
+                  child: CustomPaint(
+                    painter: IsometricPainter(
+                      room: roomState.room,
+                      pixelsPerFoot: roomState.pixelsPerFoot,
+                      unitSystem: roomState.unitSystem,
+                      yaw: _isoYaw,
+                      wallHeightFt: 7.0 + _isoPitch * 3,
+                      selectedId: roomState.selectedFurnitureId,
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                const Text('Orbit', style: TextStyle(fontSize: 11)),
+                Expanded(
+                  child: Slider(
+                    value: _isoYaw.clamp(-3.14, 3.14),
+                    min: -3.14,
+                    max: 3.14,
+                    onChanged: (v) => setState(() => _isoYaw = v),
+                  ),
+                ),
+                const Text('H', style: TextStyle(fontSize: 11)),
+                Expanded(
+                  child: Slider(
+                    value: _isoPitch,
+                    min: 0,
+                    max: 1,
+                    onChanged: (v) => setState(() => _isoPitch = v),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _selectInIso(
+    Offset local,
+    Size size,
+    RoomState roomState,
+    RoomNotifier notifier,
+  ) {
+    final room = roomState.room;
+    if (room.furniture.isEmpty) return;
+    final ids = room.furniture.map((f) => f.id).toList();
+    final cur = roomState.selectedFurnitureId;
+    final idx = cur == null ? 0 : (ids.indexOf(cur) + 1) % ids.length;
+    notifier.selectFurnitureById(ids[idx]);
+  }
 
   Widget _buildLayoutBar(
     BuildContext context,

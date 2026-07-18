@@ -5,7 +5,7 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 86;
+  static const int buildNumber = 87;
   static const bool isBeta = true;
 
   /// Firebase Google Sign-In Web client ID (oauth_client client_type 3).

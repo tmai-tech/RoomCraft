@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+87 (2026-07-18)
+
+### 200+ catalog · integrated 2D/3D · goal verification C1–C8
+- Catalog expanded to **200+ SKUs** (size/finish variants across categories).
+- **Integrated 3D edit mode** in Blueprint (tap toggle; long-press full-screen editor).
+- Goal success criteria C1–C8 and verification V1–V8 rewritten without paid-engine blockers.
+- Version **+87**.
+
+
 ## 1.0.0-beta.1+86 (2026-07-18)
 
 ### Gallery of ideas · 120 SKUs · Blueprint→3D e2e evidence
