@@ -101,7 +101,7 @@ void main() {
     await tester.drag(paint, const Offset(60, 0));
     await tester.pump();
 
-    File('${_ev.path}/interactive_3d_widget.txt').writeAsStringSync(
+    File('${_ev.path}/interactive_3d_open_only.txt').writeAsStringSync(
       'opened=true\n'
       'furniture_in=${room.furniture.length}\n'
       'title_present=true\n'
