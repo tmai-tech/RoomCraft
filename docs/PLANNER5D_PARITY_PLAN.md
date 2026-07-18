@@ -124,22 +124,36 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 |---|-------------|------------------|----------|
 | P1 | 10,000+ décor catalogue | **Shipped free 10,000+ SKUs** (seed × material × size × line). Brand commerce SKUs need partners | `catalog_10k.txt` |
 | P2 | 3D room planner (build / explore) | **Shipped** perspective walkthrough + isometric edit (select/rotate/delete/apply). Not photoreal mesh/HD | V7 evidence + walk controls |
-| P3 | AR room planner with real dimensions | **Shipped** distinct ARCore measure → **ArPlaceLayoutScreen** (place at real size) → 3D. Live-camera furniture anchors next | `ar_distinct_path.txt` + AR place tests |
+| P3 | AR room planner with real dimensions | **Shipped** ARCore measure → **ArPlaceLayoutScreen** + **live AR camera place** (`ArPlaceActivity` floor hit-test anchors → plan feet) → 3D. Photoreal mesh anchors still open | `source_ar_live_place.txt` + AR place tests |
 | P4 | Floor plan 2D + furniture arrange | **Shipped** full 2D editor, snap, multi-select, score | existing MVP |
 | P5 | AI Designer (Furnisher + Styler) | **Shipped** on-device free Furnisher + Styler | AI Designer/Styler tests |
 | P6 | HD realistic snapshots | **Shipped free HD 3D snapshot** (1600×1200 perspective export). Photoreal mesh lighting still open | HD snapshot tests |
 | P7 | Cross-platform / offline / gallery | Android beta + local save + Gallery of ideas | Gallery evidence |
 
-**Goal = full Play listing parity.** The table above is a **status tracker**, not a reduced definition of done. Ship continuously on free/current architecture; P6 (HD photoreal) and live-camera AR furniture anchors remain open engineering work, not “out of scope by redefinition.”
+**Goal = full Play listing parity.** The table above is a **status tracker**, not a reduced definition of done. Ship continuously on free/current architecture. Photoreal mesh lighting and brand commerce remain open engineering work — not “out of scope by redefinition.”
 
-**AR place loop shipped free path:** ARCore measure → [ArPlaceLayoutScreen] (AI furnish / catalogue place at real size) → 3D walkthrough edit. Live OpenGL furniture anchors in camera are the next native increment.
+**AR place loop shipped free path:** ARCore measure → [ArPlaceLayoutScreen] (AI furnish / catalogue / **Place furniture in AR camera** via `ArPlaceActivity` floor hits) → 3D walkthrough edit. Photoreal textured mesh in AR still open.
+
+### What is left (free / current architecture) — +94 audit
+
+| Left | Free path | Not free / later |
+|------|-----------|------------------|
+| Photoreal mesh / studio lighting | Improve CustomPainter materials + free texture packs | Paid 3D engine / path-traced HD |
+| Brand marketplace SKUs | Collection lines (Essentials…Soft) already filter 10k free SKUs | Partner APIs / commerce |
+| AR furniture as textured models | Floor-hit anchors + plan sync shipped | Sceneform/Filament mesh assets |
+| Exterior / multi-floor | Polygon rooms next; exterior v2 | Full landscape suite |
+| Play public listing | Firebase beta → closed track docs | Store assets + policy |
+| Device QA AR place | Manual on ARCore phones | — |
+
+**Next free sprint order:** (1) AR place device polish + undo/coords clamp, (2) richer 3D materials/shadows, (3) Play closed-track checklist, (4) L-shape rooms.
 
 ---
 
 ## 6. Verification plan
 
 ```bash
-flutter test test/skeptic_gaps_test.dart \
+flutter test test/source_proof_test.dart \
+  test/skeptic_gaps_test.dart \
   test/blueprint_e2e_path_test.dart \
   test/interactive_3d_styler_test.dart
 ```
@@ -197,4 +211,13 @@ flutter test test/skeptic_gaps_test.dart \
 | AR label theater | `ScannerScreen(initialScanMode: ar_guided)` distinct from photo scan |
 | V7 open-only | select/rotate/delete/apply + onFurnitureChanged proof |
 | Catalog << 10k | Runtime expansion to 10,000+ free SKUs |
+
+### +94 (this ship)
+| Item | Status |
+|------|--------|
+| Native `ArPlaceActivity` floor hit-test place | ✅ ARCore + Flutter bridge |
+| `ArPlaceLayoutScreen` live camera button | ✅ maps placements → plan feet |
+| Marketplace collection line filters | ✅ Essentials…Soft chips + `byCollection` |
+| Source-proof tests for skeptic claims | ✅ `test/source_proof_test.dart` |
+| Photoreal mesh / brand commerce | ❌ still open |
 | 3D orthographic only | Perspective projection mode |

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/layout/ai_designer.dart';
 import '../domain/units.dart';
+import '../catalog/furniture_catalog.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../providers/room_provider.dart';
@@ -83,6 +84,65 @@ class _ArPlaceLayoutScreenState extends ConsumerState<ArPlaceLayoutScreen> {
         updatedAt: DateTime.now(),
       );
     });
+  }
+
+  Future<void> _liveArPlace() async {
+    try {
+      final placed = await ArMeasureService.placeFurniture(
+        widthFt: _room.widthInFeet,
+        lengthFt: _room.lengthInFeet,
+      );
+      if (!mounted) return;
+      if (placed.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No furniture placed in AR')),
+        );
+        return;
+      }
+      final pxf = 20.0;
+      final items = <FurnitureItem>[
+        for (final p in placed)
+          FurnitureItem(
+            id: 'arlive_${p.type}_${p.fromLeftFt.toStringAsFixed(2)}_${p.fromBottomFt.toStringAsFixed(2)}',
+            type: FurnitureType.values.firstWhere(
+              (e) => e.name == p.type,
+              orElse: () => FurnitureType.table,
+            ),
+            position: Offset(
+              (p.fromLeftFt * pxf).clamp(0, _room.widthInFeet * pxf),
+              (p.fromBottomFt * pxf).clamp(0, _room.lengthInFeet * pxf),
+            ),
+            widthInFeet: FurnitureCatalog.entryFor(
+              FurnitureType.values.firstWhere(
+                (e) => e.name == p.type,
+                orElse: () => FurnitureType.table,
+              ),
+            ).defaultWidthFt,
+            lengthInFeet: FurnitureCatalog.entryFor(
+              FurnitureType.values.firstWhere(
+                (e) => e.name == p.type,
+                orElse: () => FurnitureType.table,
+              ),
+            ).defaultLengthFt,
+          ),
+      ];
+      setState(() {
+        _room = _room.copyWith(
+          furniture: [..._room.furniture, ...items],
+          updatedAt: DateTime.now(),
+        );
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Placed ${items.length} from AR camera')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AR place: $e')),
+      );
+    }
   }
 
   Future<void> _openEditor({bool threeD = false}) async {
@@ -209,6 +269,19 @@ class _ArPlaceLayoutScreenState extends ConsumerState<ArPlaceLayoutScreen> {
             icon: const Icon(Icons.add_box_outlined),
             label: Text(
               'Place from catalogue (${_room.furniture.length} on plan)',
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            key: const Key('ar_live_place_camera'),
+            onPressed: ArMeasureService.isPlatformSupported
+                ? _liveArPlace
+                : null,
+            icon: const Icon(Icons.view_in_ar),
+            label: const Text('Place furniture in AR camera'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.teal.shade700,
+              padding: const EdgeInsets.symmetric(vertical: 14),
             ),
           ),
           const SizedBox(height: 8),

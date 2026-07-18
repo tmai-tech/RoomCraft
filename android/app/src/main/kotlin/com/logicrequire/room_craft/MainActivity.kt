@@ -21,6 +21,9 @@ class MainActivity : FlutterActivity() {
     private val channelName = "com.logicrequire.room_craft/ar_measure"
     private var pendingResult: MethodChannel.Result? = null
     private var pendingMode: String = ArMeasureActivity.MODE_QUICK
+    private var pendingPlace: Boolean = false
+    private var pendingWidthFt: Double = 12.0
+    private var pendingLengthFt: Double = 12.0
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -33,6 +36,11 @@ class MainActivity : FlutterActivity() {
                             val mode = call.argument<String>("mode")
                                 ?: ArMeasureActivity.MODE_QUICK
                             launchMeasure(result, mode)
+                        }
+                        "placeFurniture" -> {
+                            val w = call.argument<Double>("widthFt") ?: 12.0
+                            val l = call.argument<Double>("lengthFt") ?: 12.0
+                            launchPlace(result, w, l)
                         }
                         else -> result.notImplemented()
                     }
@@ -150,6 +158,7 @@ class MainActivity : FlutterActivity() {
     private fun startArActivity(result: MethodChannel.Result, mode: String) {
         try {
             pendingResult = result
+            pendingPlace = false
             val intent = Intent(this, ArMeasureActivity::class.java).apply {
                 putExtra(ArMeasureActivity.EXTRA_MODE, mode)
             }
@@ -159,6 +168,72 @@ class MainActivity : FlutterActivity() {
             result.error(
                 "LAUNCH_FAILED",
                 e.message ?: "Could not open AR measure",
+                null,
+            )
+        }
+    }
+
+    private fun launchPlace(result: MethodChannel.Result, widthFt: Double, lengthFt: Double) {
+        if (pendingResult != null) {
+            result.error("BUSY", "AR already in progress", null)
+            return
+        }
+
+        val status = checkArCore(requestInstall = true)
+        if (status["supported"] != true) {
+            result.error(
+                "UNSUPPORTED",
+                status["message"] as? String ?: "AR not supported",
+                status,
+            )
+            return
+        }
+        if (status["installNeeded"] == true) {
+            result.error(
+                "INSTALL_NEEDED",
+                status["message"] as? String ?: "Install AR services first",
+                status,
+            )
+            return
+        }
+
+        if (!hasCameraPermission()) {
+            pendingResult = result
+            pendingPlace = true
+            pendingWidthFt = widthFt
+            pendingLengthFt = lengthFt
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                REQUEST_CAMERA,
+            )
+            return
+        }
+
+        startPlaceActivity(result, widthFt, lengthFt)
+    }
+
+    private fun startPlaceActivity(
+        result: MethodChannel.Result,
+        widthFt: Double,
+        lengthFt: Double,
+    ) {
+        try {
+            pendingResult = result
+            pendingPlace = true
+            pendingWidthFt = widthFt
+            pendingLengthFt = lengthFt
+            val intent = Intent(this, ArPlaceActivity::class.java).apply {
+                putExtra(ArPlaceActivity.EXTRA_WIDTH_FT, widthFt)
+                putExtra(ArPlaceActivity.EXTRA_LENGTH_FT, lengthFt)
+            }
+            startActivityForResult(intent, ArPlaceActivity.REQUEST_CODE)
+        } catch (e: Exception) {
+            pendingResult = null
+            pendingPlace = false
+            result.error(
+                "LAUNCH_FAILED",
+                e.message ?: "Could not open AR place",
                 null,
             )
         }
@@ -177,14 +252,23 @@ class MainActivity : FlutterActivity() {
         if (grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
-            // Clear then re-set inside startArActivity
+            val place = pendingPlace
+            val w = pendingWidthFt
+            val l = pendingLengthFt
+            val mode = pendingMode
             pendingResult = null
-            startArActivity(pending, pendingMode)
+            pendingPlace = false
+            if (place) {
+                startPlaceActivity(pending, w, l)
+            } else {
+                startArActivity(pending, mode)
+            }
         } else {
             pendingResult = null
+            pendingPlace = false
             pending.error(
                 "PERMISSION",
-                "Camera permission is required for AR measure",
+                "Camera permission is required for AR",
                 null,
             )
         }
@@ -193,10 +277,35 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != ArMeasureActivity.REQUEST_CODE) return
         val pending = pendingResult
-        pendingResult = null
         if (pending == null) return
+
+        if (requestCode == ArPlaceActivity.REQUEST_CODE) {
+            pendingResult = null
+            pendingPlace = false
+            try {
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    @Suppress("UNCHECKED_CAST")
+                    val raw = data.getSerializableExtra(ArPlaceActivity.EXTRA_PLACEMENTS)
+                        as? ArrayList<HashMap<String, Any>>
+                    pending.success(
+                        mapOf(
+                            "placements" to (raw ?: emptyList<HashMap<String, Any>>()),
+                            "source" to "arcore_place",
+                        ),
+                    )
+                } else {
+                    pending.error("CANCELLED", "User cancelled AR place", null)
+                }
+            } catch (e: Exception) {
+                pending.error("AR_ERROR", e.message ?: "Bad AR place result", null)
+            }
+            return
+        }
+
+        if (requestCode != ArMeasureActivity.REQUEST_CODE) return
+        pendingResult = null
+        pendingPlace = false
 
         try {
             if (resultCode == Activity.RESULT_OK && data != null) {

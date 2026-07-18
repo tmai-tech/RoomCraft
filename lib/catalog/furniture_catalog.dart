@@ -2586,6 +2586,31 @@ class FurnitureCatalog {
     return out;
   }
 
+  /// Marketplace-style free collection lines (embedded in generated SKUs).
+  static const List<String> collectionLines = [
+    'Essentials',
+    'Studio',
+    'Luxe',
+    'Urban',
+    'Coastal',
+    'Nordic',
+    'Industrial',
+    'Soft',
+  ];
+
+  /// Filter by collection line name (e.g. "Nordic") matching description/label.
+  static List<FurnitureCatalogEntry> byCollection(String line) {
+    final needle = '$line collection';
+    return all
+        .where(
+          (e) =>
+              e.description.contains(needle) ||
+              e.label.startsWith('$line ') ||
+              e.id.endsWith('__${line.toLowerCase()}'),
+        )
+        .toList();
+  }
+
   static FurnitureCatalogEntry entryFor(FurnitureType type) {
     return all.firstWhere(
       (e) => e.type == type,

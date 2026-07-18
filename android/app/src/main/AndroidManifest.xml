@@ -38,6 +38,13 @@
             android:theme="@style/Theme.RoomCraft.ArMeasure"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <activity
+            android:name=".ArPlaceActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.RoomCraft.ArMeasure"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- ARCore required client; Google Play will install AR services when needed -->
         <meta-data
             android:name="com.google.ar.core"

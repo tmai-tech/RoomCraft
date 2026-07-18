@@ -37,6 +37,7 @@ class FurnitureCatalogSheet extends StatefulWidget {
 
 class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
   FurnitureCategory? _filter;
+  String? _collection; // marketplace line, e.g. Nordic
   final _searchCtrl = TextEditingController();
   String _query = '';
 
@@ -50,6 +51,17 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
     var list = _query.isEmpty
         ? FurnitureCatalog.all
         : FurnitureCatalog.search(_query);
+    if (_collection != null) {
+      final needle = '$_collection collection';
+      list = list
+          .where(
+            (e) =>
+                e.description.contains(needle) ||
+                e.label.startsWith('$_collection ') ||
+                e.id.endsWith('__${_collection!.toLowerCase()}'),
+          )
+          .toList();
+    }
     if (_filter != null) {
       list = list.where((e) => e.category == _filter).toList();
     }
@@ -150,7 +162,7 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Furniture catalog',
+                      'Furniture catalogue',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
@@ -162,6 +174,47 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                'Marketplace-style free collections — filter by line below',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+              ),
+            ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Row(
+                children: [
+                  FilterChip(
+                    key: const Key('catalog_collection_all'),
+                    label: const Text('All lines'),
+                    selected: _collection == null,
+                    onSelected: (_) => setState(() => _collection = null),
+                  ),
+                  const SizedBox(width: 8),
+                  ...FurnitureCatalog.collectionLines.map((line) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        key: Key('catalog_collection_$line'),
+                        avatar: Icon(
+                          _collection == line
+                              ? Icons.storefront
+                              : Icons.storefront_outlined,
+                          size: 16,
+                        ),
+                        label: Text(line),
+                        selected: _collection == line,
+                        onSelected: (_) => setState(() {
+                          _collection = _collection == line ? null : line;
+                        }),
+                      ),
+                    );
+                  }),
                 ],
               ),
             ),
@@ -194,7 +247,7 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
               child: Row(
                 children: [
                   FilterChip(
-                    label: const Text('All'),
+                    label: const Text('All rooms'),
                     selected: _filter == null,
                     onSelected: (_) => setState(() => _filter = null),
                   ),
@@ -217,7 +270,9 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
               child: entries.isEmpty
                   ? Center(
                       child: Text(
-                        'No matches for “$_query”',
+                        'No matches'
+                        '${_query.isNotEmpty ? ' for “$_query”' : ''}'
+                        '${_collection != null ? ' in $_collection' : ''}',
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     )

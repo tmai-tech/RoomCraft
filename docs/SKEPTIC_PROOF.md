@@ -1,20 +1,21 @@
-# Skeptic claim → CURRENT tree proof (+92)
+# Skeptic claim → CURRENT tree proof (+94)
 
-**Do not use pre-+88 line numbers.** Fresh audit 1.0.0-beta.1+92.
+**Do not use pre-+88 line numbers.** Fresh audit 1.0.0-beta.1+94.
 
 ## 1. AR Room Planner is label theater / `_createNewAI`
 
 **FALSE.**
 
-- AR tile title at ~line 575 of `lib/screens/home_screen.dart`
-- `onTap` calls `_createNewAR()` at line **583** (not `_createNewAI`)
+- AR tile title in `lib/screens/home_screen.dart`
+- `onTap` calls `_createNewAR()` (not `_createNewAI`) — prove via `test/source_proof_test.dart`
 - `_createNewAR` opens `ScannerScreen(initialScanMode: 'ar_guided', openAdvanced: true)`
-- Post-measure: `ArPlaceLayoutScreen` (AI furnish / catalogue place → 3D)
+- Post-measure: `ArPlaceLayoutScreen` + **live AR camera place** (`placeFurniture` → `ArPlaceActivity`)
 
 Evidence files:
 - `evidence/ar_distinct_path.txt`
 - `evidence/scanner_ar_initial_mode.txt`
 - `evidence/ar_place_layout.txt`
+- `evidence/source_ar_live_place.txt`
 
 ## 2. Catalog is ~247 size variants ≠ 10k
 

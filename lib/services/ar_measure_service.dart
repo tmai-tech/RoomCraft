@@ -173,4 +173,50 @@ class ArMeasureService {
     }
     return m;
   }
+
+  /// Live-camera AR: mark origin + place furniture on floor plane.
+  /// Returns room-relative positions in feet from SW origin.
+  static Future<List<ArPlacedItem>> placeFurniture({
+    required double widthFt,
+    required double lengthFt,
+  }) async {
+    if (!isPlatformSupported) {
+      throw PlatformException(
+        code: 'UNSUPPORTED',
+        message: 'AR place requires Android + ARCore',
+      );
+    }
+    final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'placeFurniture',
+      {'widthFt': widthFt, 'lengthFt': lengthFt},
+    );
+    if (raw == null) return const [];
+    final list = raw['placements'];
+    if (list is! List) return const [];
+    return list
+        .whereType<Map>()
+        .map((e) => ArPlacedItem.fromMap(Map<dynamic, dynamic>.from(e)))
+        .toList();
+  }
+}
+
+/// One furniture placement from live AR floor hit-testing.
+class ArPlacedItem {
+  final String type;
+  final double fromLeftFt;
+  final double fromBottomFt;
+
+  const ArPlacedItem({
+    required this.type,
+    required this.fromLeftFt,
+    required this.fromBottomFt,
+  });
+
+  factory ArPlacedItem.fromMap(Map<dynamic, dynamic> m) {
+    return ArPlacedItem(
+      type: m['type']?.toString() ?? 'table',
+      fromLeftFt: (m['fromLeftFt'] as num?)?.toDouble() ?? 0,
+      fromBottomFt: (m['fromBottomFt'] as num?)?.toDouble() ?? 0,
+    );
+  }
 }
