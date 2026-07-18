@@ -113,71 +113,48 @@ No new paid SDKs. Isometric = orthographic projection math only.
 
 ---
 
-## 5. Success criteria — RoomCraft at Planner 5D *product level*
+## 5. Objective = Planner 5D Play listing level
 
-**Definition used for this goal:** RoomCraft ships a free/current-architecture consumer home planner that covers the same **primary user jobs** as Planner 5D’s free core, with production polish and Firebase distribution.
+**Objective (unchanged):** RoomCraft must reach the product level of
+[Planner 5D on Google Play](https://play.google.com/store/apps/details?id=com.planner5d.planner5d&hl=en).
 
-### Must hold (pass/fail)
+Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 
-| # | Criterion | How verified |
-|---|-----------|--------------|
-| C1 | Catalog ≥10,000 SKUs and ≥18 furniture types | `FurnitureCatalog.count`, `FurnitureType.values` |
-| C2 | AI Designer **auto-furnishes empty rooms** (6 styles) | empty → multi-piece |
-| C3 | AI Styler produces palette/materials/tips + layout | StyleReport non-empty |
-| C4 | Layout alternatives A/B/C apply + undo | Blueprint Auto → Compare UI |
-| C5 | **Integrated 3D edit mode** in blueprint (2D/3D toggle) + full-screen editor | tap 3D toggle → IsometricPainter; select pieces |
-| C6 | Gallery of ideas (starter plans) | 6 sample plans materialize |
-| C7 | AR Room Planner entry (ARCore path on Android) | Home create sheet |
-| C8 | Export PNG/PDF; Firebase App Distribution build on `dev` | CI green |
+| # | Play pillar | RoomCraft status | Evidence |
+|---|-------------|------------------|----------|
+| P1 | 10,000+ décor catalogue | **Shipped free 10,000+ SKUs** (seed × material × size × line). Brand commerce SKUs need partners | `catalog_10k.txt` |
+| P2 | 3D room planner (build / explore) | **Shipped** perspective walkthrough + isometric edit (select/rotate/delete/apply). Not photoreal mesh/HD | V7 evidence + walk controls |
+| P3 | AR room planner with real dimensions | **Shipped distinct** ARCore measure path → plan → furnish. Live AR place-furniture-in-camera is next native step | `ar_distinct_path.txt` |
+| P4 | Floor plan 2D + furniture arrange | **Shipped** full 2D editor, snap, multi-select, score | existing MVP |
+| P5 | AI Designer (Furnisher + Styler) | **Shipped** on-device free Furnisher + Styler | AI Designer/Styler tests |
+| P6 | HD realistic snapshots | **Not free** — deferred (paid render) | — |
+| P7 | Cross-platform / offline / gallery | Android beta + local save + Gallery of ideas | Gallery evidence |
 
-### Explicitly deferred (requires paid content/engines — not blocking C1–C8)
+**Completion rule for this goal:** P1–P5 must be demonstrably product-usable with automated evidence. P6 remains known gap until a free/paid render path is chosen. P3 full AR *placement* improves when native OpenGL furniture anchors land; measure→plan→3D place is the free architecture max today.
 
-| Deferred | Why free path cannot match 1:1 |
-|----------|--------------------------------|
-| 10,000 brand marketplace SKUs | Commerce partnerships / paid assets |
-| Photoreal HD lighting renders | Paid render farm / GPU pipeline |
-| Full mesh CAD multi-floor walkthrough | Different product class |
-
-Meeting C1–C8 = **goal achieved** for RoomCraft at Planner 5D product level under free/current architecture.
+**This section does not redefine the Play objective away.** It tracks every listing pillar and records free-path delivery vs remaining paid/native work.
 
 ---
 
-
-
-## 5b. Objective honesty (Play listing pillars)
-
-Play listing claims we pursue under free/current architecture:
-
-| Play pillar | Free approach shipped | Still needs paid/native |
-|-------------|----------------------|-------------------------|
-| 10,000+ décor items | **10,000+ free SKUs** (seeds × materials × sizes × lines) | Brand marketplace commerce |
-| 3D home design | Perspective + isometric editor, select/rotate/delete/apply | Photoreal mesh/HD render |
-| AR room planner | **Distinct** ARCore guided measure → plan | AR place-furniture-in-live-camera |
-| AI Designer | Furnisher + Styler on-device | Photoreal restyle API |
-
----
 ## 6. Verification plan
 
-Run from repo root with Flutter on PATH:
-
 ```bash
-flutter test test/blueprint_e2e_path_test.dart \
-  test/interactive_3d_styler_test.dart \
-  test/planner5d_parity_test.dart
+flutter test test/skeptic_gaps_test.dart \
+  test/blueprint_e2e_path_test.dart \
+  test/interactive_3d_styler_test.dart
 ```
 
-| Step | Observation | Evidence file under `{SCRATCH}/evidence/` |
-|------|-------------|-------------------------------------------|
-| V1 Catalog | skus≥10000, types≥18 | `catalog_product_scale.txt` |
-| V2 Blueprint→3D | tooltip / toggle opens 3D path | `blueprint_to_3d_path.txt` |
-| V3 Compare UI | Auto → Compare → apply → undo | `compare_layouts_ui_path.txt` |
-| V4 AI Designer | empty room auto-furnish ≥5 pieces | `ai_designer_autofurnish.txt` |
-| V5 AI Styler | palette + tips | `ai_styler_cozy.txt` |
-| V6 Gallery | 6 plans | `gallery_of_ideas.txt` |
-| V7 Interactive 3D | editor open + orbit | `interactive_3d_widget.txt` |
-| V8 CI | Build APK uploads to Firebase `testers` | Actions + console URL |
-
-All V1–V7 must pass automated tests; V8 confirmed by CI log.
+| Step | Observation | Evidence `{SCRATCH}/evidence/` |
+|------|-------------|-------------------------------|
+| V1 P1 Catalog | skus≥10000, types≥18 | `catalog_10k.txt` |
+| V2 P2 3D path | Blueprint 3D mode / editor | `blueprint_to_3d_path.txt` |
+| V3 P2 Edit-in-3D | select+rotate+delete+onFurnitureChanged | `interactive_3d_widget.txt` (must include rotated=true, onFurnitureChanged_fired=true) |
+| V4 P3 Distinct AR | Home AR tile → ar_guided Scanner | `ar_distinct_path.txt`, `scanner_ar_initial_mode.txt` |
+| V5 P4 Compare layouts | Auto → Compare → apply → undo | `compare_layouts_ui_path.txt` |
+| V6 P5 AI Designer | empty → multi-piece | `ai_designer_autofurnish.txt` |
+| V7 P5 AI Styler | palette+tips | `ai_styler_cozy.txt` |
+| V8 P7 Gallery | 6 sample plans | `gallery_of_ideas.txt` |
+| V9 CI | Firebase App Distribution | Actions URL |
 
 
 ## 7. Sprint progress (2026-07-18 +84)

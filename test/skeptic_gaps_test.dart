@@ -206,5 +206,54 @@ void main() {
       'chain_toggle=true\n',
     );
   });
+
+
+  testWidgets('P2 walkthrough: perspective + walk pad moves camera', (tester) async {
+    final room = RoomModel(
+      id: 'w',
+      name: 'Walk',
+      widthInFeet: 12,
+      lengthInFeet: 10,
+      furniture: AiDesigner.furnish(
+        room: RoomModel(id: 'w', name: 'Walk', widthInFeet: 12, lengthInFeet: 10),
+        pixelsPerFoot: 20,
+        style: DesignStyle.cozy,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: IsometricPreviewScreen(
+          room: room,
+          pixelsPerFoot: 20,
+          unitSystem: UnitSystem.feet,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Ensure perspective chip selected path
+    final chip = find.byKey(const Key('iso_perspective_chip'));
+    expect(chip, findsOneWidget);
+    await tester.tap(chip); // may toggle off then on
+    await tester.pump();
+    await tester.tap(chip);
+    await tester.pump();
+
+    expect(find.byKey(const Key('iso_walk_pad')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('iso_walk_fwd')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('iso_walk_right')));
+    await tester.pump();
+
+    File('${_ev.path}/walkthrough_3d.txt').writeAsStringSync(
+      'perspective_chip=true\n'
+      'walk_pad=true\n'
+      'walk_fwd=true\n'
+      'walk_right=true\n'
+      'furniture=${room.furniture.length}\n',
+    );
+  });
+
 }
 

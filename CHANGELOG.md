@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+89 (2026-07-18)
+
+### Walkthrough 3D explore · plan §5 tracks full Play objective
+- **3D walkthrough camera** (first-person eye height + walk pad) on perspective mode.
+- Plan §5 rewritten: tracks all Play listing pillars P1–P7 without redefining objective away.
+- Catalog sheet shows **10,000+ items** badge.
+- Version **+89**.
+
+
 ## 1.0.0-beta.1+88 (2026-07-18)
 
 ### Skeptic-gap closure: 10k catalog, distinct AR, edit-in-3D proof, perspective 3D

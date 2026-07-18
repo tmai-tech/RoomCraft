@@ -20,6 +20,11 @@ class IsometricPainter extends CustomPainter {
   final String? selectedId;
   /// When true, use perspective projection (vanishing depth) instead of pure iso.
   final bool perspective;
+  /// Walkthrough: camera offset from room center in model px (plan X/Y).
+  final double walkX;
+  final double walkY;
+  /// Eye height in feet for walkthrough.
+  final double eyeHeightFt;
 
   IsometricPainter({
     required this.room,
@@ -29,6 +34,9 @@ class IsometricPainter extends CustomPainter {
     this.wallHeightFt = 8.0,
     this.selectedId,
     this.perspective = false,
+    this.walkX = 0,
+    this.walkY = 0,
+    this.eyeHeightFt = 5.5,
   });
 
   double get _scale => pixelsPerFoot;
@@ -199,7 +207,7 @@ class IsometricPainter extends CustomPainter {
     final label =
         '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × '
         '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)} · '
-        '${perspective ? 'Perspective 3D' : 'Isometric 3D'}';
+        '${perspective ? '3D walkthrough' : 'Isometric 3D'}';
     final tp = TextPainter(
       text: TextSpan(
         text: label,
@@ -390,17 +398,28 @@ class IsometricPainter extends CustomPainter {
       return Iso.project(rx, ry, z);
     }
 
-    // Camera-space: room on XZ ground (Y up). View from elevated front.
-    final camX = rx - cx;
-    final camY = z; // height
-    final camZ = (ry - cy) + roomD * 0.85; // depth forward
-    final elev = 0.55; // look-down
-    // Pitch rotate around X
-    final y2 = camY * math.cos(elev) - camZ * math.sin(elev);
-    final z2 = camY * math.sin(elev) + camZ * math.cos(elev);
-    final dist = math.max(40.0, z2 + roomD * 1.2);
-    final f = roomD * 1.1; // focal length in px units
-    return Offset(camX * f / dist, -y2 * f / dist);
+    // First-person / explore camera inside or elevated over the room.
+    // World: X right, Y up (height z), Z into depth (plan y).
+    final eyeX = cx + walkX;
+    final eyeY = eyeHeightFt * _scale;
+    final eyeZ = cy + walkY;
+    // Point relative to eye
+    var vx = rx - eyeX;
+    var vy = z - eyeY;
+    var vz = ry - eyeZ;
+    // Yaw around vertical (Y)
+    final cosY = math.cos(yaw);
+    final sinY = math.sin(yaw);
+    final rx2 = vx * cosY - vz * sinY;
+    final rz2 = vx * sinY + vz * cosY;
+    final ry2 = vy;
+    // Look slightly down
+    final pitch = 0.12;
+    final ry3 = ry2 * math.cos(pitch) - rz2 * math.sin(pitch);
+    final rz3 = ry2 * math.sin(pitch) + rz2 * math.cos(pitch);
+    final dist = math.max(8.0, rz3);
+    final f = roomD * 0.95;
+    return Offset(rx2 * f / dist, -ry3 * f / dist);
   }
 
   static double _heightFor(FurnitureType t) => t.defaultHeightFt;
@@ -415,7 +434,10 @@ class IsometricPainter extends CustomPainter {
         old.yaw != yaw ||
         old.wallHeightFt != wallHeightFt ||
         old.selectedId != selectedId ||
-        old.perspective != perspective;
+        old.perspective != perspective ||
+        old.walkX != walkX ||
+        old.walkY != walkY ||
+        old.eyeHeightFt != eyeHeightFt;
   }
 }
 

@@ -36,6 +36,8 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
   double _yaw = 0;
   double _pitch = 0.35;
   bool _perspective = true;
+  double _walkX = 0;
+  double _walkY = 0;
   String? _selectedId;
   bool _dirty = false;
 
@@ -265,6 +267,8 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                         wallHeightFt: _wallH,
                         selectedId: _selectedId,
                         perspective: _perspective,
+                        walkX: _walkX,
+                        walkY: _walkY,
                       ),
                       child: const SizedBox.expand(),
                     ),
@@ -341,25 +345,54 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                         ),
                       ],
                     ),
+                    // Walkthrough explore (first-person camera in room)
+                    if (_perspective)
+                      Row(
+                        key: const Key('iso_walk_pad'),
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('Walk', style: TextStyle(fontSize: 11)),
+                          IconButton(
+                            key: const Key('iso_walk_left'),
+                            onPressed: () => setState(() => _walkX -= 12),
+                            icon: const Icon(Icons.arrow_back),
+                          ),
+                          IconButton(
+                            key: const Key('iso_walk_fwd'),
+                            onPressed: () => setState(() => _walkY -= 12),
+                            icon: const Icon(Icons.arrow_upward),
+                          ),
+                          IconButton(
+                            key: const Key('iso_walk_back'),
+                            onPressed: () => setState(() => _walkY += 12),
+                            icon: const Icon(Icons.arrow_downward),
+                          ),
+                          IconButton(
+                            key: const Key('iso_walk_right'),
+                            onPressed: () => setState(() => _walkX += 12),
+                            icon: const Icon(Icons.arrow_forward),
+                          ),
+                        ],
+                      ),
                     if (sel != null)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           IconButton(
                             onPressed: () => _nudgeSelected(const Offset(-10, 0)),
-                            icon: const Icon(Icons.arrow_back),
+                            icon: const Icon(Icons.chevron_left),
                           ),
                           IconButton(
                             onPressed: () => _nudgeSelected(const Offset(0, -10)),
-                            icon: const Icon(Icons.arrow_upward),
+                            icon: const Icon(Icons.expand_less),
                           ),
                           IconButton(
                             onPressed: () => _nudgeSelected(const Offset(0, 10)),
-                            icon: const Icon(Icons.arrow_downward),
+                            icon: const Icon(Icons.expand_more),
                           ),
                           IconButton(
                             onPressed: () => _nudgeSelected(const Offset(10, 0)),
-                            icon: const Icon(Icons.arrow_forward),
+                            icon: const Icon(Icons.chevron_right),
                           ),
                           const SizedBox(width: 8),
                           Text(

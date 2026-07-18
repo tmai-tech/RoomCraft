@@ -155,8 +155,12 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
                     ),
                   ),
                   Text(
-                    '${FurnitureCatalog.all.length} items',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    '${FurnitureCatalog.count >= 10000 ? '10,000+' : FurnitureCatalog.count} items',
+                    style: TextStyle(
+                      color: Colors.teal.shade800,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
