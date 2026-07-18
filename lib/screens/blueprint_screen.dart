@@ -151,6 +151,13 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                       unitSystem: roomState.unitSystem,
                     );
                     await AnalyticsService.instance.logEvent('export_pdf');
+                  } else if (v == 'pack') {
+                    await ExportService.sharePlanPack(
+                      roomState.room,
+                      pixelsPerFoot: roomState.pixelsPerFoot,
+                      unitSystem: roomState.unitSystem,
+                    );
+                    await AnalyticsService.instance.logEvent('export_plan_pack');
                   }
                 } catch (e) {
                   if (context.mounted) {
@@ -163,6 +170,10 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               itemBuilder: (ctx) => const [
                 PopupMenuItem(value: 'png', child: Text('Share PNG image')),
                 PopupMenuItem(value: 'pdf', child: Text('Share PDF summary')),
+                PopupMenuItem(
+                  value: 'pack',
+                  child: Text('Share plan pack (2D + 3D)'),
+                ),
               ],
             ),
             IconButton(

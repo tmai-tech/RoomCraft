@@ -145,7 +145,7 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 | Play public listing | Firebase beta → closed track docs | Store assets + policy |
 | Device QA AR place | Manual on ARCore phones | — |
 
-**Next free sprint order:** (1–5)✅+95–98 (6)~~multi-floor / exterior~~✅+99 (7) store listing assets / privacy form.
+**Next free sprint order:** (1–6)✅+95–99 (7)~~lighting + privacy/data safety + plan pack~~✅+100 (8) store screenshots / Play closed track upload.
 
 ---
 
@@ -260,3 +260,13 @@ flutter test test/source_proof_test.dart \
 | Exterior patio (`isExterior`) grass 2D/3D stage | ✅ |
 | Gallery patio + upper loft plans | ✅ |
 | Photoreal / brand / full landscape suite | ❌ still open |
+
+### +100
+| Item | Status |
+|------|--------|
+| 3D day/evening/night lighting | ✅ SceneLighting free CustomPainter |
+| Share plan pack (2D + 3D PNG) | ✅ ExportService.sharePlanPack |
+| In-app Privacy & data safety screen | ✅ + PRIVACY_POLICY refresh |
+| Store listing checklist doc | ✅ docs/STORE_LISTING.md |
+| Photoreal mesh / brand commerce | ❌ still open |
+

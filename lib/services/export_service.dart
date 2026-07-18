@@ -94,6 +94,7 @@ class ExportService {
     double pixelsPerFoot = 28,
     UnitSystem unitSystem = UnitSystem.feet,
     double yaw = 0.35,
+    SceneLighting lighting = SceneLighting.day,
   }) async {
     const size = Size(1600, 1200);
     final recorder = ui.PictureRecorder();
@@ -105,6 +106,7 @@ class ExportService {
       yaw: yaw,
       perspective: true,
       wallHeightFt: 8.5,
+      lighting: lighting,
     ).paint(canvas, size);
     final picture = recorder.endRecording();
     final image = await picture.toImage(size.width.ceil(), size.height.ceil());
@@ -117,11 +119,13 @@ class ExportService {
     RoomModel room, {
     double pixelsPerFoot = 28,
     UnitSystem unitSystem = UnitSystem.feet,
+    SceneLighting lighting = SceneLighting.day,
   }) async {
     final bytes = await render3dPng(
       room,
       pixelsPerFoot: pixelsPerFoot,
       unitSystem: unitSystem,
+      lighting: lighting,
     );
     final dir = await getTemporaryDirectory();
     final file = File(
@@ -131,6 +135,38 @@ class ExportService {
     await Share.shareXFiles(
       [XFile(file.path)],
       text: 'RoomCraft 3D walkthrough — ${room.name}',
+    );
+  }
+
+  /// Share 2D plan + 3D walkthrough PNGs together (Play-style plan pack).
+  static Future<void> sharePlanPack(
+    RoomModel room, {
+    double pixelsPerFoot = 20,
+    UnitSystem unitSystem = UnitSystem.feet,
+    SceneLighting lighting = SceneLighting.day,
+  }) async {
+    final png2d = await renderPng(
+      room,
+      pixelsPerFoot: pixelsPerFoot,
+      unitSystem: unitSystem,
+    );
+    final png3d = await render3dPng(
+      room,
+      unitSystem: unitSystem,
+      lighting: lighting,
+    );
+    final dir = await getTemporaryDirectory();
+    final safe = room.name.replaceAll(RegExp(r'[^\w\-]+'), '_');
+    final f2 = File('${dir.path}/roomcraft_${safe}_2d.png');
+    final f3 = File('${dir.path}/roomcraft_${safe}_3d.png');
+    await f2.writeAsBytes(png2d, flush: true);
+    await f3.writeAsBytes(png3d, flush: true);
+    await Share.shareXFiles(
+      [
+        XFile(f2.path, mimeType: 'image/png', name: '${safe}_2d.png'),
+        XFile(f3.path, mimeType: 'image/png', name: '${safe}_3d.png'),
+      ],
+      text: 'RoomCraft plan pack: ${room.name} (${room.spaceLabel})',
     );
   }
 

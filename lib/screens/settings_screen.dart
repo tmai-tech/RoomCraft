@@ -10,6 +10,7 @@ import '../services/cloud_sync_service.dart';
 import '../services/prefs_service.dart';
 import '../services/training_export_service.dart';
 import 'feedback_screen.dart';
+import 'privacy_data_safety_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -370,7 +371,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.privacy_tip_outlined),
-            title: const Text('Privacy policy'),
+            title: const Text('Privacy & data safety'),
+            subtitle: const Text('In-app summary · Play Data safety'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PrivacyDataSafetyScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.policy_outlined),
+            title: const Text('Full privacy policy'),
             trailing: const Icon(Icons.open_in_new, size: 16),
             onTap: () => _openUrl(AppConfig.privacyPolicyUrl),
           ),

@@ -9,6 +9,9 @@ import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../models/stroke_model.dart';
 
+/// Free path “studio lighting” presets for CustomPainter 3D (not photoreal).
+enum SceneLighting { day, evening, night }
+
 /// Lightweight Planner5D-style isometric view of a top-down plan.
 /// Pure CustomPainter — no 3D engine or paid SDKs.
 class IsometricPainter extends CustomPainter {
@@ -26,6 +29,8 @@ class IsometricPainter extends CustomPainter {
   final double walkY;
   /// Eye height in feet for walkthrough.
   final double eyeHeightFt;
+  /// Day / evening / night ambient (free lighting path).
+  final SceneLighting lighting;
 
   IsometricPainter({
     required this.room,
@@ -38,6 +43,7 @@ class IsometricPainter extends CustomPainter {
     this.walkX = 0,
     this.walkY = 0,
     this.eyeHeightFt = 5.5,
+    this.lighting = SceneLighting.day,
   });
 
   double get _scale => pixelsPerFoot;
@@ -75,22 +81,19 @@ class IsometricPainter extends CustomPainter {
     final sy = (size.height - pad * 2) / bounds.height;
     final s = math.min(sx, sy);
 
-    // Soft sky → floor gradient (Planner-style 3D stage)
+    // Soft sky → floor gradient (Planner-style 3D stage + time-of-day)
+    final sky = _skyColors(lighting);
     final bg = Paint()
-      ..shader = const LinearGradient(
+      ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [
-          Color(0xFFE8F0F8),
-          Color(0xFFF4F6F8),
-          Color(0xFFECEFF1),
-        ],
+        colors: sky,
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, bg);
 
     // Soft floor shadow ellipse
     final shadow = Paint()
-      ..color = Colors.blueGrey.withValues(alpha: 0.12)
+      ..color = Colors.black.withValues(alpha: _shadowAlpha(lighting))
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
     canvas.drawOval(
       Rect.fromCenter(
@@ -373,10 +376,14 @@ class IsometricPainter extends CustomPainter {
     }
 
     // Lit faces: left darker, right mid, top brightest (cheap Phong stand-in)
-    face([bottom[0], bottom[1], top[1], top[0]], Color.lerp(fill, Colors.black, 0.32)!);
-    face([bottom[1], bottom[2], top[2], top[1]], Color.lerp(fill, Colors.black, 0.14)!);
-    face([bottom[3], bottom[0], top[0], top[3]], Color.lerp(fill, Colors.black, 0.24)!);
-    face([top[0], top[1], top[2], top[3]], Color.lerp(fill, Colors.white, 0.28)!);
+    final darkAmt = _faceDark(lighting);
+    final midAmt = _faceMid(lighting);
+    final sideAmt = _faceSide(lighting);
+    final topLift = _faceTop(lighting);
+    face([bottom[0], bottom[1], top[1], top[0]], Color.lerp(fill, Colors.black, darkAmt)!);
+    face([bottom[1], bottom[2], top[2], top[1]], Color.lerp(fill, Colors.black, midAmt)!);
+    face([bottom[3], bottom[0], top[0], top[3]], Color.lerp(fill, Colors.black, sideAmt)!);
+    face([top[0], top[1], top[2], top[3]], Color.lerp(fill, Colors.white, topLift)!);
 
     if (selected) {
       final outline = Paint()
@@ -503,6 +510,54 @@ class IsometricPainter extends CustomPainter {
     };
   }
 
+  static List<Color> _skyColors(SceneLighting l) => switch (l) {
+        SceneLighting.day => const [
+            Color(0xFFE8F0F8),
+            Color(0xFFF4F6F8),
+            Color(0xFFECEFF1),
+          ],
+        SceneLighting.evening => const [
+            Color(0xFFFFCC80),
+            Color(0xFFFFE0B2),
+            Color(0xFFFFF3E0),
+          ],
+        SceneLighting.night => const [
+            Color(0xFF1A237E),
+            Color(0xFF283593),
+            Color(0xFF3949AB),
+          ],
+      };
+
+  static double _shadowAlpha(SceneLighting l) => switch (l) {
+        SceneLighting.day => 0.12,
+        SceneLighting.evening => 0.22,
+        SceneLighting.night => 0.35,
+      };
+
+  static double _faceDark(SceneLighting l) => switch (l) {
+        SceneLighting.day => 0.32,
+        SceneLighting.evening => 0.4,
+        SceneLighting.night => 0.55,
+      };
+
+  static double _faceMid(SceneLighting l) => switch (l) {
+        SceneLighting.day => 0.14,
+        SceneLighting.evening => 0.22,
+        SceneLighting.night => 0.38,
+      };
+
+  static double _faceSide(SceneLighting l) => switch (l) {
+        SceneLighting.day => 0.24,
+        SceneLighting.evening => 0.32,
+        SceneLighting.night => 0.48,
+      };
+
+  static double _faceTop(SceneLighting l) => switch (l) {
+        SceneLighting.day => 0.28,
+        SceneLighting.evening => 0.18,
+        SceneLighting.night => 0.08,
+      };
+
   @override
   bool shouldRepaint(covariant IsometricPainter old) {
     return old.room != room ||
@@ -514,7 +569,8 @@ class IsometricPainter extends CustomPainter {
         old.perspective != perspective ||
         old.walkX != walkX ||
         old.walkY != walkY ||
-        old.eyeHeightFt != eyeHeightFt;
+        old.eyeHeightFt != eyeHeightFt ||
+        old.lighting != lighting;
   }
 }
 

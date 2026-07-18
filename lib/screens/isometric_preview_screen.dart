@@ -41,6 +41,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
   double _walkY = 0;
   String? _selectedId;
   bool _dirty = false;
+  SceneLighting _lighting = SceneLighting.day;
 
   @override
   void initState() {
@@ -175,6 +176,22 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
           ),
           actions: [
             IconButton(
+              key: const Key('iso_lighting_btn'),
+              tooltip: 'Lighting: ${_lighting.name}',
+              icon: Icon(switch (_lighting) {
+                SceneLighting.day => Icons.wb_sunny_outlined,
+                SceneLighting.evening => Icons.wb_twilight,
+                SceneLighting.night => Icons.nights_stay_outlined,
+              }),
+              onPressed: () => setState(() {
+                _lighting = switch (_lighting) {
+                  SceneLighting.day => SceneLighting.evening,
+                  SceneLighting.evening => SceneLighting.night,
+                  SceneLighting.night => SceneLighting.day,
+                };
+              }),
+            ),
+            IconButton(
               key: const Key('iso_hd_snapshot'),
               tooltip: 'Share HD 3D snapshot',
               icon: const Icon(Icons.photo_camera_outlined),
@@ -184,6 +201,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                     _viewRoom,
                     pixelsPerFoot: widget.pixelsPerFoot,
                     unitSystem: widget.unitSystem,
+                    lighting: _lighting,
                   );
                 } catch (e) {
                   if (mounted) {
@@ -202,6 +220,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                 _pitch = 0.35;
                 _walkX = 0;
                 _walkY = 0;
+                _lighting = SceneLighting.day;
               }),
             ),
             if (_dirty)
@@ -292,6 +311,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                         perspective: _perspective,
                         walkX: _walkX,
                         walkY: _walkY,
+                        lighting: _lighting,
                       ),
                       child: const SizedBox.expand(),
                     ),
