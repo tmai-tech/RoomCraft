@@ -72,24 +72,50 @@ class StorageService {
 
   /// Copy a room with a new id and "Copy of …" name.
   Future<RoomModel> duplicateRoom(RoomModel source, {String? newId}) async {
-    final copy = source.copyWith(
+    final room = RoomModel(
       id: newId ?? const Uuid().v4(),
       name: source.name.startsWith('Copy of ')
           ? source.name
           : 'Copy of ${source.name}',
-      updatedAt: DateTime.now(),
-    );
-    // Deep copy lists
-    final room = RoomModel(
-      id: copy.id,
-      name: copy.name,
-      lengthInFeet: copy.lengthInFeet,
-      widthInFeet: copy.widthInFeet,
+      lengthInFeet: source.lengthInFeet,
+      widthInFeet: source.widthInFeet,
       strokes: List.of(source.strokes),
       furniture: List.of(source.furniture),
       userId: source.userId,
       schemaVersion: AppConfig.storageSchemaVersion,
       updatedAt: DateTime.now(),
+      floorPolygonFt: source.floorPolygonFt == null
+          ? null
+          : List.of(source.floorPolygonFt!),
+      floorLevel: source.floorLevel,
+      isExterior: source.isExterior,
+    );
+    await saveRoom(room);
+    return room;
+  }
+
+  /// Multi-floor free path: same footprint one storey up.
+  Future<RoomModel> duplicateAsUpperFloor(RoomModel source) async {
+    final nextLevel = source.floorLevel + 1;
+    final baseName = source.name
+        .replaceFirst(RegExp(r'\s*[·•]\s*Floor\s+\d+\s*$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'\s*\(Floor\s+\d+\)\s*$', caseSensitive: false), '')
+        .trim();
+    final room = RoomModel(
+      id: const Uuid().v4(),
+      name: '$baseName · Floor $nextLevel',
+      lengthInFeet: source.lengthInFeet,
+      widthInFeet: source.widthInFeet,
+      strokes: List.of(source.strokes),
+      furniture: List.of(source.furniture),
+      userId: source.userId,
+      schemaVersion: AppConfig.storageSchemaVersion,
+      updatedAt: DateTime.now(),
+      floorPolygonFt: source.floorPolygonFt == null
+          ? null
+          : List.of(source.floorPolygonFt!),
+      floorLevel: nextLevel,
+      isExterior: false,
     );
     await saveRoom(room);
     return room;

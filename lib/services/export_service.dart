@@ -151,6 +151,7 @@ class ExportService {
       room.name,
       'Size: $dim',
       'Shape: $shape',
+      'Level: ${room.spaceLabel}',
       'Furniture: ${room.furniture.length} · Lines: ${room.strokes.length}',
       '',
       'Furniture list:',

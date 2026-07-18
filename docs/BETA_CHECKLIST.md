@@ -3,7 +3,7 @@
 ## Before inviting testers
 
 - [x] MVP phases 0–4 on `dev`
-- [x] Version `1.0.0-beta.1+98` (AR place, L-shape, heatmap, 10k catalog, 3D walkthrough)
+- [x] Version `1.0.0-beta.1+99` (AR place, L-shape, heatmap, multi-floor/exterior, 10k catalog)
 - [x] Firebase App Distribution wired + green CI distribute
 - [x] Tester group `testers` exists
 - [x] Stable CI keystore SHA for Google Sign-In (see PLAY_AND_SIGNING.md)
@@ -38,6 +38,9 @@
 10. Room size → **L-shape** → walkway heatmap toggle  
 11. AR Room Planner (ARCore device) → measure → place layout → 3D  
 12. Export PDF lists shape + furniture  
+13. Home menu → **Duplicate as upper floor** → Floor 1 badge  
+14. Gallery → **Backyard patio** → green exterior floor in 2D/3D  
+
 
 ## Play closed track (free path remaining)
 

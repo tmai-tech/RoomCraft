@@ -683,6 +683,29 @@ class RoomNotifier extends Notifier<RoomState> {
     return RoomGeometry.toPixels(room.floorPolygonFt!, state.pixelsPerFoot);
   }
 
+  /// Multi-floor / exterior metadata (free Planner-style levels).
+  void setFloorLevel(int level) {
+    _pushHistory();
+    state = state.copyWith(
+      room: state.room.copyWith(
+        floorLevel: level.clamp(0, 20),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _syncHistoryFlags();
+  }
+
+  void setExterior(bool exterior) {
+    _pushHistory();
+    state = state.copyWith(
+      room: state.room.copyWith(
+        isExterior: exterior,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _syncHistoryFlags();
+  }
+
 
   void setLayoutType(RoomLayoutType type) {
     state = state.copyWith(layoutType: type);

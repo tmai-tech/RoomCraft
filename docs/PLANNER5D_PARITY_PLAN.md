@@ -141,11 +141,11 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 | Photoreal mesh / studio lighting | Improve CustomPainter materials + free texture packs | Paid 3D engine / path-traced HD |
 | Brand marketplace SKUs | Collection lines (Essentials…Soft) already filter 10k free SKUs | Partner APIs / commerce |
 | AR furniture as textured models | Floor-hit anchors + plan sync shipped | Sceneform/Filament mesh assets |
-| Exterior / multi-floor | Polygon rooms next; exterior v2 | Full landscape suite |
+| Exterior / multi-floor | **Shipped free** floor levels + exterior patio (not full landscape suite) | Full multi-building landscape |
 | Play public listing | Firebase beta → closed track docs | Store assets + policy |
 | Device QA AR place | Manual on ARCore phones | — |
 
-**Next free sprint order:** (1–4)✅+95–97 (5)~~polygon clamp + Play checklist~~✅+98 (6) multi-floor / exterior (7) store listing assets.
+**Next free sprint order:** (1–5)✅+95–98 (6)~~multi-floor / exterior~~✅+99 (7) store listing assets / privacy form.
 
 ---
 
@@ -252,3 +252,11 @@ flutter test test/source_proof_test.dart \
 | Play closed-track checklist updated | ✅ docs/BETA_CHECKLIST.md |
 | Photoreal / brand / multi-floor exterior | ❌ still open |
 | 3D orthographic only | Perspective projection mode |
+
+### +99
+| Item | Status |
+|------|--------|
+| Multi-floor `floorLevel` + home upper-floor duplicate | ✅ |
+| Exterior patio (`isExterior`) grass 2D/3D stage | ✅ |
+| Gallery patio + upper loft plans | ✅ |
+| Photoreal / brand / full landscape suite | ❌ still open |

@@ -66,10 +66,14 @@ class BlueprintPainter extends CustomPainter {
     final w = room.widthInFeet * pixelsPerFoot;
     final h = room.lengthInFeet * pixelsPerFoot;
     final paint = Paint()
-      ..color = Colors.blueGrey.withValues(alpha: 0.15)
+      ..color = room.isExterior
+          ? Colors.green.withValues(alpha: 0.18)
+          : Colors.blueGrey.withValues(alpha: 0.15)
       ..style = PaintingStyle.fill;
     final border = Paint()
-      ..color = Colors.blueGrey.withValues(alpha: 0.5)
+      ..color = room.isExterior
+          ? Colors.green.shade700.withValues(alpha: 0.55)
+          : Colors.blueGrey.withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
@@ -95,7 +99,8 @@ class BlueprintPainter extends CustomPainter {
     final shape = RoomGeometry.shapeLabel(room.floorPolygonFt);
     final label =
         '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × '
-        '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)} · $shape';
+        '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)} · '
+        '$shape · ${room.spaceLabel}';
     final tp = TextPainter(
       text: TextSpan(
         text: label,

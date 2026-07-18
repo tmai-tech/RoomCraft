@@ -16,6 +16,10 @@ class RoomModel {
   DateTime? updatedAt;
   /// Optional floor outline in feet (plan space). Null = rectangle width×length.
   List<Offset>? floorPolygonFt;
+  /// Storey index: 0 = ground, 1 = first floor, … (Planner multi-level free path).
+  int floorLevel;
+  /// Patio / outdoor plan (grass stage, outdoor catalog).
+  bool isExterior;
 
   RoomModel({
     required this.id,
@@ -28,6 +32,8 @@ class RoomModel {
     this.schemaVersion = AppConfig.storageSchemaVersion,
     DateTime? updatedAt,
     List<Offset>? floorPolygonFt,
+    this.floorLevel = 0,
+    this.isExterior = false,
   })  : strokes = List<StrokeModel>.from(strokes ?? const []),
         furniture = List<FurnitureItem>.from(furniture ?? const []),
         floorPolygonFt = floorPolygonFt == null
@@ -37,6 +43,15 @@ class RoomModel {
 
   bool get isPolygonFloor =>
       floorPolygonFt != null && floorPolygonFt!.length >= 3;
+
+  /// Human label for list cards / PDF (Ground, Floor 1, Exterior…).
+  String get spaceLabel {
+    if (isExterior) {
+      return floorLevel == 0 ? 'Exterior' : 'Exterior · L$floorLevel';
+    }
+    if (floorLevel <= 0) return 'Ground';
+    return 'Floor $floorLevel';
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -49,6 +64,8 @@ class RoomModel {
       'furniture': furniture.map((x) => x.toMap()).toList(),
       'userId': userId,
       'updatedAt': (updatedAt ?? DateTime.now()).toIso8601String(),
+      'floorLevel': floorLevel,
+      'isExterior': isExterior,
       if (floorPolygonFt != null)
         'floorPolygonFt': [
           for (final p in floorPolygonFt!)
@@ -91,6 +108,8 @@ class RoomModel {
           (map['schemaVersion'] as num?)?.toInt() ?? AppConfig.storageSchemaVersion,
       updatedAt: updatedAt,
       floorPolygonFt: _parsePolygon(map['floorPolygonFt']),
+      floorLevel: (map['floorLevel'] as num?)?.toInt() ?? 0,
+      isExterior: map['isExterior'] == true,
     );
   }
 
@@ -155,6 +174,8 @@ class RoomModel {
     DateTime? updatedAt,
     List<Offset>? floorPolygonFt,
     bool clearFloorPolygon = false,
+    int? floorLevel,
+    bool? isExterior,
   }) {
     return RoomModel(
       id: id ?? this.id,
@@ -172,6 +193,8 @@ class RoomModel {
               (this.floorPolygonFt == null
                   ? null
                   : List<Offset>.from(this.floorPolygonFt!))),
+      floorLevel: floorLevel ?? this.floorLevel,
+      isExterior: isExterior ?? this.isExterior,
     );
   }
 }

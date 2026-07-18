@@ -115,6 +115,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Future<void> _duplicateUpperFloor(RoomModel room) async {
+    final upper = await _storageService.duplicateAsUpperFloor(room);
+    await _loadRooms();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Created ${upper.spaceLabel}: “${upper.name}”')),
+    );
+  }
+
   Future<void> _createNewManual() async {
     final size = await _promptRoomSize();
     if (!mounted || size == null) return;
@@ -474,6 +483,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             fontSize: 13,
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            Chip(
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              avatar: Icon(
+                                room.isExterior
+                                    ? Icons.yard_outlined
+                                    : Icons.layers_outlined,
+                                size: 14,
+                              ),
+                              label: Text(
+                                room.spaceLabel,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              padding: EdgeInsets.zero,
+                              labelPadding:
+                                  const EdgeInsets.only(right: 6),
+                            ),
+                            if (room.isPolygonFloor)
+                              Chip(
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                label: const Text(
+                                  'L-shape',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                padding: EdgeInsets.zero,
+                                labelPadding:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                              ),
+                          ],
+                        ),
                         if (when.isNotEmpty)
                           Text(
                             'Updated $when',
@@ -489,12 +536,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onSelected: (v) async {
                       if (v == 'open') _editRoom(room);
                       if (v == 'duplicate') await _duplicateRoom(room);
+                      if (v == 'upper') await _duplicateUpperFloor(room);
                       if (v == 'delete') _confirmDelete(room);
                     },
-                    itemBuilder: (ctx) => const [
-                      PopupMenuItem(value: 'open', child: Text('Open')),
-                      PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-                      PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(value: 'open', child: Text('Open')),
+                      const PopupMenuItem(
+                        value: 'duplicate',
+                        child: Text('Duplicate'),
+                      ),
+                      if (!room.isExterior)
+                        const PopupMenuItem(
+                          value: 'upper',
+                          child: Text('Duplicate as upper floor'),
+                        ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
                     ],
                   ),
                 ],

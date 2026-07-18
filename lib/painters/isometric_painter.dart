@@ -125,23 +125,31 @@ class IsometricPainter extends CustomPainter {
     }
     final floorPath = Path()..addPolygon(floorPts, true);
     final floorBounds = floorPath.getBounds();
+    final floorColors = room.isExterior
+        ? const [
+            Color(0xFFA5D6A7),
+            Color(0xFF81C784),
+            Color(0xFF66BB6A),
+          ]
+        : const [
+            Color(0xFFE8D9C0),
+            Color(0xFFD4C0A0),
+            Color(0xFFC8B090),
+          ];
     canvas.drawPath(
       floorPath,
       Paint()
         ..shader = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFFE8D9C0),
-            const Color(0xFFD4C0A0),
-            const Color(0xFFC8B090),
-          ],
+          colors: floorColors,
         ).createShader(floorBounds),
     );
     canvas.drawPath(
       floorPath,
       Paint()
-        ..color = Colors.brown.shade400.withValues(alpha: 0.45)
+        ..color = (room.isExterior ? Colors.green.shade700 : Colors.brown.shade400)
+            .withValues(alpha: 0.45)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -248,6 +256,7 @@ class IsometricPainter extends CustomPainter {
     final label =
         '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × '
         '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)} · '
+        '${room.spaceLabel} · '
         '${perspective ? '3D walkthrough' : 'Isometric 3D'}';
     final tp = TextPainter(
       text: TextSpan(

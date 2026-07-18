@@ -16,6 +16,9 @@ class SamplePlan {
   final double lengthFt;
   /// When true, materialize with L-shape floor polygon.
   final bool lShape;
+  /// Outdoor / patio plan (grass stage).
+  final bool exterior;
+  final int floorLevel;
 
   const SamplePlan({
     required this.id,
@@ -25,6 +28,8 @@ class SamplePlan {
     required this.widthFt,
     required this.lengthFt,
     this.lShape = false,
+    this.exterior = false,
+    this.floorLevel = 0,
   });
 }
 
@@ -103,6 +108,24 @@ class SamplePlans {
       lengthFt: 16,
       lShape: true,
     ),
+    SamplePlan(
+      id: 'patio_exterior',
+      title: 'Backyard patio',
+      blurb: 'Exterior seating · grill ready — 16×14',
+      style: DesignStyle.family,
+      widthFt: 16,
+      lengthFt: 14,
+      exterior: true,
+    ),
+    SamplePlan(
+      id: 'upper_loft',
+      title: 'Upper loft floor',
+      blurb: 'Floor 1 open loft — 14×12',
+      style: DesignStyle.studio,
+      widthFt: 14,
+      lengthFt: 12,
+      floorLevel: 1,
+    ),
   ];
 
   static const _uuid = Uuid();
@@ -122,6 +145,8 @@ class SamplePlans {
       widthInFeet: plan.widthFt,
       lengthInFeet: plan.lengthFt,
       floorPolygonFt: poly,
+      floorLevel: plan.floorLevel,
+      isExterior: plan.exterior,
     );
     final furniture = AiDesigner.furnish(
       room: empty,
@@ -131,6 +156,8 @@ class SamplePlans {
     return empty.copyWith(
       furniture: furniture,
       floorPolygonFt: poly,
+      floorLevel: plan.floorLevel,
+      isExterior: plan.exterior,
       updatedAt: DateTime.now(),
     );
   }

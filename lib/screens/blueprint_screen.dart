@@ -1021,12 +1021,34 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               decoration: InputDecoration(labelText: 'Length (${unit.label})'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Level: ${room.spaceLabel}'
+              '${room.isExterior ? '' : ' · use Exterior for patio'}',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const Key('room_exterior_toggle'),
+            onPressed: () {
+              notifier.setExterior(!room.isExterior);
+              Navigator.of(ctx).pop();
+            },
+            child: Text(room.isExterior ? 'Make interior' : 'Exterior patio'),
+          ),
+          TextButton(
+            key: const Key('room_floor_up'),
+            onPressed: () {
+              notifier.setFloorLevel(room.floorLevel + 1);
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Floor +1'),
           ),
           TextButton(
             key: const Key('room_shape_l'),
