@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -100,32 +102,31 @@ class _ArPlaceLayoutScreenState extends ConsumerState<ArPlaceLayoutScreen> {
         return;
       }
       final pxf = 20.0;
-      final items = <FurnitureItem>[
-        for (final p in placed)
+      final maxX = _room.widthInFeet * pxf;
+      final maxY = _room.lengthInFeet * pxf;
+      final items = <FurnitureItem>[];
+      for (final raw in placed) {
+        final p = raw.clampedToRoom(_room.widthInFeet, _room.lengthInFeet);
+        final type = FurnitureType.values.firstWhere(
+          (e) => e.name == p.type,
+          orElse: () => FurnitureType.table,
+        );
+        final entry = FurnitureCatalog.entryFor(type);
+        final halfW = entry.defaultWidthFt * pxf / 2;
+        final halfL = entry.defaultLengthFt * pxf / 2;
+        items.add(
           FurnitureItem(
             id: 'arlive_${p.type}_${p.fromLeftFt.toStringAsFixed(2)}_${p.fromBottomFt.toStringAsFixed(2)}',
-            type: FurnitureType.values.firstWhere(
-              (e) => e.name == p.type,
-              orElse: () => FurnitureType.table,
-            ),
+            type: type,
             position: Offset(
-              (p.fromLeftFt * pxf).clamp(0, _room.widthInFeet * pxf),
-              (p.fromBottomFt * pxf).clamp(0, _room.lengthInFeet * pxf),
+              (p.fromLeftFt * pxf).clamp(halfW, math.max(halfW, maxX - halfW)),
+              (p.fromBottomFt * pxf).clamp(halfL, math.max(halfL, maxY - halfL)),
             ),
-            widthInFeet: FurnitureCatalog.entryFor(
-              FurnitureType.values.firstWhere(
-                (e) => e.name == p.type,
-                orElse: () => FurnitureType.table,
-              ),
-            ).defaultWidthFt,
-            lengthInFeet: FurnitureCatalog.entryFor(
-              FurnitureType.values.firstWhere(
-                (e) => e.name == p.type,
-                orElse: () => FurnitureType.table,
-              ),
-            ).defaultLengthFt,
+            widthInFeet: entry.defaultWidthFt,
+            lengthInFeet: entry.defaultLengthFt,
           ),
-      ];
+        );
+      }
       setState(() {
         _room = _room.copyWith(
           furniture: [..._room.furniture, ...items],

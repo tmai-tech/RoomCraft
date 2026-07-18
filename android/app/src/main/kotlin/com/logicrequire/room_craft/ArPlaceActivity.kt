@@ -68,6 +68,8 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var origin: FloatArray? = null // world xyz of SW corner
     private val placed = mutableListOf<Placed>()
     private var typeIndex = 0
+    private var roomWidthFt: Double = 12.0
+    private var roomLengthFt: Double = 12.0
 
     private data class Placed(
         val type: String,
@@ -78,6 +80,8 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            roomWidthFt = intent.getDoubleExtra(EXTRA_WIDTH_FT, 12.0).coerceIn(3.0, 120.0)
+            roomLengthFt = intent.getDoubleExtra(EXTRA_LENGTH_FT, 12.0).coerceIn(3.0, 120.0)
             setContentView(R.layout.activity_ar_place)
             displayRotationHelper = DisplayRotationHelper(this)
 
@@ -131,7 +135,8 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             stepTitle.text = "AR place · ${currentType()} (${placed.size} placed)"
             stepHint.text =
                 "Point + where the ${currentType()} sits on the floor, then Place. " +
-                    "Next type cycles furniture. Done returns layout."
+                    "Room ${"%.0f".format(roomWidthFt)}×${"%.0f".format(roomLengthFt)} ft · " +
+                    "Next type cycles. Done returns layout."
             btnPlace.text = "Place ${currentType()}"
             liveInfo.text = placed.joinToString(" · ") { it.type }.ifEmpty { "Origin set" }
         }
@@ -204,9 +209,12 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             // Relative meters: X right, Z forward along room length approx
             val dxM = (p.world[0] - o[0]).toDouble()
             val dzM = (p.world[2] - o[2]).toDouble()
-            // Convert to feet from left/bottom (plan coords)
-            val fromLeftFt = dxM * M_TO_FT
-            val fromBottomFt = dzM * M_TO_FT
+            // Plan feet from SW origin; abs handles phone facing either way
+            var fromLeftFt = kotlin.math.abs(dxM) * M_TO_FT
+            var fromBottomFt = kotlin.math.abs(dzM) * M_TO_FT
+            // Clamp inside room (device QA polish — keep placements on plan)
+            fromLeftFt = fromLeftFt.coerceIn(0.0, roomWidthFt)
+            fromBottomFt = fromBottomFt.coerceIn(0.0, roomLengthFt)
             list.add(
                 hashMapOf(
                     "type" to p.type,
@@ -214,6 +222,8 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     "fromBottomFt" to fromBottomFt,
                     "xM" to dxM,
                     "zM" to dzM,
+                    "roomWidthFt" to roomWidthFt,
+                    "roomLengthFt" to roomLengthFt,
                 ),
             )
         }

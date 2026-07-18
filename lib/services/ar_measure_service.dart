@@ -219,4 +219,15 @@ class ArPlacedItem {
       fromBottomFt: (m['fromBottomFt'] as num?)?.toDouble() ?? 0,
     );
   }
+
+  /// Clamp placement inside room so AR hits outside the measured box still land on plan.
+  ArPlacedItem clampedToRoom(double widthFt, double lengthFt) {
+    final w = widthFt.clamp(1.0, 200.0);
+    final l = lengthFt.clamp(1.0, 200.0);
+    return ArPlacedItem(
+      type: type,
+      fromLeftFt: fromLeftFt.abs().clamp(0.0, w),
+      fromBottomFt: fromBottomFt.abs().clamp(0.0, l),
+    );
+  }
 }

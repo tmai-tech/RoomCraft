@@ -220,4 +220,11 @@ flutter test test/source_proof_test.dart \
 | Marketplace collection line filters | ✅ Essentials…Soft chips + `byCollection` |
 | Source-proof tests for skeptic claims | ✅ `test/source_proof_test.dart` |
 | Photoreal mesh / brand commerce | ❌ still open |
+
+### +95
+| Item | Status |
+|------|--------|
+| AR place room-bound clamp (native + Dart) | ✅ `clampedToRoom` + intent W×L |
+| 3D wood floor + furniture drop shadows + materials | ✅ free CustomPainter |
+| Photoreal mesh / brand commerce | ❌ still open |
 | 3D orthographic only | Perspective projection mode |

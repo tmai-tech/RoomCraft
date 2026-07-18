@@ -107,7 +107,7 @@ class IsometricPainter extends CustomPainter {
       );
     }
 
-    // Floor
+    // Floor — warm wood-ish gradient (free CustomPainter “materials”)
     final floorPts = [
       map(_rotThenProject(0, 0, 0, w, d)),
       map(_rotThenProject(w, 0, 0, w, d)),
@@ -115,14 +115,24 @@ class IsometricPainter extends CustomPainter {
       map(_rotThenProject(0, d, 0, w, d)),
     ];
     final floorPath = Path()..addPolygon(floorPts, true);
+    final floorBounds = Rect.fromPoints(floorPts[0], floorPts[2]);
     canvas.drawPath(
       floorPath,
-      Paint()..color = Colors.blueGrey.shade50,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFFE8D9C0),
+            const Color(0xFFD4C0A0),
+            const Color(0xFFC8B090),
+          ],
+        ).createShader(floorBounds),
     );
     canvas.drawPath(
       floorPath,
       Paint()
-        ..color = Colors.blueGrey.shade300
+        ..color = Colors.brown.shade400.withValues(alpha: 0.45)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -320,7 +330,16 @@ class IsometricPainter extends CustomPainter {
     // silence unused
     assert(corners.length == 8);
 
-    final fill = _colorFor(item.type);
+    final fill = _materialColor(item.type);
+
+    // Soft drop shadow under furniture (free path toward Planner “realistic” stage)
+    final shadowPath = Path()..addPolygon(bottom, true);
+    canvas.drawPath(
+      shadowPath,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.18)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
 
     // Draw three visible faces (simple)
     void face(List<Offset> pts, Color c) {
@@ -336,10 +355,10 @@ class IsometricPainter extends CustomPainter {
     }
 
     // Lit faces: left darker, right mid, top brightest (cheap Phong stand-in)
-    face([bottom[0], bottom[1], top[1], top[0]], Color.lerp(fill, Colors.black, 0.28)!);
-    face([bottom[1], bottom[2], top[2], top[1]], Color.lerp(fill, Colors.black, 0.12)!);
-    face([bottom[3], bottom[0], top[0], top[3]], Color.lerp(fill, Colors.black, 0.22)!);
-    face([top[0], top[1], top[2], top[3]], Color.lerp(fill, Colors.white, 0.25)!);
+    face([bottom[0], bottom[1], top[1], top[0]], Color.lerp(fill, Colors.black, 0.32)!);
+    face([bottom[1], bottom[2], top[2], top[1]], Color.lerp(fill, Colors.black, 0.14)!);
+    face([bottom[3], bottom[0], top[0], top[3]], Color.lerp(fill, Colors.black, 0.24)!);
+    face([top[0], top[1], top[2], top[3]], Color.lerp(fill, Colors.white, 0.28)!);
 
     if (selected) {
       final outline = Paint()
@@ -446,7 +465,25 @@ class IsometricPainter extends CustomPainter {
 
   static double _heightFor(FurnitureType t) => t.defaultHeightFt;
 
-  static Color _colorFor(FurnitureType t) => t.planColor;
+  /// Material-ish palette (fabric / wood / metal) — free CustomPainter only.
+  static Color _materialColor(FurnitureType t) {
+    return switch (t) {
+      FurnitureType.sofa || FurnitureType.chair || FurnitureType.bed =>
+        Color.lerp(t.planColor, const Color(0xFF6B4F3A), 0.25)!,
+      FurnitureType.table ||
+      FurnitureType.desk ||
+      FurnitureType.bookshelf ||
+      FurnitureType.wardrobe ||
+      FurnitureType.dresser ||
+      FurnitureType.nightstand =>
+        Color.lerp(t.planColor, const Color(0xFF8B6914), 0.35)!,
+      FurnitureType.lamp || FurnitureType.appliance || FurnitureType.tvUnit =>
+        Color.lerp(t.planColor, const Color(0xFF546E7A), 0.4)!,
+      FurnitureType.plant => const Color(0xFF4CAF50),
+      FurnitureType.rug => Color.lerp(t.planColor, const Color(0xFFBCAAA4), 0.3)!,
+      _ => t.planColor,
+    };
+  }
 
   @override
   bool shouldRepaint(covariant IsometricPainter old) {
