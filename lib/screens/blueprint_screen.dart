@@ -33,6 +33,8 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
   bool _view3d = false;
   double _isoYaw = 0;
   double _isoPitch = 0.35;
+  /// Walkway free-path heatmap overlay (layout intelligence).
+  bool _showWalkwayHeatmap = false;
 
   static const Offset _canvasOrigin =
       Offset(AppConfig.canvasOriginPx, AppConfig.canvasOriginPx);
@@ -262,6 +264,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                                 pixelsPerFoot: roomState.pixelsPerFoot,
                                 unitSystem: roomState.unitSystem,
                                 origin: _canvasOrigin,
+                                showWalkwayHeatmap: _showWalkwayHeatmap,
                               ),
                               foregroundPainter: FurniturePainter(
                                 furniture: roomState.room.furniture,
@@ -456,6 +459,23 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 12),
                 ),
+              ),
+              IconButton(
+                key: const Key('walkway_heatmap_toggle'),
+                tooltip: _showWalkwayHeatmap
+                    ? 'Hide walkway heatmap'
+                    : 'Show walkway heatmap',
+                icon: Icon(
+                  _showWalkwayHeatmap
+                      ? Icons.grid_on
+                      : Icons.grid_off,
+                  size: 20,
+                  color: _showWalkwayHeatmap ? Colors.teal.shade700 : null,
+                ),
+                onPressed: () => setState(
+                  () => _showWalkwayHeatmap = !_showWalkwayHeatmap,
+                ),
+                visualDensity: VisualDensity.compact,
               ),
               TextButton.icon(
                 onPressed: () => _showAutoArrangeSheet(context, notifier, state),

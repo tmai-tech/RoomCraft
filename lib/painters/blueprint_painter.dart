@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../domain/layout/walkway_heatmap.dart';
 import '../domain/units.dart';
 import '../models/room_model.dart';
 import '../models/stroke_model.dart';
@@ -14,6 +15,8 @@ class BlueprintPainter extends CustomPainter {
   /// Model-space (0,0) is drawn at this canvas offset so left/top walls
   /// are not stuck to the InteractiveViewer edge.
   final Offset origin;
+  /// Planner-style walkway free-path overlay (green clear / red blocked).
+  final bool showWalkwayHeatmap;
 
   BlueprintPainter({
     required this.room,
@@ -21,6 +24,7 @@ class BlueprintPainter extends CustomPainter {
     required this.pixelsPerFoot,
     this.unitSystem = UnitSystem.feet,
     this.origin = Offset.zero,
+    this.showWalkwayHeatmap = false,
   });
 
   @override
@@ -29,6 +33,9 @@ class BlueprintPainter extends CustomPainter {
     canvas.save();
     canvas.translate(origin.dx, origin.dy);
     _drawRoomOutline(canvas);
+    if (showWalkwayHeatmap) {
+      _drawWalkwayHeatmap(canvas);
+    }
 
     for (final stroke in room.strokes) {
       _drawStroke(canvas, stroke);
@@ -40,6 +47,18 @@ class BlueprintPainter extends CustomPainter {
       _drawMeasurements(canvas, currentStroke!);
     }
     canvas.restore();
+  }
+
+  void _drawWalkwayHeatmap(Canvas canvas) {
+    final cells = WalkwayHeatmap.compute(room, pixelsPerFoot);
+    for (final c in cells) {
+      final color = c.isBlocked
+          ? Colors.red.withValues(alpha: 0.22)
+          : c.isTight
+              ? Colors.orange.withValues(alpha: 0.18)
+              : Colors.green.withValues(alpha: 0.12);
+      canvas.drawRect(c.rect, Paint()..color = color);
+    }
   }
 
   void _drawRoomOutline(Canvas canvas) {

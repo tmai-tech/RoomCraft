@@ -145,7 +145,7 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 | Play public listing | Firebase beta → closed track docs | Store assets + policy |
 | Device QA AR place | Manual on ARCore phones | — |
 
-**Next free sprint order:** (1) AR place device polish + undo/coords clamp, (2) richer 3D materials/shadows, (3) Play closed-track checklist, (4) L-shape rooms.
+**Next free sprint order:** (1) ~~AR clamp~~ ✅+95 (2) ~~3D materials/shadows~~ ✅+95 (3) ~~walkway heatmap~~ ✅+96 (4) Play closed-track checklist (5) L-shape / polygon rooms.
 
 ---
 
@@ -227,4 +227,11 @@ flutter test test/source_proof_test.dart \
 | AR place room-bound clamp (native + Dart) | ✅ `clampedToRoom` + intent W×L |
 | 3D wood floor + furniture drop shadows + materials | ✅ free CustomPainter |
 | Photoreal mesh / brand commerce | ❌ still open |
+
+### +96
+| Item | Status |
+|------|--------|
+| Walkway heatmap overlay on 2D blueprint | ✅ free domain + toggle |
+| Gallery of ideas → 8 starter plans | ✅ dining + master suite |
+| Photoreal mesh / brand commerce / L-shape | ❌ still open |
 | 3D orthographic only | Perspective projection mode |

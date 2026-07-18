@@ -33,7 +33,7 @@ void main() {
     );
   });
 
-  test('gallery materializes 6 sample plans with furniture', () {
+  test('gallery materializes sample plans with furniture', () {
     final lines = <String>[];
     for (final p in SamplePlans.all) {
       final room = SamplePlans.materialize(p, pixelsPerFoot: 20);
@@ -41,7 +41,7 @@ void main() {
       lines.add('${p.id}: pieces=${room.furniture.length} '
           '${room.widthInFeet}x${room.lengthInFeet}');
     }
-    expect(SamplePlans.all, hasLength(6));
+    expect(SamplePlans.all.length, greaterThanOrEqualTo(8));
     File('${_ev.path}/gallery_of_ideas.txt').writeAsStringSync(lines.join('\n'));
   });
 

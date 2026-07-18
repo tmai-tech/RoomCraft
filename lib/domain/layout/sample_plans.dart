@@ -72,6 +72,22 @@ class SamplePlans {
       widthFt: 15,
       lengthFt: 12,
     ),
+    SamplePlan(
+      id: 'dining_nook',
+      title: 'Dining nook',
+      blurb: 'Table + seating cluster — 12×11',
+      style: DesignStyle.cozy,
+      widthFt: 12,
+      lengthFt: 11,
+    ),
+    SamplePlan(
+      id: 'master_suite',
+      title: 'Master suite',
+      blurb: 'King bed + storage lounge — 16×14',
+      style: DesignStyle.modernMinimal,
+      widthFt: 16,
+      lengthFt: 14,
+    ),
   ];
 
   static const _uuid = Uuid();
