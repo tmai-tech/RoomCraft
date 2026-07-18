@@ -17,22 +17,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   static const _pages = [
     (
-      icon: Icons.camera_alt_outlined,
-      title: 'Scan your room',
+      icon: Icons.view_in_ar,
+      title: 'AR measure & place',
       body:
-          'Best: AR measure — tap floor corners for real-world size (no tape). Or film a walkaround for AI layout. Not LiDAR/CAD — tweak in Review if needed.',
+          'AR Room Planner measures real floor size with ARCore, then you place furniture on the plan or live on the floor. Photo scan remains for multi-shot AI assist.',
     ),
     (
       icon: Icons.dashboard_customize_outlined,
-      title: 'Arrange furniture',
+      title: 'Smart 2D layout',
       body:
-          'Drag, rotate, and snap pieces. Collision and layout score help clear walkways. Auto-arrange suggests a bedroom, living, or office layout.',
+          '10,000+ free catalogue, L-shape floors, walkway heatmap, layout score, and AI Furnisher / Styler — all on-device where possible.',
+    ),
+    (
+      icon: Icons.threed_rotation,
+      title: '3D walkthrough',
+      body:
+          'Explore in perspective 3D, edit furniture, try day/evening/night lighting, multi-floor levels, and exterior patio plans.',
     ),
     (
       icon: Icons.ios_share,
-      title: 'Export & share',
+      title: 'Export & privacy',
       body:
-          'Save plans on this device and export a PNG for family or contractors. Feedback helps us improve accuracy every build.',
+          'Share PNG, walkway heatmap, PDF, or a 2D+3D plan pack. Plans stay on-device; see Privacy & data safety in Settings.',
     ),
   ];
 

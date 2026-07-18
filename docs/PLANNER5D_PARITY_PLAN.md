@@ -145,7 +145,7 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 | Play public listing | Firebase beta → closed track docs | Store assets + policy |
 | Device QA AR place | Manual on ARCore phones | — |
 
-**Next free sprint order:** (1–6)✅+95–99 (7)~~lighting + privacy/data safety + plan pack~~✅+100 (8) store screenshots / Play closed track upload.
+**Next free sprint order:** (1–7)✅+95–100 (8)~~walkway free-% + heatmap export + onboarding~~✅+101 (9) store screenshots / Play closed track upload.
 
 ---
 
@@ -269,4 +269,12 @@ flutter test test/source_proof_test.dart \
 | In-app Privacy & data safety screen | ✅ + PRIVACY_POLICY refresh |
 | Store listing checklist doc | ✅ docs/STORE_LISTING.md |
 | Photoreal mesh / brand commerce | ❌ still open |
+
+### +101
+| Item | Status |
+|------|--------|
+| Walkways free-% chip when heatmap on | ✅ |
+| Export PNG + walkway heatmap + legend | ✅ |
+| Onboarding AR / 3D / privacy refresh | ✅ |
+| Photoreal / brand / Play screenshots | ❌ ops + assets |
 

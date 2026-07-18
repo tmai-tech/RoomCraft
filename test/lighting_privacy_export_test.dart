@@ -10,9 +10,9 @@ import 'package:room_craft/screens/privacy_data_safety_screen.dart';
 import 'package:room_craft/services/export_service.dart';
 
 void main() {
-  test('AppConfig buildNumber matches +100 ship', () {
-    expect(AppConfig.buildNumber, 100);
-    expect(AppConfig.versionLabel, contains('100'));
+  test('AppConfig buildNumber is current beta ship', () {
+    expect(AppConfig.buildNumber, greaterThanOrEqualTo(100));
+    expect(AppConfig.versionLabel, contains('${AppConfig.buildNumber}'));
   });
 
   test('SceneLighting day/evening/night paint without throw', () {

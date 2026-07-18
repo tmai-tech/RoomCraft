@@ -16,6 +16,7 @@ import '../services/storage_service.dart';
 import '../domain/layout/ai_designer.dart';
 import '../domain/layout/ai_styler.dart';
 import '../domain/layout/layout_alternatives.dart';
+import '../domain/layout/walkway_heatmap.dart';
 import '../screens/isometric_preview_screen.dart';
 import '../widgets/furniture_catalog_sheet.dart';
 
@@ -145,6 +146,15 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                       unitSystem: roomState.unitSystem,
                     );
                     await AnalyticsService.instance.exportPng();
+                  } else if (v == 'png_walk') {
+                    await ExportService.sharePng(
+                      roomState.room,
+                      pixelsPerFoot: roomState.pixelsPerFoot,
+                      unitSystem: roomState.unitSystem,
+                      showWalkwayHeatmap: true,
+                    );
+                    await AnalyticsService.instance
+                        .logEvent('export_png_walkway');
                   } else if (v == 'pdf') {
                     await ExportService.sharePdf(
                       roomState.room,
@@ -169,6 +179,10 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               },
               itemBuilder: (ctx) => const [
                 PopupMenuItem(value: 'png', child: Text('Share PNG image')),
+                PopupMenuItem(
+                  value: 'png_walk',
+                  child: Text('Share PNG + walkway heatmap'),
+                ),
                 PopupMenuItem(value: 'pdf', child: Text('Share PDF summary')),
                 PopupMenuItem(
                   value: 'pack',
@@ -437,6 +451,17 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
         ? 'Add furniture or run Auto-arrange'
         : state.layoutTips.first.message;
 
+    final walkwayPct = _showWalkwayHeatmap
+        ? (WalkwayHeatmap.freeFraction(
+                  WalkwayHeatmap.compute(
+                    state.room,
+                    state.pixelsPerFoot,
+                  ),
+                ) *
+                100)
+            .round()
+        : null;
+
     return Container(
       width: double.infinity,
       color: Colors.grey.shade100,
@@ -462,6 +487,29 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   ),
                 ),
               ),
+              if (walkwayPct != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  key: const Key('walkway_free_pct'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: Colors.teal.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    'Walkways $walkwayPct%',
+                    style: TextStyle(
+                      color: Colors.teal.shade800,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 8),
               Expanded(
                 child: Text(

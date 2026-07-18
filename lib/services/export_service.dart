@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../catalog/furniture_catalog.dart';
+import '../domain/layout/layout_score.dart';
+import '../domain/layout/walkway_heatmap.dart';
 import '../domain/units.dart';
 import '../models/room_model.dart';
 import '../painters/blueprint_painter.dart';
@@ -61,18 +63,37 @@ class ExportService {
 
     canvas.restore();
 
+    final score = LayoutScore.evaluate(room, pixelsPerFoot).score;
+    final freePct = (WalkwayHeatmap.freeFraction(
+              WalkwayHeatmap.compute(room, pixelsPerFoot),
+            ) *
+            100)
+        .round();
+    final title =
+        '${room.name} · ${room.spaceLabel} · score $score · walkways $freePct%';
     final tp = TextPainter(
       text: TextSpan(
-        text: room.name,
+        text: title,
         style: const TextStyle(
           color: Colors.black87,
-          fontSize: 14,
+          fontSize: 12,
           fontWeight: FontWeight.bold,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: size.width - 16);
     tp.paint(canvas, const Offset(8, 4));
+
+    if (showWalkwayHeatmap) {
+      final legend = TextPainter(
+        text: const TextSpan(
+          text: 'Walkways: green free · orange door · red blocked',
+          style: TextStyle(color: Colors.black54, fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width - 16);
+      legend.paint(canvas, Offset(8, size.height - 18));
+    }
 
     final picture = recorder.endRecording();
     final image = await picture.toImage(
@@ -213,11 +234,13 @@ class ExportService {
     RoomModel room, {
     double pixelsPerFoot = 20,
     UnitSystem unitSystem = UnitSystem.feet,
+    bool showWalkwayHeatmap = false,
   }) async {
     final png = await renderPng(
       room,
       pixelsPerFoot: pixelsPerFoot,
       unitSystem: unitSystem,
+      showWalkwayHeatmap: showWalkwayHeatmap,
     );
     final dir = await getTemporaryDirectory();
     final safeName = room.name.replaceAll(RegExp(r'[^\w\-]+'), '_');

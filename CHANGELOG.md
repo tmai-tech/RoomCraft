@@ -2,6 +2,29 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+101 (2026-07-18)
+
+### Walkway free-% · heatmap PNG · onboarding refresh
+- Layout bar shows **Walkways N%** free-path when heatmap is on.
+- Export: **Share PNG + walkway heatmap** with legend; PNG title includes score / walkway %.
+- Onboarding covers AR place, 10k catalogue, 3D lighting, multi-floor, privacy.
+- Version **+101**.
+
+## 1.0.0-beta.1+100 (2026-07-18)
+
+### 3D lighting · plan pack · privacy data safety
+- Day / evening / night SceneLighting in 3D editor.
+- Share plan pack (2D + 3D PNGs).
+- In-app Privacy & data safety + STORE_LISTING.md.
+- Version **+100**.
+
+## 1.0.0-beta.1+99 (2026-07-18)
+
+### Multi-floor + exterior patio
+- floorLevel / isExterior, upper-floor duplicate, grass exterior stage.
+- Gallery patio + upper loft.
+- Version **+99**.
+
 ## 1.0.0-beta.1+93 (2026-07-18)
 
 ### 3D lit faces + ceiling · skeptic proof line numbers
