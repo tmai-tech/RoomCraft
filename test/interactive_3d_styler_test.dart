@@ -23,7 +23,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('catalog still ≥90 SKUs and 18 types (skeptic: not 8 types)', () {
-    expect(FurnitureCatalog.count, greaterThanOrEqualTo(90));
+    expect(FurnitureCatalog.count, greaterThanOrEqualTo(100));
     expect(FurnitureType.values.length, greaterThanOrEqualTo(18));
     File('${_ev.path}/catalog_not_eight_types.txt').writeAsStringSync(
       'types=${FurnitureType.values.length}\n'

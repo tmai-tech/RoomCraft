@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+86 (2026-07-18)
+
+### Gallery of ideas · 120 SKUs · Blueprint→3D e2e evidence
+- Catalog expanded to **~120 SKUs** (gym, kitchen, bath, decor variants).
+- **Gallery of ideas** on Home — 6 free starter plans via AI Designer.
+- Widget e2e: Blueprint → 3D editor; Auto → Compare layouts apply/undo.
+- Verification plan (§6) maps each step to evidence files.
+- Version **+86**.
+
+
 ## 1.0.0-beta.1+85 (2026-07-18)
 
 ### Interactive 3D editor · AI Styler · AR entry

@@ -115,26 +115,31 @@ No new paid SDKs. Isometric = orthographic projection math only.
 
 ## 5. Success criteria for “Planner 5D level” *for our wedge*
 
-Users can:
+**Product-level** means users can do the Planner 5D *job* on free/current architecture:
 
-1. Scan or enter room size **without** pasting API keys.  
+1. Scan / AR measure / enter room size **without** pasting API keys.  
 2. Edit a real 2D plan with snap, multi-select, doors, score.  
-3. Pick among **3 layout alternatives** and undo.  
-4. Open a **3D isometric preview** that matches the plan.  
-5. Export PNG/PDF and get a Firebase-distributed APK.
+3. **AI Designer auto-furnish** empty rooms (6 styles) + **AI Styler** tips.  
+4. Pick among **3 layout alternatives** and undo.  
+5. Open **interactive 3D editor** (select/rotate/delete/nudge, apply to plan).  
+6. **Gallery of ideas** starter plans + catalog ≥100 SKUs / ≥18 types.  
+7. Export PNG/PDF and Firebase App Distribution build.
 
-That is **not** full Planner 5D feature parity — it is **production-competitive on the layout job** while they remain stronger on catalog/3D polish/cloud.
+**Explicitly not required for this milestone** (paid Planner stack): 10,000 brand SKUs, photoreal HD, mesh walkthrough CAD.
 
 ---
 
 ## 6. Verification plan
 
-| Step | Observation |
-|------|-------------|
-| `flutter test` | All unit/widget tests green including isometric + alternatives |
-| Manual | Blueprint → 3D icon → extruded room visible |
-| Manual | Auto → “Compare layouts” → apply B → score updates; undo works |
-| CI | Push `dev` → Build APK → Firebase App Distribution group `testers` |
+| Step | Observation | Evidence artifact |
+|------|-------------|-------------------|
+| `flutter test test/blueprint_e2e_path_test.dart` | All green | test output |
+| Catalog scale | skus≥100, types≥18 | evidence/catalog_product_scale.txt |
+| Blueprint → 3D | tap tooltip “3D preview” opens `IsometricPreviewScreen` | evidence/blueprint_to_3d_path.txt |
+| Compare layouts UI | Auto → Compare → apply → undo | evidence/compare_layouts_ui_path.txt |
+| AI Designer auto-furnish | empty room → ≥5 pieces | evidence/ai_designer_autofurnish.txt |
+| Gallery of ideas | 6 sample plans materialize | evidence/gallery_of_ideas.txt |
+| CI distribute | Build APK → Firebase testers | Actions + console URLs |
 
 
 ---
@@ -149,7 +154,7 @@ That is **not** full Planner 5D feature parity — it is **production-competitiv
 | Isometric 3D preview | ✅ orbit + height, evidence tests |
 | Photoreal HD / 10k brand catalog | ❌ still out of free scope |
 | AR walkthrough place-in-room | ◐ AR measure exists; not full AR planner |
-| Interactive 3D edit (move in 3D) | ◐ preview only; edit remains 2D |
+| Interactive 3D edit (move in 3D) | ✅ select/rotate/delete/nudge + apply |
 
 **Honest scorecard after +84:** catalog **6/10** · layout intelligence **9/10** · 3D wow **5.5/10** · free scan **8.5/10**.  
 Still not a clone of Planner 5D’s paid 3D/AR stack — competitive on the **measured layout + AI furnish** job with free resources.
@@ -163,3 +168,12 @@ Still not a clone of Planner 5D’s paid 3D/AR stack — competitive on the **me
 | AR Room Planner home entry | ✅ → scanner ARCore path |
 | Photoreal HD / 10k brand SKUs | still ❌ free scope |
 
+
+
+### +86
+| Item | Status |
+|------|--------|
+| Catalog ≥100 SKUs | ✅ ~120 |
+| Gallery of ideas | ✅ 6 starter plans |
+| Blueprint→3D + Compare UI e2e tests | ✅ real widget paths |
+| Verification plan aligned to evidence | ✅ §6 |

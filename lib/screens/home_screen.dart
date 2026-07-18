@@ -5,6 +5,7 @@ import '../config/app_config.dart';
 import '../domain/units.dart';
 import '../models/room_model.dart';
 import '../providers/room_provider.dart';
+import '../domain/layout/sample_plans.dart';
 import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/room_thumbnail.dart';
@@ -216,6 +217,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         title: const Text(AppConfig.appName),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_awesome_mosaic_outlined),
+            tooltip: 'Gallery of ideas',
+            onPressed: _showGallery,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: 'Settings',
@@ -477,6 +483,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+
+  Future<void> _showGallery() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Gallery of ideas',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Starter plans like Planner 5D inspiration — free on-device styles',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: MediaQuery.of(ctx).size.height * 0.5,
+                child: ListView(
+                  children: [
+                    for (final plan in SamplePlans.all)
+                      ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.indigo.shade50,
+                          child: Icon(Icons.home_work_outlined,
+                              color: Colors.indigo.shade700),
+                        ),
+                        title: Text(plan.title),
+                        subtitle: Text(plan.blurb),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          final room = SamplePlans.materialize(plan);
+                          await _storageService.saveRoom(room);
+                          await _loadRooms();
+                          if (!mounted) return;
+                          _editRoom(room);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
