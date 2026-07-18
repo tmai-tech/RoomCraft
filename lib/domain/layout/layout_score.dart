@@ -1,3 +1,4 @@
+import '../../models/furniture_item.dart';
 import '../../models/room_model.dart';
 import 'clearances.dart';
 import 'collision.dart';
@@ -16,7 +17,10 @@ class LayoutScore {
 
   static LayoutScore evaluate(RoomModel room, double pixelsPerFoot) {
     final tips = Clearances.analyze(room, pixelsPerFoot);
-    final collisions = Collision.overlappingIds(room.furniture, pixelsPerFoot);
+    // Floor rugs are layers — exclude from hard collision scoring
+    final solid =
+        room.furniture.where((f) => f.type != FurnitureType.rug).toList();
+    final collisions = Collision.overlappingIds(solid, pixelsPerFoot);
 
     var score = 100;
     for (final t in tips) {
@@ -25,10 +29,10 @@ class LayoutScore {
     }
     score -= collisions.length * 5;
 
-    // Reward leaving free space (30–60% filled ideal)
+    // Reward leaving free space (30–60% filled ideal); ignore rugs
     final total = room.widthInFeet * room.lengthInFeet;
-    if (total > 0 && room.furniture.isNotEmpty) {
-      final filled = room.furniture.fold<double>(
+    if (total > 0 && solid.isNotEmpty) {
+      final filled = solid.fold<double>(
         0,
         (s, f) => s + f.widthInFeet * f.lengthInFeet,
       );

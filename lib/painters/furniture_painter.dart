@@ -138,7 +138,9 @@ class FurniturePainter extends CustomPainter {
       }
     }
 
-    final entry = FurnitureCatalog.entryFor(item.type);
+    final entry = item.catalogId != null
+        ? (FurnitureCatalog.byId(item.catalogId!) ?? FurnitureCatalog.entryFor(item.type))
+        : FurnitureCatalog.entryFor(item.type);
     final dim = '${LengthFormat.formatFeet(item.widthInFeet, unitSystem, decimals: 1)}'
         '×${LengthFormat.formatFeet(item.lengthInFeet, unitSystem, decimals: 1)}';
     final textPainter = TextPainter(
@@ -169,26 +171,7 @@ class FurniturePainter extends CustomPainter {
     canvas.restore();
   }
 
-  Color _getColorForType(FurnitureType type) {
-    switch (type) {
-      case FurnitureType.bed:
-        return Colors.blue.shade100;
-      case FurnitureType.sofa:
-        return Colors.teal.shade100;
-      case FurnitureType.table:
-        return Colors.brown.shade200;
-      case FurnitureType.chair:
-        return Colors.brown.shade300;
-      case FurnitureType.wardrobe:
-        return Colors.brown.shade400;
-      case FurnitureType.tvUnit:
-        return Colors.grey.shade400;
-      case FurnitureType.bookshelf:
-        return Colors.orange.shade200;
-      case FurnitureType.nightstand:
-        return Colors.brown.shade100;
-    }
-  }
+  Color _getColorForType(FurnitureType type) => type.planColor;
 
   void _drawDetailsForType(Canvas canvas, Rect rect, FurnitureType type) {
     final detailPaint = Paint()

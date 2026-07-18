@@ -135,3 +135,21 @@ That is **not** full Planner 5D feature parity — it is **production-competitiv
 | Manual | Blueprint → 3D icon → extruded room visible |
 | Manual | Auto → “Compare layouts” → apply B → score updates; undo works |
 | CI | Push `dev` → Build APK → Firebase App Distribution group `testers` |
+
+
+---
+
+## 7. Sprint progress (2026-07-18 +84)
+
+| Item | Status |
+|------|--------|
+| Catalog 80+ SKUs | ✅ ~93 SKUs, 11 categories, 18 types |
+| AI Designer Furnisher | ✅ 6 styles, on-device, free |
+| Layout A/B/C + score | ✅ + apply/undo |
+| Isometric 3D preview | ✅ orbit + height, evidence tests |
+| Photoreal HD / 10k brand catalog | ❌ still out of free scope |
+| AR walkthrough place-in-room | ◐ AR measure exists; not full AR planner |
+| Interactive 3D edit (move in 3D) | ◐ preview only; edit remains 2D |
+
+**Honest scorecard after +84:** catalog **6/10** · layout intelligence **9/10** · 3D wow **5.5/10** · free scan **8.5/10**.  
+Still not a clone of Planner 5D’s paid 3D/AR stack — competitive on the **measured layout + AI furnish** job with free resources.

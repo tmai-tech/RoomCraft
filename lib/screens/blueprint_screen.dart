@@ -11,6 +11,7 @@ import '../services/analytics_service.dart';
 import '../services/export_service.dart';
 import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
+import '../domain/layout/ai_designer.dart';
 import '../domain/layout/layout_alternatives.dart';
 import '../screens/isometric_preview_screen.dart';
 import '../widgets/furniture_catalog_sheet.dart';
@@ -473,10 +474,12 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -533,7 +536,40 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                     _showLayoutAlternatives(context, notifier, state);
                   },
                 ),
-              if (hasFurniture) const Divider(),
+              const Divider(),
+              Text(
+                'AI Designer (Furnisher)',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Fill the room from catalog recipes — free on-device styles',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              for (final style in DesignStyle.values)
+                ListTile(
+                  dense: true,
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.deepPurple.shade50,
+                    child: Icon(Icons.auto_fix_high, color: Colors.deepPurple.shade700, size: 20),
+                  ),
+                  title: Text(style.label),
+                  subtitle: Text(style.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    notifier.applyDesignStyle(style);
+                    AnalyticsService.instance.autoArrange(type: 'design_${style.name}');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Applied AI Designer: ${style.label}')),
+                    );
+                  },
+                ),
+              const Divider(),
               Text(
                 hasFurniture
                     ? 'Or replace with a room preset'
@@ -574,6 +610,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   },
                 ),
             ],
+          ),
           ),
         ),
       ),
@@ -893,11 +930,11 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     FurnitureCatalogSheet.show(
       context,
       unitSystem: state.unitSystem,
-      onAdd: (type, w, l) {
+      onAdd: (type, w, l, {catalogId}) {
         // Place near center of room outline in canvas coords.
         final cx = (state.room.widthInFeet * state.pixelsPerFoot) / 2;
         final cy = (state.room.lengthInFeet * state.pixelsPerFoot) / 2;
-        notifier.addFurniture(type, Offset(cx, cy), w, l);
+        notifier.addFurniture(type, Offset(cx, cy), w, l, catalogId: catalogId);
       },
     );
   }

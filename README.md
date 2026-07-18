@@ -11,7 +11,9 @@ Upload / scan a room → top-down blueprint → arrange furniture → export PNG
 - Auto-arrange (bedroom / living / office)  
 - Layout score & collision tips  
 - Layout alternatives A/B/C (spacious / wall-hug / conversation)  
-- 3D isometric preview (orbit)  
+- AI Designer Furnisher (6 free on-device styles)  
+- Catalog ~90+ items (kitchen, bath, lighting, decor…)  
+- 3D isometric preview (orbit + height)  
 - Export / share plan as PNG  
 - Firebase App Distribution builds from `dev`
 

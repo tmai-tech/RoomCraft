@@ -25,6 +25,7 @@ class IsometricPreviewScreen extends StatefulWidget {
 
 class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
   double _yaw = 0;
+  double _pitch = 0.35; // scales wall extrusion height
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +36,10 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
           IconButton(
             tooltip: 'Reset view',
             icon: const Icon(Icons.refresh),
-            onPressed: () => setState(() => _yaw = 0),
+            onPressed: () => setState(() {
+              _yaw = 0;
+              _pitch = 0.3;
+            }),
           ),
         ],
       ),
@@ -64,6 +68,7 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                   pixelsPerFoot: widget.pixelsPerFoot,
                   unitSystem: widget.unitSystem,
                   yaw: _yaw,
+                  wallHeightFt: 7.0 + _pitch * 3,
                 ),
                 child: const SizedBox.expand(),
               ),
@@ -76,11 +81,35 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
                 children: [
                   const Icon(Icons.threed_rotation, size: 18),
                   Expanded(
-                    child: Slider(
-                      value: _yaw,
-                      min: -math.pi,
-                      max: math.pi,
-                      onChanged: (v) => setState(() => _yaw = v),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Text('Orbit', style: TextStyle(fontSize: 11)),
+                            Expanded(
+                              child: Slider(
+                                value: _yaw,
+                                min: -math.pi,
+                                max: math.pi,
+                                onChanged: (v) => setState(() => _yaw = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            const Text('Height', style: TextStyle(fontSize: 11)),
+                            Expanded(
+                              child: Slider(
+                                value: _pitch,
+                                min: 0,
+                                max: 1,
+                                onChanged: (v) => setState(() => _pitch = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                   TextButton(

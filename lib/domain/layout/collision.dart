@@ -4,6 +4,8 @@ import 'dart:ui';
 import '../../models/furniture_item.dart';
 import 'furniture_bounds.dart';
 
+bool _isFloorLayer(FurnitureItem f) => f.type == FurnitureType.rug;
+
 class CollisionPair {
   final String aId;
   final String bId;
@@ -20,7 +22,9 @@ class Collision {
   }) {
     final ids = <String>{};
     for (var i = 0; i < items.length; i++) {
+      if (_isFloorLayer(items[i])) continue;
       for (var j = i + 1; j < items.length; j++) {
+        if (_isFloorLayer(items[j])) continue;
         if (obbOverlap(items[i], items[j], pixelsPerFoot, padding: padding)) {
           ids.add(items[i].id);
           ids.add(items[j].id);

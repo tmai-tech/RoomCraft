@@ -9,6 +9,7 @@ import '../domain/units.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../models/stroke_model.dart';
+import '../domain/layout/ai_designer.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/layout/clearances.dart';
 import '../domain/layout/furniture_bounds.dart';
@@ -330,8 +331,9 @@ class RoomNotifier extends Notifier<RoomState> {
     FurnitureType type,
     Offset position,
     double width,
-    double length,
-  ) {
+    double length, {
+    String? catalogId,
+  }) {
     _pushHistory();
     final roomR = FurnitureBounds.roomRect(
       state.room.widthInFeet,
@@ -345,6 +347,7 @@ class RoomNotifier extends Notifier<RoomState> {
       position: position,
       widthInFeet: width,
       lengthInFeet: length,
+      catalogId: catalogId,
     );
     newItem = newItem.copyWith(
       position: FurnitureBounds.clampCenterInRoom(
@@ -693,6 +696,26 @@ class RoomNotifier extends Notifier<RoomState> {
     _pushHistory();
     state = state.copyWith(
       room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+      clearSelected: true,
+      isDraggingFurniture: false,
+      currentTool: ToolMode.select,
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
+  }
+
+
+  /// AI Designer: replace furniture with a style recipe + smart placement.
+  void applyDesignStyle(DesignStyle style) {
+    _pushHistory();
+    final items = AiDesigner.furnish(
+      room: state.room,
+      pixelsPerFoot: state.pixelsPerFoot,
+      style: style,
+    );
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: items, updatedAt: DateTime.now()),
+      layoutType: style.roomHint,
       clearSelected: true,
       isDraggingFurniture: false,
       currentTool: ToolMode.select,

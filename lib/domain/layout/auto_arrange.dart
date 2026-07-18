@@ -128,6 +128,7 @@ class AutoArrange {
             w: f.widthInFeet,
             l: f.lengthInFeet,
             rot: f.rotationAngle,
+            catalogId: f.catalogId,
           ),
         )
         .toList();
@@ -189,6 +190,7 @@ class AutoArrange {
             widthInFeet: s.w,
             lengthInFeet: s.l,
             rotationAngle: rot,
+            catalogId: s.catalogId,
           );
           item = item.copyWith(
             position: FurnitureBounds.clampCenterInRoom(
@@ -226,6 +228,7 @@ class AutoArrange {
         widthInFeet: s.w,
         lengthInFeet: s.l,
         rotationAngle: s.rot,
+        catalogId: s.catalogId,
       );
       best = Collision.resolveOverlaps(best, placed, pixelsPerFoot, roomR);
       placed.add(best);
@@ -276,7 +279,8 @@ class AutoArrange {
     if (style == ArrangeStyle.conversation) {
       final seating = item.type == FurnitureType.sofa ||
           item.type == FurnitureType.chair ||
-          item.type == FurnitureType.table;
+          item.type == FurnitureType.table ||
+          item.type == FurnitureType.desk;
       final dCenter = (item.position - room.center).distance;
       if (seating) {
         // Prefer near center for conversation / desk clusters
@@ -481,11 +485,13 @@ class _Spec {
   final double w;
   final double l;
   final double rot;
+  final String? catalogId;
   const _Spec({
     required this.id,
     required this.type,
     required this.w,
     required this.l,
     required this.rot,
+    this.catalogId,
   });
 }

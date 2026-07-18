@@ -2,6 +2,18 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+84 (2026-07-18)
+
+### Planner 5D level-up: catalog, AI Designer, 3D evidence
+- **Catalog ~93 SKUs** across 11 categories (kitchen, bath, lighting, decor, office, outdoor…).
+- **18 furniture types** (desk, rug, plant, lamp, appliance, vanity, bath, toilet, outdoor…).
+- **AI Designer (Furnisher)** — 6 on-device styles (Modern minimal, Cozy, Scandinavian, Family, Home office, Studio).
+- Catalog items carry **catalogId** through arrange/reflow; rugs as floor layer.
+- 3D isometric: gradient stage, height slider, orbit; widget + paint path tests with evidence.
+- Layout A/B/C apply/undo covered via roomProvider integration tests.
+- Version **+84**.
+
+
 ## 1.0.0-beta.1+83 (2026-07-18)
 
 ### Planner 5D parity sprint — isometric 3D + layout A/B/C

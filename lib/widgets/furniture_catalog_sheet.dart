@@ -7,7 +7,7 @@ import '../models/furniture_item.dart';
 /// Bottom sheet furniture catalog with search, categories, custom size.
 class FurnitureCatalogSheet extends StatefulWidget {
   final UnitSystem unitSystem;
-  final void Function(FurnitureType type, double widthFt, double lengthFt) onAdd;
+  final void Function(FurnitureType type, double widthFt, double lengthFt, {String? catalogId}) onAdd;
 
   const FurnitureCatalogSheet({
     super.key,
@@ -18,7 +18,7 @@ class FurnitureCatalogSheet extends StatefulWidget {
   static Future<void> show(
     BuildContext context, {
     required UnitSystem unitSystem,
-    required void Function(FurnitureType type, double widthFt, double lengthFt) onAdd,
+    required void Function(FurnitureType type, double widthFt, double lengthFt, {String? catalogId}) onAdd,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -131,7 +131,7 @@ class _FurnitureCatalogSheetState extends State<FurnitureCatalogSheet> {
 
     if (result == null || !mounted) return;
     Navigator.of(context).pop();
-    widget.onAdd(e.type, result.$1, result.$2);
+    widget.onAdd(e.type, result.$1, result.$2, catalogId: e.id);
   }
 
   @override

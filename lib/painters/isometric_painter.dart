@@ -61,10 +61,18 @@ class IsometricPainter extends CustomPainter {
     final sy = (size.height - pad * 2) / bounds.height;
     final s = math.min(sx, sy);
 
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFFF4F6F8),
-    );
+    // Soft sky → floor gradient (Planner-style 3D stage)
+    final bg = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFFE8F0F8),
+          Color(0xFFF4F6F8),
+          Color(0xFFECEFF1),
+        ],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, bg);
 
     // Soft floor shadow ellipse
     final shadow = Paint()
@@ -295,7 +303,7 @@ class IsometricPainter extends CustomPainter {
     );
     final tp = TextPainter(
       text: TextSpan(
-        text: item.type.name,
+        text: item.type.shortLabel,
         style: const TextStyle(
           color: Colors.black87,
           fontSize: 9,
@@ -355,47 +363,9 @@ class IsometricPainter extends CustomPainter {
     return Iso.project(rx, ry, z);
   }
 
-  static double _heightFor(FurnitureType t) {
-    switch (t) {
-      case FurnitureType.bed:
-        return 2.2;
-      case FurnitureType.wardrobe:
-        return 6.5;
-      case FurnitureType.sofa:
-        return 2.8;
-      case FurnitureType.table:
-        return 2.5;
-      case FurnitureType.chair:
-        return 3.0;
-      case FurnitureType.tvUnit:
-        return 2.0;
-      case FurnitureType.bookshelf:
-        return 6.0;
-      case FurnitureType.nightstand:
-        return 2.0;
-    }
-  }
+  static double _heightFor(FurnitureType t) => t.defaultHeightFt;
 
-  static Color _colorFor(FurnitureType t) {
-    switch (t) {
-      case FurnitureType.bed:
-        return Colors.blue.shade200;
-      case FurnitureType.sofa:
-        return Colors.teal.shade200;
-      case FurnitureType.table:
-        return Colors.brown.shade200;
-      case FurnitureType.chair:
-        return Colors.orange.shade200;
-      case FurnitureType.wardrobe:
-        return Colors.indigo.shade200;
-      case FurnitureType.tvUnit:
-        return Colors.grey.shade400;
-      case FurnitureType.bookshelf:
-        return Colors.deepOrange.shade200;
-      case FurnitureType.nightstand:
-        return Colors.amber.shade200;
-    }
-  }
+  static Color _colorFor(FurnitureType t) => t.planColor;
 
   @override
   bool shouldRepaint(covariant IsometricPainter old) {
