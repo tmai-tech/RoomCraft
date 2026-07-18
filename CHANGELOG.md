@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+103 (2026-07-18)
+
+### Dark theme · wall height · Play listing copy
+- System / light / dark theme (Settings).
+- Per-room wall height for 3D extrusion.
+- Copy short & full Play listing text from Settings.
+- Version **+103**.
+
 ## 1.0.0-beta.1+102 (2026-07-18)
 
 ### Home pillars · store screenshot · exterior furnish

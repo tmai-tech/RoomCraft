@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
@@ -44,5 +45,28 @@ class PrefsService {
   Future<void> setBetaBannerDismissed(bool dismissed) async {
     final prefs = await _prefs;
     await prefs.setBool(AppConfig.betaBannerDismissedKey, dismissed);
+  }
+
+  /// system | light | dark
+  Future<ThemeMode> loadThemeMode() async {
+    final prefs = await _prefs;
+    switch (prefs.getString(AppConfig.themeModePrefKey)) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
+  Future<void> saveThemeMode(ThemeMode mode) async {
+    final prefs = await _prefs;
+    final raw = switch (mode) {
+      ThemeMode.light => 'light',
+      ThemeMode.dark => 'dark',
+      ThemeMode.system => 'system',
+    };
+    await prefs.setString(AppConfig.themeModePrefKey, raw);
   }
 }

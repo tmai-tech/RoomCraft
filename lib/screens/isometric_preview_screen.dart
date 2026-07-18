@@ -51,7 +51,8 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
 
   RoomModel get _viewRoom => widget.room.copyWith(furniture: _furniture);
 
-  double get _wallH => 7.0 + _pitch * 3;
+  double get _wallH =>
+      widget.room.wallHeightFt.clamp(7.0, 14.0) + (_pitch - 0.35) * 2;
 
   void _commit() {
     widget.onFurnitureChanged?.call(List<FurnitureItem>.from(_furniture));

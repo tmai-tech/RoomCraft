@@ -5,7 +5,7 @@ class AppConfig {
 
   /// Display version (keep in sync with pubspec.yaml).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 102;
+  static const int buildNumber = 103;
   static const bool isBeta = true;
 
   /// Firebase Google Sign-In Web client ID (oauth_client client_type 3).
@@ -41,6 +41,29 @@ class AppConfig {
   static const String unitsPrefKey = 'unit_system';
   static const String onboardingDoneKey = 'onboarding_done_v1';
   static const String betaBannerDismissedKey = 'beta_banner_dismissed_v1';
+  static const String themeModePrefKey = 'theme_mode_v1';
+
+  /// Default interior wall height (feet) — Planner-style room property.
+  static const double defaultWallHeightFt = 8.0;
+
+  /// Play listing short description (≤80 chars for store form).
+  static const String playShortDescription =
+      'AR room planner: measure, arrange 10k+ free décor, explore in 3D.';
+
+  /// Play listing full description (paste into Play Console).
+  static const String playFullDescription = '''
+RoomCraft is a free-first room planner for real homes.
+
+• AR Room Planner — measure real floors with ARCore, place furniture on plan or camera
+• 10,000+ free furniture catalogue with marketplace-style collections
+• AI Furnisher & Styler on-device (no paid CAD required)
+• 2D blueprint with walkway heatmap, layout score, L-shape floors
+• 3D perspective walkthrough with day/evening/night lighting
+• Multi-floor levels and exterior patio plans
+• Export PNG, heatmap, PDF, 2D+3D plan pack, store screenshots
+
+Plans stay on your device. Optional free vision and cloud backup when you enable them.
+''';
 
   /// Gemini models tried in order (404 / not-found → next).
   static const List<String> geminiModelCandidates = [

@@ -20,18 +20,59 @@ Future<void> main() async {
   runApp(const ProviderScope(child: RoomCraftApp()));
 }
 
-class RoomCraftApp extends StatelessWidget {
+class RoomCraftApp extends StatefulWidget {
   const RoomCraftApp({super.key});
 
   @override
+  State<RoomCraftApp> createState() => RoomCraftAppState();
+
+  /// Allow Settings to flip theme without full restart.
+  static RoomCraftAppState? of(BuildContext context) {
+    return context.findAncestorStateOfType<RoomCraftAppState>();
+  }
+}
+
+class RoomCraftAppState extends State<RoomCraftApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+  final _prefs = PrefsService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    final mode = await _prefs.loadThemeMode();
+    if (!mounted) return;
+    setState(() => _themeMode = mode);
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    setState(() => _themeMode = mode);
+    await _prefs.saveThemeMode(mode);
+  }
+
+  ThemeMode get themeMode => _themeMode;
+
+  @override
   Widget build(BuildContext context) {
+    final seed = Colors.blueGrey;
     return MaterialApp(
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blueGrey,
+          seedColor: seed,
           brightness: Brightness.light,
+        ),
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: Brightness.dark,
         ),
         useMaterial3: true,
       ),

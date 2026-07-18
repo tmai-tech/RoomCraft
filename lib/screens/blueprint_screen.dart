@@ -390,7 +390,9 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                       pixelsPerFoot: roomState.pixelsPerFoot,
                       unitSystem: roomState.unitSystem,
                       yaw: _isoYaw,
-                      wallHeightFt: 7.0 + _isoPitch * 3,
+                      wallHeightFt:
+                          roomState.room.wallHeightFt.clamp(7.0, 14.0) +
+                              (_isoPitch - 0.35) * 2,
                       selectedId: roomState.selectedFurnitureId,
                       perspective: true,
                     ),
@@ -1074,12 +1076,16 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     final lengthController = TextEditingController(
       text: LengthFormat.feetToDisplay(room.lengthInFeet, unit).toStringAsFixed(1),
     );
+    final wallController = TextEditingController(
+      text: LengthFormat.feetToDisplay(room.wallHeightFt, unit).toStringAsFixed(1),
+    );
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Room size (${unit.label})'),
-        content: Column(
+        content: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
@@ -1092,6 +1098,14 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               decoration: InputDecoration(labelText: 'Length (${unit.label})'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
+            TextField(
+              key: const Key('room_wall_height'),
+              controller: wallController,
+              decoration: InputDecoration(
+                labelText: 'Wall height (${unit.label})',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
             const SizedBox(height: 8),
             Text(
               'Level: ${room.spaceLabel}'
@@ -1099,6 +1113,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
           ],
+        ),
         ),
         actions: [
           TextButton(
@@ -1151,13 +1166,18 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             onPressed: () {
               final wDisp = double.tryParse(widthController.text);
               final lDisp = double.tryParse(lengthController.text);
+              final hDisp = double.tryParse(wallController.text);
               final w = wDisp != null
                   ? LengthFormat.displayToFeet(wDisp, unit)
                   : room.widthInFeet;
               final l = lDisp != null
                   ? LengthFormat.displayToFeet(lDisp, unit)
                   : room.lengthInFeet;
+              final h = hDisp != null
+                  ? LengthFormat.displayToFeet(hDisp, unit)
+                  : room.wallHeightFt;
               notifier.updateRoomSize(w, l);
+              notifier.setWallHeightFt(h);
               Navigator.of(ctx).pop();
             },
             child: const Text('Update'),

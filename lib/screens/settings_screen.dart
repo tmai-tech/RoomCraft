@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
@@ -9,6 +10,7 @@ import '../services/huggingface_vision_scanner.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/prefs_service.dart';
 import '../services/training_export_service.dart';
+import '../main.dart';
 import 'feedback_screen.dart';
 import 'privacy_data_safety_screen.dart';
 
@@ -159,6 +161,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 16),
           ],
+          const Text(
+            'Appearance',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<ThemeMode>(
+            key: const Key('theme_mode_segment'),
+            segments: const [
+              ButtonSegment(
+                value: ThemeMode.system,
+                label: Text('System'),
+                icon: Icon(Icons.brightness_auto, size: 16),
+              ),
+              ButtonSegment(
+                value: ThemeMode.light,
+                label: Text('Light'),
+                icon: Icon(Icons.light_mode, size: 16),
+              ),
+              ButtonSegment(
+                value: ThemeMode.dark,
+                label: Text('Dark'),
+                icon: Icon(Icons.dark_mode, size: 16),
+              ),
+            ],
+            selected: {
+              RoomCraftApp.of(context)?.themeMode ?? ThemeMode.system,
+            },
+            onSelectionChanged: (s) {
+              RoomCraftApp.of(context)?.setThemeMode(s.first);
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Play listing copy',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.storefront_outlined),
+              title: const Text('Short description'),
+              subtitle: Text(
+                AppConfig.playShortDescription,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: IconButton(
+                key: const Key('copy_play_short'),
+                tooltip: 'Copy short description',
+                icon: const Icon(Icons.copy),
+                onPressed: () async {
+                  await Clipboard.setData(
+                    const ClipboardData(text: AppConfig.playShortDescription),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Short description copied')),
+                  );
+                },
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Full description'),
+              subtitle: const Text('Copy for Play Console listing'),
+              trailing: IconButton(
+                key: const Key('copy_play_full'),
+                tooltip: 'Copy full description',
+                icon: const Icon(Icons.copy),
+                onPressed: () async {
+                  await Clipboard.setData(
+                    const ClipboardData(text: AppConfig.playFullDescription),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Full description copied')),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Card(
             color: Colors.green.shade50,
             child: const ListTile(

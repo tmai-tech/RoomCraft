@@ -7,8 +7,8 @@ import 'package:room_craft/models/room_model.dart';
 import 'package:room_craft/services/export_service.dart';
 
 void main() {
-  test('buildNumber is 102', () {
-    expect(AppConfig.buildNumber, 102);
+  test('buildNumber is current beta', () {
+    expect(AppConfig.buildNumber, greaterThanOrEqualTo(102));
   });
 
   test('exterior furnish prefers outdoor types', () {

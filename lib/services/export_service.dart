@@ -325,6 +325,7 @@ class ExportService {
       'Size: $dim',
       'Shape: $shape',
       'Level: ${room.spaceLabel}',
+      'Wall height: ${LengthFormat.formatFeet(room.wallHeightFt, unitSystem)}',
       'Furniture: ${room.furniture.length} · Lines: ${room.strokes.length}',
       '',
       'Furniture list:',

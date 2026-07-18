@@ -89,6 +89,7 @@ class StorageService {
           : List.of(source.floorPolygonFt!),
       floorLevel: source.floorLevel,
       isExterior: source.isExterior,
+      wallHeightFt: source.wallHeightFt,
     );
     await saveRoom(room);
     return room;
@@ -116,6 +117,7 @@ class StorageService {
           : List.of(source.floorPolygonFt!),
       floorLevel: nextLevel,
       isExterior: false,
+      wallHeightFt: source.wallHeightFt,
     );
     await saveRoom(room);
     return room;

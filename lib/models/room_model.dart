@@ -20,6 +20,8 @@ class RoomModel {
   int floorLevel;
   /// Patio / outdoor plan (grass stage, outdoor catalog).
   bool isExterior;
+  /// Interior wall height in feet (3D extrusion).
+  double wallHeightFt;
 
   RoomModel({
     required this.id,
@@ -34,6 +36,7 @@ class RoomModel {
     List<Offset>? floorPolygonFt,
     this.floorLevel = 0,
     this.isExterior = false,
+    this.wallHeightFt = 8.0,
   })  : strokes = List<StrokeModel>.from(strokes ?? const []),
         furniture = List<FurnitureItem>.from(furniture ?? const []),
         floorPolygonFt = floorPolygonFt == null
@@ -66,6 +69,7 @@ class RoomModel {
       'updatedAt': (updatedAt ?? DateTime.now()).toIso8601String(),
       'floorLevel': floorLevel,
       'isExterior': isExterior,
+      'wallHeightFt': wallHeightFt,
       if (floorPolygonFt != null)
         'floorPolygonFt': [
           for (final p in floorPolygonFt!)
@@ -110,6 +114,7 @@ class RoomModel {
       floorPolygonFt: _parsePolygon(map['floorPolygonFt']),
       floorLevel: (map['floorLevel'] as num?)?.toInt() ?? 0,
       isExterior: map['isExterior'] == true,
+      wallHeightFt: (map['wallHeightFt'] as num?)?.toDouble() ?? 8.0,
     );
   }
 
@@ -176,6 +181,7 @@ class RoomModel {
     bool clearFloorPolygon = false,
     int? floorLevel,
     bool? isExterior,
+    double? wallHeightFt,
   }) {
     return RoomModel(
       id: id ?? this.id,
@@ -195,6 +201,7 @@ class RoomModel {
                   : List<Offset>.from(this.floorPolygonFt!))),
       floorLevel: floorLevel ?? this.floorLevel,
       isExterior: isExterior ?? this.isExterior,
+      wallHeightFt: wallHeightFt ?? this.wallHeightFt,
     );
   }
 }

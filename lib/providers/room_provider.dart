@@ -706,6 +706,17 @@ class RoomNotifier extends Notifier<RoomState> {
     _syncHistoryFlags();
   }
 
+  void setWallHeightFt(double feet) {
+    _pushHistory();
+    state = state.copyWith(
+      room: state.room.copyWith(
+        wallHeightFt: feet.clamp(7.0, 14.0),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _syncHistoryFlags();
+  }
+
 
   void setLayoutType(RoomLayoutType type) {
     state = state.copyWith(layoutType: type);

@@ -145,7 +145,7 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 | Play public listing | Firebase beta → closed track docs | Store assets + policy |
 | Device QA AR place | Manual on ARCore phones | — |
 
-**Next free sprint order:** (1–8)✅+95–101 (9)~~home pillars + store screenshot export + exterior recipe~~✅+102 (10) Play Console closed track upload (ops).
+**Next free sprint order:** (1–9)✅+95–102 (10)~~theme + wall height + listing copy~~✅+103 (11) Play Console closed track upload (ops).
 
 ---
 
@@ -285,4 +285,12 @@ flutter test test/source_proof_test.dart \
 | Store screenshot 1080×1920 export | ✅ free marketing frame |
 | Exterior AI furnish outdoor recipe | ✅ |
 | Photoreal / brand / Play Console upload | ❌ ops + partners |
+
+### +103
+| Item | Status |
+|------|--------|
+| System / light / dark theme | ✅ PrefsService + MaterialApp |
+| Room wallHeightFt → 3D | ✅ |
+| Play short/full description copy | ✅ AppConfig + Settings |
+| Photoreal / brand / Play Console upload | ❌ ops |
 
