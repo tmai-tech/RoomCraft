@@ -687,6 +687,20 @@ class RoomNotifier extends Notifier<RoomState> {
     _refreshLayout();
   }
 
+  /// Apply a precomputed alternative layout (A/B/C) with undo support.
+  void applyLayoutAlternative(List<FurnitureItem> furniture) {
+    if (furniture.isEmpty) return;
+    _pushHistory();
+    state = state.copyWith(
+      room: state.room.copyWith(furniture: furniture, updatedAt: DateTime.now()),
+      clearSelected: true,
+      isDraggingFurniture: false,
+      currentTool: ToolMode.select,
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
+  }
+
   /// Replace plan furniture with a room-type preset (bedroom / living / office).
   void applyPresetLayout(RoomLayoutType type) {
     _pushHistory();

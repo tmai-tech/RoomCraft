@@ -11,6 +11,42 @@ import 'furniture_bounds.dart';
 
 enum RoomLayoutType { bedroom, living, office, empty }
 
+/// Placement strategy for reflow of existing pieces (A/B/C alternatives).
+enum ArrangeStyle {
+  /// Along walls, open center (default product path).
+  spacious,
+
+  /// Maximize wall contact; denser storage walls.
+  wallHug,
+
+  /// Cluster seating / work pieces toward conversation / focus zones.
+  conversation,
+}
+
+extension ArrangeStyleX on ArrangeStyle {
+  String get label {
+    switch (this) {
+      case ArrangeStyle.spacious:
+        return 'Spacious';
+      case ArrangeStyle.wallHug:
+        return 'Wall hug';
+      case ArrangeStyle.conversation:
+        return 'Conversation';
+    }
+  }
+
+  String get subtitle {
+    switch (this) {
+      case ArrangeStyle.spacious:
+        return 'Pieces along walls, clear walkways through the middle';
+      case ArrangeStyle.wallHug:
+        return 'Maximize wall contact for storage and beds';
+      case ArrangeStyle.conversation:
+        return 'Cluster seating / desks for face-to-face use';
+    }
+  }
+}
+
 /// Rule-based packer for spacious layouts.
 ///
 /// Primary product use: re-pack **existing** scanned furniture (same pieces)
@@ -65,6 +101,19 @@ class AutoArrange {
     required RoomModel room,
     required double pixelsPerFoot,
   }) {
+    return arrangeWithStyle(
+      room: room,
+      pixelsPerFoot: pixelsPerFoot,
+      style: ArrangeStyle.spacious,
+    );
+  }
+
+  /// Reflow existing pieces with a named [style] (spacious / wall-hug / conversation).
+  static List<FurnitureItem> arrangeWithStyle({
+    required RoomModel room,
+    required double pixelsPerFoot,
+    required ArrangeStyle style,
+  }) {
     final roomR = FurnitureBounds.roomRect(
       room.widthInFeet,
       room.lengthInFeet,
@@ -91,7 +140,8 @@ class AutoArrange {
       roomR: roomR,
       pixelsPerFoot: pixelsPerFoot,
       specs: specs,
-      preferSpacious: true,
+      preferSpacious: style == ArrangeStyle.spacious,
+      style: style,
     );
   }
 
@@ -101,10 +151,15 @@ class AutoArrange {
     required double pixelsPerFoot,
     required List<_Spec> specs,
     bool preferSpacious = false,
+    ArrangeStyle style = ArrangeStyle.spacious,
   }) {
     final placed = <FurnitureItem>[];
     // Wider margin when optimizing for space (walkways)
-    final margin = (preferSpacious ? 0.75 : 0.5) * pixelsPerFoot;
+    final margin = switch (style) {
+      ArrangeStyle.spacious => 0.75 * pixelsPerFoot,
+      ArrangeStyle.wallHug => 0.35 * pixelsPerFoot,
+      ArrangeStyle.conversation => 0.55 * pixelsPerFoot,
+    };
     final doorKeepOut = _doorKeepOutCenters(room, pixelsPerFoot);
 
     for (final s in specs) {
@@ -123,7 +178,8 @@ class AutoArrange {
           itemW,
           itemH,
           margin,
-          spacious: preferSpacious,
+          spacious: style == ArrangeStyle.spacious,
+          conversation: style == ArrangeStyle.conversation,
         );
         for (final pos in candidates) {
           var item = FurnitureItem(
@@ -154,6 +210,7 @@ class AutoArrange {
             roomR,
             pixelsPerFoot,
             spacious: preferSpacious,
+            style: style,
           );
           if (score > bestScore) {
             bestScore = score;
@@ -184,6 +241,7 @@ class AutoArrange {
     Rect room,
     double pxf, {
     required bool spacious,
+    ArrangeStyle style = ArrangeStyle.spacious,
   }) {
     final r = FurnitureBounds.itemRect(item, pxf);
     var score = 0.0;
@@ -193,9 +251,52 @@ class AutoArrange {
       math.min(r.left - room.left, room.right - r.right),
       math.min(r.top - room.top, room.bottom - r.bottom),
     );
-    score += math.max(0, 40 - distWall); // closer to wall → higher
+    final wallWeight = style == ArrangeStyle.wallHug ? 70.0 : 40.0;
+    score += math.max(0, wallWeight - distWall); // closer to wall → higher
 
-    if (spacious) {
+    if (style == ArrangeStyle.wallHug) {
+      // Strongly prefer storage / beds on walls
+      if (item.type == FurnitureType.wardrobe ||
+          item.type == FurnitureType.bookshelf ||
+          item.type == FurnitureType.tvUnit ||
+          item.type == FurnitureType.bed) {
+        if (distWall < 14) score += 40;
+      }
+      // Small items fill corners
+      if (item.type == FurnitureType.nightstand ||
+          item.type == FurnitureType.chair) {
+        final corner = math.min(
+          math.min((r.left - room.left).abs(), (room.right - r.right).abs()),
+          math.min((r.top - room.top).abs(), (room.bottom - r.bottom).abs()),
+        );
+        if (corner < 20) score += 20;
+      }
+    }
+
+    if (style == ArrangeStyle.conversation) {
+      final seating = item.type == FurnitureType.sofa ||
+          item.type == FurnitureType.chair ||
+          item.type == FurnitureType.table;
+      final dCenter = (item.position - room.center).distance;
+      if (seating) {
+        // Prefer near center for conversation / desk clusters
+        score += math.max(0, 120 - dCenter) * 0.35;
+        for (final o in others) {
+          if (o.type == FurnitureType.sofa ||
+              o.type == FurnitureType.chair ||
+              o.type == FurnitureType.table) {
+            final d = (item.position - o.position).distance;
+            // Prefer moderate clustering (not on top, not far)
+            score += math.max(0, 60 - (d - 40).abs()) * 0.2;
+          }
+        }
+      } else {
+        // Storage stays on walls
+        score += math.max(0, 50 - distWall);
+      }
+    }
+
+    if (spacious || style == ArrangeStyle.spacious) {
       // Reward distance from room center (leave open middle)
       final dCenter = (item.position - room.center).distance;
       score += dCenter * 0.15;
@@ -291,6 +392,7 @@ class AutoArrange {
     double itemH,
     double margin, {
     bool spacious = false,
+    bool conversation = false,
   }) {
     final cx = room.center.dx;
     final cy = room.center.dy;
@@ -299,8 +401,25 @@ class AutoArrange {
     final top = room.top + itemH / 2 + margin;
     final bottom = room.bottom - itemH / 2 - margin;
 
-    final list = <Offset>[
-      // Against walls (perimeter) first
+    final list = <Offset>[];
+
+    if (conversation) {
+      // Center-first ring for conversation clusters
+      list.addAll([
+        Offset(cx, cy),
+        Offset(cx - itemW, cy),
+        Offset(cx + itemW, cy),
+        Offset(cx, cy - itemH),
+        Offset(cx, cy + itemH),
+        Offset(cx - itemW * 0.7, cy - itemH * 0.7),
+        Offset(cx + itemW * 0.7, cy - itemH * 0.7),
+        Offset(cx - itemW * 0.7, cy + itemH * 0.7),
+        Offset(cx + itemW * 0.7, cy + itemH * 0.7),
+      ]);
+    }
+
+    // Against walls (perimeter)
+    list.addAll([
       Offset(cx, top),
       Offset(cx, bottom),
       Offset(left, cy),
@@ -309,7 +428,7 @@ class AutoArrange {
       Offset(right, top),
       Offset(left, bottom),
       Offset(right, bottom),
-    ];
+    ]);
 
     // Quarter points on each wall
     list.addAll([

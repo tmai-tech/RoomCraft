@@ -11,6 +11,8 @@ import '../services/analytics_service.dart';
 import '../services/export_service.dart';
 import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
+import '../domain/layout/layout_alternatives.dart';
+import '../screens/isometric_preview_screen.dart';
 import '../widgets/furniture_catalog_sheet.dart';
 
 class BlueprintScreen extends ConsumerStatefulWidget {
@@ -91,6 +93,22 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                 }
               },
               tooltip: 'Save',
+            ),
+            IconButton(
+              icon: const Icon(Icons.view_in_ar),
+              tooltip: '3D preview',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => IsometricPreviewScreen(
+                      room: roomState.room,
+                      pixelsPerFoot: roomState.pixelsPerFoot,
+                      unitSystem: roomState.unitSystem,
+                    ),
+                  ),
+                );
+                AnalyticsService.instance.logEvent('isometric_preview');
+              },
             ),
             PopupMenuButton<String>(
               tooltip: 'Export',
@@ -366,6 +384,86 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     );
   }
 
+  void _showLayoutAlternatives(
+    BuildContext context,
+    RoomNotifier notifier,
+    RoomState state,
+  ) {
+    final alts = LayoutAlternatives.generate(
+      room: state.room,
+      pixelsPerFoot: state.pixelsPerFoot,
+    );
+    if (alts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add furniture first to compare layouts')),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Layout alternatives',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Same furniture, three placement strategies. Scores use live layout rules.',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              for (final alt in alts)
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: alt.score >= 80
+                        ? Colors.green.shade50
+                        : alt.score >= 50
+                            ? Colors.orange.shade50
+                            : Colors.red.shade50,
+                    child: Text(
+                      alt.letter,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  title: Text('${alt.style.label} · score ${alt.score}'),
+                  subtitle: Text(
+                    alt.tips.isEmpty
+                        ? alt.style.subtitle
+                        : alt.tips.first.message,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.check_circle_outline),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    notifier.applyLayoutAlternative(alt.furniture);
+                    AnalyticsService.instance.autoArrange(
+                      type: 'alt_${alt.style.name}',
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Applied ${alt.letter}: ${alt.style.label} (score ${alt.score})',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showAutoArrangeSheet(
     BuildContext context,
     RoomNotifier notifier,
@@ -418,6 +516,21 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                         ),
                       ),
                     );
+                  },
+                ),
+              if (hasFurniture)
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.indigo.shade50,
+                    child: Icon(Icons.compare, color: Colors.indigo.shade700),
+                  ),
+                  title: const Text('Compare layouts A / B / C'),
+                  subtitle: const Text(
+                    'Spacious, wall-hug, and conversation — pick best score',
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showLayoutAlternatives(context, notifier, state);
                   },
                 ),
               if (hasFurniture) const Divider(),

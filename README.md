@@ -10,6 +10,8 @@ Upload / scan a room → top-down blueprint → arrange furniture → export PNG
 - Manual blueprint editor (walls, doors, windows, furniture)  
 - Auto-arrange (bedroom / living / office)  
 - Layout score & collision tips  
+- Layout alternatives A/B/C (spacious / wall-hug / conversation)  
+- 3D isometric preview (orbit)  
 - Export / share plan as PNG  
 - Firebase App Distribution builds from `dev`
 

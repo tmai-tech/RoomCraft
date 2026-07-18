@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+83 (2026-07-18)
+
+### Planner 5D parity sprint — isometric 3D + layout A/B/C
+- **3D isometric preview** (`IsometricPainter` + `IsometricPreviewScreen`): orbit with drag/slider; free CustomPainter (no 3D engine).
+- **Layout alternatives A/B/C**: spacious, wall-hug, conversation — scored with live `LayoutScore`; apply with undo.
+- Blueprint: **view_in_ar** app bar action; Auto sheet → Compare layouts.
+- Docs: `docs/PLANNER5D_PARITY_PLAN.md` gap matrix vs Planner 5D + free/current-arch path.
+- Tests: `test/isometric_layout_alternatives_test.dart`.
+- Version **+83**.
+
+
 ## 1.0.0-beta.1+51 (2026-07-17)
 
 ### Unified ensureGoldQuality path
