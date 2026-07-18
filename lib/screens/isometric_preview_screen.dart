@@ -7,6 +7,7 @@ import '../domain/units.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../painters/isometric_painter.dart';
+import '../services/export_service.dart';
 
 /// Interactive isometric 3D view — select, rotate, delete furniture.
 ///
@@ -174,11 +175,33 @@ class _IsometricPreviewScreenState extends State<IsometricPreviewScreen> {
           ),
           actions: [
             IconButton(
+              key: const Key('iso_hd_snapshot'),
+              tooltip: 'Share HD 3D snapshot',
+              icon: const Icon(Icons.photo_camera_outlined),
+              onPressed: () async {
+                try {
+                  await ExportService.share3dPng(
+                    _viewRoom,
+                    pixelsPerFoot: widget.pixelsPerFoot,
+                    unitSystem: widget.unitSystem,
+                  );
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('3D snapshot failed: $e')),
+                    );
+                  }
+                }
+              },
+            ),
+            IconButton(
               tooltip: 'Reset view',
               icon: const Icon(Icons.refresh),
               onPressed: () => setState(() {
                 _yaw = 0;
                 _pitch = 0.35;
+                _walkX = 0;
+                _walkY = 0;
               }),
             ),
             if (_dirty)

@@ -33,7 +33,7 @@ class IsometricPainter extends CustomPainter {
     this.yaw = 0,
     this.wallHeightFt = 8.0,
     this.selectedId,
-    this.perspective = false,
+    this.perspective = true, // walkthrough-first (Planner 3D explore)
     this.walkX = 0,
     this.walkY = 0,
     this.eyeHeightFt = 5.5,

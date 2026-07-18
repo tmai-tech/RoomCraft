@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+91 (2026-07-18)
+
+### HD 3D snapshot · walkthrough-first · skeptic proof doc
+- **HD 3D snapshot** export (1600×1200 perspective walkthrough PNG) + share from 3D editor.
+- Default 3D mode is **perspective walkthrough** (iso optional).
+- `docs/SKEPTIC_PROOF.md` maps skeptic claims to current tree + evidence.
+- Version **+91**.
+
+
 ## 1.0.0-beta.1+90 (2026-07-18)
 
 ### AR place layout loop (measure → place → 3D)

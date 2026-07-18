@@ -13,6 +13,7 @@ import '../domain/units.dart';
 import '../models/room_model.dart';
 import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
+import '../painters/isometric_painter.dart';
 
 /// Renders a room blueprint to PNG/PDF and shares it.
 class ExportService {
@@ -81,6 +82,54 @@ class ExportService {
       throw Exception('Failed to encode PNG');
     }
     return bytes.buffer.asUint8List();
+  }
+
+
+  /// High-resolution 3D perspective snapshot (free HD product export).
+  /// Not photoreal mesh — high-DPI walkthrough render of the measured plan.
+  static Future<Uint8List> render3dPng(
+    RoomModel room, {
+    double pixelsPerFoot = 28,
+    UnitSystem unitSystem = UnitSystem.feet,
+    double yaw = 0.35,
+  }) async {
+    const size = Size(1600, 1200);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    IsometricPainter(
+      room: room,
+      pixelsPerFoot: pixelsPerFoot,
+      unitSystem: unitSystem,
+      yaw: yaw,
+      perspective: true,
+      wallHeightFt: 8.5,
+    ).paint(canvas, size);
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.width.ceil(), size.height.ceil());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (bytes == null) throw Exception('Failed to encode 3D PNG');
+    return bytes.buffer.asUint8List();
+  }
+
+  static Future<void> share3dPng(
+    RoomModel room, {
+    double pixelsPerFoot = 28,
+    UnitSystem unitSystem = UnitSystem.feet,
+  }) async {
+    final bytes = await render3dPng(
+      room,
+      pixelsPerFoot: pixelsPerFoot,
+      unitSystem: unitSystem,
+    );
+    final dir = await getTemporaryDirectory();
+    final file = File(
+      '${dir.path}/roomcraft_3d_${room.name.replaceAll(' ', '_')}.png',
+    );
+    await file.writeAsBytes(bytes);
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'RoomCraft 3D walkthrough — ${room.name}',
+    );
   }
 
   /// Minimal one-page PDF: plan summary (dimensions + furniture list).

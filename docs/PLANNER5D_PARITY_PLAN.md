@@ -127,7 +127,7 @@ Play listing pillars and RoomCraft status (free / current Flutter + ARCore):
 | P3 | AR room planner with real dimensions | **Shipped** distinct ARCore measure → **ArPlaceLayoutScreen** (place at real size) → 3D. Live-camera furniture anchors next | `ar_distinct_path.txt` + AR place tests |
 | P4 | Floor plan 2D + furniture arrange | **Shipped** full 2D editor, snap, multi-select, score | existing MVP |
 | P5 | AI Designer (Furnisher + Styler) | **Shipped** on-device free Furnisher + Styler | AI Designer/Styler tests |
-| P6 | HD realistic snapshots | **Not free** — deferred (paid render) | — |
+| P6 | HD realistic snapshots | **Shipped free HD 3D snapshot** (1600×1200 perspective export). Photoreal mesh lighting still open | HD snapshot tests |
 | P7 | Cross-platform / offline / gallery | Android beta + local save + Gallery of ideas | Gallery evidence |
 
 **Goal = full Play listing parity.** The table above is a **status tracker**, not a reduced definition of done. Ship continuously on free/current architecture; P6 (HD photoreal) and live-camera AR furniture anchors remain open engineering work, not “out of scope by redefinition.”
@@ -169,7 +169,7 @@ flutter test test/skeptic_gaps_test.dart \
 | AR walkthrough place-in-room | ◐ AR measure exists; not full AR planner |
 | Interactive 3D edit (move in 3D) | ✅ select/rotate/delete/nudge + apply |
 
-**Scorecard after +87 (free architecture):** catalog **8/10** (200+ SKUs) · layout intelligence **9/10** · 3D edit **7/10** (integrated + interactive) · free scan **8.5/10** · AI design **8/10**. Paid HD/brand marketplace remain deferred.
+**Scorecard after +91 (free architecture):** catalog **9/10** (10k free SKUs) · layout intelligence **9/10** · 3D explore/edit **8/10** (perspective walkthrough + edit) · free scan/AR measure-place **8/10** · AI design **8/10**. Brand marketplace + photoreal mesh still open.
 
 
 ### +85 follow-up

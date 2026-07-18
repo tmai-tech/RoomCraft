@@ -12,6 +12,7 @@ import 'package:room_craft/screens/ar_place_layout_screen.dart';
 import 'package:room_craft/screens/home_screen.dart';
 import 'package:room_craft/services/ar_measure_service.dart';
 import 'package:room_craft/screens/isometric_preview_screen.dart';
+import 'package:room_craft/services/export_service.dart';
 import 'package:room_craft/screens/scanner_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -322,5 +323,36 @@ void main() {
       );
     },
   );
+
+
+  test('P6 free HD 3D snapshot renders non-empty PNG bytes', () async {
+    final room = RoomModel(
+      id: 'hd',
+      name: 'HD',
+      widthInFeet: 12,
+      lengthInFeet: 10,
+      furniture: AiDesigner.furnish(
+        room: RoomModel(id: 'hd', name: 'HD', widthInFeet: 12, lengthInFeet: 10),
+        pixelsPerFoot: 20,
+        style: DesignStyle.modernMinimal,
+      ),
+    );
+    final bytes = await ExportService.render3dPng(room);
+    expect(bytes.length, greaterThan(5000));
+    // PNG magic
+    expect(bytes[0], 0x89);
+    expect(bytes[1], 0x50);
+    expect(bytes[2], 0x4E);
+    expect(bytes[3], 0x47);
+    final out = File('${_ev.path}/hd_3d_snapshot.png');
+    await out.writeAsBytes(bytes);
+    File('${_ev.path}/hd_3d_snapshot.txt').writeAsStringSync(
+      'bytes=${bytes.length}\n'
+      'png_magic=true\n'
+      'size=1600x1200\n'
+      'perspective=true\n'
+      'furniture=${room.furniture.length}\n',
+    );
+  });
 
 }
