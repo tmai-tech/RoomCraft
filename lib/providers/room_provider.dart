@@ -14,6 +14,7 @@ import '../domain/layout/auto_arrange.dart';
 import '../domain/layout/clearances.dart';
 import '../domain/layout/furniture_bounds.dart';
 import '../domain/layout/layout_score.dart';
+import '../domain/layout/room_geometry.dart';
 import '../domain/layout/snap.dart';
 
 /// Editor tools. [pan] pans/zooms the canvas; [select] moves furniture; others draw.
@@ -634,10 +635,43 @@ class RoomNotifier extends Notifier<RoomState> {
       room: state.room.copyWith(
         widthInFeet: width,
         lengthInFeet: length,
+        clearFloorPolygon: true,
         updatedAt: DateTime.now(),
       ),
     );
     _syncHistoryFlags();
+  }
+
+  /// Convert current bounding box to an L-shape floor (free polygon path).
+  void applyLShapeFloor({double? cutWidthFt, double? cutLengthFt}) {
+    _pushHistory();
+    final poly = RoomGeometry.lShapeVerticesFt(
+      widthFt: state.room.widthInFeet,
+      lengthFt: state.room.lengthInFeet,
+      cutWidthFt: cutWidthFt ?? 0,
+      cutLengthFt: cutLengthFt ?? 0,
+    );
+    state = state.copyWith(
+      room: state.room.copyWith(
+        floorPolygonFt: poly,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
+  }
+
+  /// Restore rectangle floor (clear polygon).
+  void applyRectangleFloor() {
+    _pushHistory();
+    state = state.copyWith(
+      room: state.room.copyWith(
+        clearFloorPolygon: true,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    _syncHistoryFlags();
+    _refreshLayout();
   }
 
 

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../domain/layout/isometric.dart';
+import '../domain/layout/room_geometry.dart';
 import '../domain/units.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
@@ -107,15 +108,23 @@ class IsometricPainter extends CustomPainter {
       );
     }
 
-    // Floor — warm wood-ish gradient (free CustomPainter “materials”)
-    final floorPts = [
-      map(_rotThenProject(0, 0, 0, w, d)),
-      map(_rotThenProject(w, 0, 0, w, d)),
-      map(_rotThenProject(w, d, 0, w, d)),
-      map(_rotThenProject(0, d, 0, w, d)),
-    ];
+    // Floor — warm wood-ish gradient; supports L-shape polygon when present
+    final List<Offset> floorPts;
+    if (room.isPolygonFloor) {
+      floorPts = [
+        for (final p in room.floorPolygonFt!)
+          map(_rotThenProject(p.dx * _scale, p.dy * _scale, 0, w, d)),
+      ];
+    } else {
+      floorPts = [
+        map(_rotThenProject(0, 0, 0, w, d)),
+        map(_rotThenProject(w, 0, 0, w, d)),
+        map(_rotThenProject(w, d, 0, w, d)),
+        map(_rotThenProject(0, d, 0, w, d)),
+      ];
+    }
     final floorPath = Path()..addPolygon(floorPts, true);
-    final floorBounds = Rect.fromPoints(floorPts[0], floorPts[2]);
+    final floorBounds = floorPath.getBounds();
     canvas.drawPath(
       floorPath,
       Paint()

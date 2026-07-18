@@ -1,7 +1,10 @@
 import 'package:uuid/uuid.dart';
 
+import 'dart:ui';
+
 import '../../models/room_model.dart';
 import 'ai_designer.dart';
+import 'room_geometry.dart';
 
 /// Planner 5D–style “Gallery of Ideas” — free on-device starter plans.
 class SamplePlan {
@@ -11,6 +14,8 @@ class SamplePlan {
   final DesignStyle style;
   final double widthFt;
   final double lengthFt;
+  /// When true, materialize with L-shape floor polygon.
+  final bool lShape;
 
   const SamplePlan({
     required this.id,
@@ -19,6 +24,7 @@ class SamplePlan {
     required this.style,
     required this.widthFt,
     required this.lengthFt,
+    this.lShape = false,
   });
 }
 
@@ -88,17 +94,34 @@ class SamplePlans {
       widthFt: 16,
       lengthFt: 14,
     ),
+    SamplePlan(
+      id: 'l_living',
+      title: 'L-shape living',
+      blurb: 'Open L floor plan — 18×16',
+      style: DesignStyle.family,
+      widthFt: 18,
+      lengthFt: 16,
+      lShape: true,
+    ),
   ];
 
   static const _uuid = Uuid();
 
   /// Materialize a ready-to-edit [RoomModel] with furniture placed.
   static RoomModel materialize(SamplePlan plan, {double pixelsPerFoot = 20}) {
+    List<Offset>? poly;
+    if (plan.lShape) {
+      poly = RoomGeometry.lShapeVerticesFt(
+        widthFt: plan.widthFt,
+        lengthFt: plan.lengthFt,
+      );
+    }
     final empty = RoomModel(
       id: _uuid.v4(),
       name: plan.title,
       widthInFeet: plan.widthFt,
       lengthInFeet: plan.lengthFt,
+      floorPolygonFt: poly,
     );
     final furniture = AiDesigner.furnish(
       room: empty,
@@ -107,6 +130,7 @@ class SamplePlans {
     );
     return empty.copyWith(
       furniture: furniture,
+      floorPolygonFt: poly,
       updatedAt: DateTime.now(),
     );
   }

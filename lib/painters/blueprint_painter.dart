@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../domain/layout/room_geometry.dart';
 import '../domain/layout/walkway_heatmap.dart';
 import '../domain/units.dart';
 import '../models/room_model.dart';
@@ -71,13 +72,30 @@ class BlueprintPainter extends CustomPainter {
       ..color = Colors.blueGrey.withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
-    final rect = Rect.fromLTWH(0, 0, w, h);
-    canvas.drawRect(rect, paint);
-    canvas.drawRect(rect, border);
+
+    if (room.isPolygonFloor) {
+      final path =
+          RoomGeometry.pathFromFt(room.floorPolygonFt!, pixelsPerFoot);
+      canvas.drawPath(path, paint);
+      canvas.drawPath(path, border);
+      // Dim the cutout area of the bounding box so L-shape is obvious
+      final bb = Path()..addRect(Rect.fromLTWH(0, 0, w, h));
+      final cutout = Path.combine(PathOperation.difference, bb, path);
+      canvas.drawPath(
+        cutout,
+        Paint()..color = Colors.grey.shade300.withValues(alpha: 0.55),
+      );
+    } else {
+      final rect = Rect.fromLTWH(0, 0, w, h);
+      canvas.drawRect(rect, paint);
+      canvas.drawRect(rect, border);
+    }
 
     // Room size label
+    final shape = RoomGeometry.shapeLabel(room.floorPolygonFt);
     final label =
-        '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × ${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)}';
+        '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × '
+        '${LengthFormat.formatFeet(room.lengthInFeet, unitSystem)} · $shape';
     final tp = TextPainter(
       text: TextSpan(
         text: label,

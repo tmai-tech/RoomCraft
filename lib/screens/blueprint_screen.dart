@@ -1029,6 +1029,32 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
+            key: const Key('room_shape_l'),
+            onPressed: () {
+              final wDisp = double.tryParse(widthController.text);
+              final lDisp = double.tryParse(lengthController.text);
+              final w = wDisp != null
+                  ? LengthFormat.displayToFeet(wDisp, unit)
+                  : room.widthInFeet;
+              final l = lDisp != null
+                  ? LengthFormat.displayToFeet(lDisp, unit)
+                  : room.lengthInFeet;
+              notifier.updateRoomSize(w, l);
+              notifier.applyLShapeFloor();
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('L-shape'),
+          ),
+          if (room.isPolygonFloor)
+            TextButton(
+              key: const Key('room_shape_rect'),
+              onPressed: () {
+                notifier.applyRectangleFloor();
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Rectangle'),
+            ),
+          TextButton(
             onPressed: () {
               final wDisp = double.tryParse(widthController.text);
               final lDisp = double.tryParse(lengthController.text);

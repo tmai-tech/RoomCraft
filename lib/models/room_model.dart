@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:room_craft/config/app_config.dart';
 import 'stroke_model.dart';
 import 'furniture_item.dart';
@@ -12,6 +14,8 @@ class RoomModel {
   String? userId;
   int schemaVersion;
   DateTime? updatedAt;
+  /// Optional floor outline in feet (plan space). Null = rectangle width×length.
+  List<Offset>? floorPolygonFt;
 
   RoomModel({
     required this.id,
@@ -23,9 +27,16 @@ class RoomModel {
     this.userId,
     this.schemaVersion = AppConfig.storageSchemaVersion,
     DateTime? updatedAt,
+    List<Offset>? floorPolygonFt,
   })  : strokes = List<StrokeModel>.from(strokes ?? const []),
         furniture = List<FurnitureItem>.from(furniture ?? const []),
+        floorPolygonFt = floorPolygonFt == null
+            ? null
+            : List<Offset>.from(floorPolygonFt),
         updatedAt = updatedAt ?? DateTime.now();
+
+  bool get isPolygonFloor =>
+      floorPolygonFt != null && floorPolygonFt!.length >= 3;
 
   Map<String, dynamic> toMap() {
     return {
@@ -38,6 +49,11 @@ class RoomModel {
       'furniture': furniture.map((x) => x.toMap()).toList(),
       'userId': userId,
       'updatedAt': (updatedAt ?? DateTime.now()).toIso8601String(),
+      if (floorPolygonFt != null)
+        'floorPolygonFt': [
+          for (final p in floorPolygonFt!)
+            {'x': p.dx, 'y': p.dy},
+        ],
     };
   }
 
@@ -74,7 +90,23 @@ class RoomModel {
       schemaVersion:
           (map['schemaVersion'] as num?)?.toInt() ?? AppConfig.storageSchemaVersion,
       updatedAt: updatedAt,
+      floorPolygonFt: _parsePolygon(map['floorPolygonFt']),
     );
+  }
+
+  static List<Offset>? _parsePolygon(dynamic raw) {
+    if (raw is! List || raw.isEmpty) return null;
+    final out = <Offset>[];
+    for (final item in raw) {
+      if (item is Map) {
+        final x = (item['x'] as num?)?.toDouble() ??
+            (item['dx'] as num?)?.toDouble();
+        final y = (item['y'] as num?)?.toDouble() ??
+            (item['dy'] as num?)?.toDouble();
+        if (x != null && y != null) out.add(Offset(x, y));
+      }
+    }
+    return out.length >= 3 ? out : null;
   }
 
   static List<StrokeModel> _parseStrokes(dynamic raw) {
@@ -121,6 +153,8 @@ class RoomModel {
     String? userId,
     int? schemaVersion,
     DateTime? updatedAt,
+    List<Offset>? floorPolygonFt,
+    bool clearFloorPolygon = false,
   }) {
     return RoomModel(
       id: id ?? this.id,
@@ -132,6 +166,12 @@ class RoomModel {
       userId: userId ?? this.userId,
       schemaVersion: schemaVersion ?? this.schemaVersion,
       updatedAt: updatedAt ?? this.updatedAt,
+      floorPolygonFt: clearFloorPolygon
+          ? null
+          : (floorPolygonFt ??
+              (this.floorPolygonFt == null
+                  ? null
+                  : List<Offset>.from(this.floorPolygonFt!))),
     );
   }
 }

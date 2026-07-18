@@ -4,6 +4,7 @@ import '../../models/furniture_item.dart';
 import '../../models/room_model.dart';
 import 'clearances.dart';
 import 'furniture_bounds.dart';
+import 'room_geometry.dart';
 
 /// One grid cell of free-path walkway analysis (pixel space).
 class WalkwayCell {
@@ -53,6 +54,16 @@ class WalkwayHeatmap {
         if (w < 1 || h < 1) continue;
         final cell = Rect.fromLTWH(x, y, w, h);
         final center = cell.center;
+        // Skip cells outside L/polygon floor (not part of room)
+        if (room.isPolygonFloor) {
+          final polyPx = RoomGeometry.toPixels(
+            room.floorPolygonFt!,
+            pixelsPerFoot,
+          );
+          if (!RoomGeometry.containsPoint(polyPx, center)) {
+            continue;
+          }
+        }
         var blockage = 0.0;
         for (final fr in furnitureRects) {
           if (fr.contains(center) || fr.overlaps(cell)) {
