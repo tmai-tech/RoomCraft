@@ -206,7 +206,12 @@ class PlanAccuracyMetrics {
   }
 
   /// Full diagnostics map for training export + Review (+109).
-  static Map<String, dynamic> diagnosticsJson(ScanResult predicted) {
+  ///
+  /// [userCorrected]: when set (editor gold), also report predicted vs user (+110).
+  static Map<String, dynamic> diagnosticsJson(
+    ScanResult predicted, {
+    ScanResult? userCorrected,
+  }) {
     final ref = syntheticReference(predicted);
     final report = compare(predicted, ref);
     final openingFid = OpeningChainFidelity.score(predicted);
@@ -214,9 +219,14 @@ class PlanAccuracyMetrics {
         ? PhotoTrueLayout.goldGeometryMatchScore(predicted)
         : null;
     final scale = _detectScaleSource(predicted.warnings);
+    PlanAccuracyReport? vsUser;
+    if (userCorrected != null) {
+      vsUser = compare(predicted, userCorrected);
+    }
     return {
-      'schema': 'phase_b_v1',
+      'schema': userCorrected != null ? 'phase_b_v2' : 'phase_b_v1',
       'vs_template': report.toJson(),
+      if (vsUser != null) 'vs_user_corrected': vsUser.toJson(),
       'opening_fidelity': double.parse(openingFid.toStringAsFixed(3)),
       if (geom != null) 'geometry_match': double.parse(geom.toStringAsFixed(3)),
       'scale_source': scale,
@@ -232,6 +242,7 @@ class PlanAccuracyMetrics {
               !PhotoTrueLayout.isBedroomLike(predicted)
           ? 'study_gold'
           : 'non_study_gold',
+      if (userCorrected != null) 'has_user_gold': true,
     };
   }
 

@@ -163,7 +163,7 @@ Across **Turns 44–54 (+83→+93)** the recurring miss was **claiming product p
 | | Turn | Version | Status |
 |--|-----:|---------|--------|
 | **Firebase (latest distributed)** | **54** | **1.0.0-beta.1+93** | Built & uploaded via [run 29628861956](https://github.com/tmai-tech/RoomCraft/actions/runs/29628861956) |
-| **Local / accuracy resume** | **59** | **1.0.0-beta.1+109** | Accuracy loop: +105–+109 — see `docs/ACCURACY_TURN_LOG.md` |
+| **Local / accuracy resume** | **60** | **1.0.0-beta.1+110** | Accuracy loop: +105–+110 — see `docs/ACCURACY_TURN_LOG.md` |
 
 **Tester install:** Firebase App Tester invite → latest release should show **+93** (or newer if a later build was distributed). Confirm on device Settings version label.
 
@@ -180,8 +180,9 @@ Accuracy work paused after Turn 43 (+82) for Planner5D product. Resumed in **`do
 | **57** | **+107** | Opening chain fidelity (doors/mesh Planner5D) | `OpeningChainFidelity` gold 2.8 doors, mesh reclass, de-overlap | Device re-test; AR scale; Phase B IoU |
 | **58** | **+108** | AR scale lock + Phase B metrics | `ScaleLockConfidence` + `PlanAccuracyMetrics` | Training export metrics; Review UI; device re-test |
 | **59** | **+109** | Phase B in training export + Review UI | JSONL v2 `phase_b` + Review diagnostics line | User-corrected gold ref; device re-test |
+| **60** | **+110** | Editor plan as corrected gold | `fromEditor` + `ScanTrainingSession` + `corrected_gold_pair` | Multi-view polygon; UI error badge |
 
-**Local latest:** +109 · see `docs/ACCURACY_TURN_LOG.md` for ongoing loop.
+**Local latest:** +110 · see `docs/ACCURACY_TURN_LOG.md` for ongoing loop.
 
 ---
 

@@ -6,6 +6,7 @@ import '../domain/photo_true_layout.dart';
 import '../domain/plan_accuracy_metrics.dart';
 import '../domain/scan_parser.dart';
 import '../domain/scan_refine.dart';
+import '../domain/scan_training_session.dart';
 import '../domain/units.dart';
 import '../domain/wall_relative_scan.dart';
 import '../models/furniture_item.dart';
@@ -30,6 +31,8 @@ class ScanReviewScreen extends ConsumerStatefulWidget {
 
 class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   late ScanResult _result;
+  /// Model output at Review open — Phase B predicted baseline (+110).
+  late ScanResult _predictedBaseline;
   int? _calibrateWallIndex;
   final _scaleController = TextEditingController();
   /// null | good | ok | bad — training signal for future model improvement.
@@ -39,6 +42,8 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   void initState() {
     super.initState();
     _result = widget.initial;
+    _predictedBaseline = widget.initial;
+    ScanTrainingSession.begin(widget.initial);
   }
 
   Future<void> _refineWithAr() async {
@@ -95,9 +100,14 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
             w.type == StrokeType.window ||
             w.type == StrokeType.balcony)
         .length;
-    // +109: Phase B metrics vs gold template for training export
-    final phaseB = PlanAccuracyMetrics.diagnosticsJson(_result);
+    // +109/110: Phase B vs template; if user edited openings/furniture, also vs baseline
+    final phaseB = PlanAccuracyMetrics.diagnosticsJson(
+      _predictedBaseline,
+      userCorrected: _result,
+    );
     final vs = PlanAccuracyMetrics.vsTemplate(_result);
+    final vsUser = PlanAccuracyMetrics.compare(_predictedBaseline, _result);
+    ScanTrainingSession.feedbackRating = rating;
     await TrainingExportService().logScanFeedback(
       rating: rating,
       mode: 'review',
@@ -114,10 +124,11 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
       SnackBar(
         content: Text(
           rating == 'good'
-              ? 'Thanks — saved for training · ${vs.reviewLine()}'
+              ? 'Thanks — saved · ${vs.reviewLine()}'
               : rating == 'ok'
                   ? 'Noted · ${vs.reviewLine()}'
-                  : 'Logged bad scan · ${vs.reviewLine()}',
+                  : 'Logged bad scan · ${vs.reviewLine()}'
+                      '${vsUser.compositeScore < 0.99 ? " · edits vs scan ${(vsUser.compositeScore * 100).round()}%" : ""}',
         ),
         duration: const Duration(seconds: 4),
       ),
@@ -144,12 +155,24 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
         );
     await StorageService().saveRoom(ref.read(roomProvider).room);
     await AnalyticsService.instance.openEditorFromScan();
-    // Snapshot corrected plan + Phase B metrics for training (+109)
+    // Snapshot + mark session for editor gold on save (+109/110)
     try {
+      ScanTrainingSession.markReviewFinal(
+        _result,
+        rating: _feedbackRating,
+      );
       await TrainingExportService().logScanResultSnapshot(
         source: 'open_editor',
         plan: _result,
         feedbackRating: _feedbackRating,
+        userCorrected: _result,
+      );
+      // Also log predicted baseline with vs review-final as interim correction
+      await TrainingExportService().logScanResultSnapshot(
+        source: 'scan_predicted_baseline',
+        plan: _predictedBaseline,
+        feedbackRating: _feedbackRating,
+        userCorrected: _result,
       );
     } catch (_) {}
     if (!mounted) return;

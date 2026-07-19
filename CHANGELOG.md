@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+110 (2026-07-19)
+
+### Accuracy — user-corrected editor plan as Phase B gold
+- **`ScanParser.fromEditor`**: blueprint (px) → scan plan (ft) for corrected geometry.
+- **`ScanTrainingSession`**: holds predicted scan through Review → editor; on Save/pop logs **`corrected_gold_pair`** (predicted vs user gold) to training JSONL.
+- Phase B **v2**: `vs_user_corrected` when editor/review gold available (not only synthetic template).
+- Tests +110. See `docs/ACCURACY_TURN_LOG.md` Turn 60.
+- Version **+110**.
+
 ## 1.0.0-beta.1+109 (2026-07-19)
 
 ### Accuracy — Phase B metrics in training export + Review UI

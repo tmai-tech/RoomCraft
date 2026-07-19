@@ -96,6 +96,7 @@ class TrainingExportService {
     required String source,
     required ScanResult plan,
     String? feedbackRating,
+    ScanResult? userCorrected,
   }) async {
     final json = PlanAccuracyMetrics.planToJson(plan);
     await logPlanSnapshot(
@@ -106,9 +107,38 @@ class TrainingExportService {
       furniture: List<Map<String, dynamic>>.from(json['furniture'] as List),
       feedbackRating: feedbackRating,
       accuracyScore: plan.accuracyScore,
-      phaseB: PlanAccuracyMetrics.diagnosticsJson(plan),
+      phaseB: PlanAccuracyMetrics.diagnosticsJson(
+        plan,
+        userCorrected: userCorrected,
+      ),
       plan: plan,
     );
+  }
+
+  /// Predicted model plan vs user-corrected editor gold (+110).
+  Future<void> logCorrectedGoldPair({
+    required ScanResult predicted,
+    required ScanResult corrected,
+    String? feedbackRating,
+    Map<String, dynamic>? pairDiagnostics,
+  }) async {
+    final vs = PlanAccuracyMetrics.compare(predicted, corrected);
+    await logEvent({
+      'type': 'corrected_gold_pair',
+      'source': 'editor_save',
+      if (feedbackRating != null) 'feedback': feedbackRating,
+      'phase_b': pairDiagnostics ??
+          {
+            'schema': 'phase_b_pair_v1',
+            'vs_user_corrected': vs.toJson(),
+            'vs_template':
+                PlanAccuracyMetrics.vsTemplate(predicted).toJson(),
+            'predicted': PlanAccuracyMetrics.planToJson(predicted),
+            'corrected': PlanAccuracyMetrics.planToJson(corrected),
+          },
+      'composite_vs_user': vs.compositeScore,
+      'summary': vs.summaryLine(),
+    });
   }
 
   Future<int> eventCount() async {

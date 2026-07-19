@@ -391,6 +391,52 @@ class ScanParser {
     );
   }
 
+  /// Reverse of [toEditor]: blueprint room (px) → scan plan (feet) (+110).
+  ///
+  /// Used so user-corrected editor geometry can become Phase B gold reference.
+  static ScanResult fromEditor({
+    required double widthFt,
+    required double lengthFt,
+    required List<StrokeModel> strokes,
+    required List<FurnitureItem> furniture,
+    required double pixelsPerFoot,
+    List<String> warnings = const [],
+    double? accuracyScore,
+  }) {
+    final pxf = pixelsPerFoot <= 0 ? 1.0 : pixelsPerFoot;
+    final walls = <ScanWallSegment>[];
+    for (final s in strokes) {
+      if (s.type == StrokeType.wall) continue;
+      if (s.points.length < 2) continue;
+      walls.add(ScanWallSegment(
+        type: s.type,
+        startFt: Offset(s.points.first.dx / pxf, s.points.first.dy / pxf),
+        endFt: Offset(s.points.last.dx / pxf, s.points.last.dy / pxf),
+      ));
+    }
+    final furn = furniture.map((f) {
+      return ScanFurnitureHint(
+        type: f.type,
+        posFt: Offset(f.position.dx / pxf, f.position.dy / pxf),
+        widthFt: f.widthInFeet,
+        lengthFt: f.lengthInFeet,
+        rotationRad: f.rotationAngle,
+        included: true,
+      );
+    }).toList();
+    return ScanResult(
+      roomWidthFt: widthFt,
+      roomLengthFt: lengthFt,
+      walls: walls,
+      furniture: furn,
+      warnings: [
+        ...warnings,
+        'User-corrected plan from editor (+110)',
+      ],
+      accuracyScore: accuracyScore ?? 0.95,
+    );
+  }
+
   static ScanResult _normalize(ScanResult r) {
     if (r.walls.isEmpty) return r;
     var minX = double.infinity;

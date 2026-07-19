@@ -2,23 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
+import '../domain/layout/ai_designer.dart';
+import '../domain/layout/ai_styler.dart';
+import '../domain/layout/auto_arrange.dart';
+import '../domain/layout/layout_alternatives.dart';
+import '../domain/layout/walkway_heatmap.dart';
+import '../domain/scan_parser.dart';
+import '../domain/scan_training_session.dart';
+import '../domain/units.dart';
 import '../models/furniture_item.dart';
 import '../models/room_model.dart';
-import '../domain/layout/auto_arrange.dart';
-import '../domain/units.dart';
 import '../painters/blueprint_painter.dart';
 import '../painters/furniture_painter.dart';
 import '../painters/isometric_painter.dart';
 import '../providers/room_provider.dart';
+import '../screens/isometric_preview_screen.dart';
 import '../services/analytics_service.dart';
 import '../services/export_service.dart';
 import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
-import '../domain/layout/ai_designer.dart';
-import '../domain/layout/ai_styler.dart';
-import '../domain/layout/layout_alternatives.dart';
-import '../domain/layout/walkway_heatmap.dart';
-import '../screens/isometric_preview_screen.dart';
+import '../services/training_export_service.dart';
 import '../widgets/furniture_catalog_sheet.dart';
 
 class BlueprintScreen extends ConsumerStatefulWidget {
@@ -43,6 +46,38 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
 
   /// Convert GestureDetector local coords → room model coords (origin at room TL).
   Offset _toModel(Offset local) => local - _canvasOrigin;
+
+  /// Log predicted scan vs user-corrected editor plan as Phase B gold (+110).
+  /// Returns true when a training pair was written.
+  Future<bool> _logCorrectedGoldIfNeeded(RoomModel room, double pxf) async {
+    if (!ScanTrainingSession.active) return false;
+    final pred = ScanTrainingSession.predicted;
+    if (pred == null) return false;
+    try {
+      final corrected = ScanParser.fromEditor(
+        widthFt: room.widthInFeet,
+        lengthFt: room.lengthInFeet,
+        strokes: room.strokes,
+        furniture: room.furniture,
+        pixelsPerFoot: pxf,
+        warnings: pred.warnings,
+        accuracyScore: 0.96,
+      );
+      final pair = ScanTrainingSession.pairDiagnostics(corrected);
+      await TrainingExportService().logCorrectedGoldPair(
+        predicted: pred,
+        corrected: corrected,
+        feedbackRating: ScanTrainingSession.feedbackRating,
+        pairDiagnostics: pair,
+      );
+      ScanTrainingSession.correctedLogged = true;
+      ScanTrainingSession.clear();
+      return true;
+    } catch (_) {
+      // Training export must never block save
+      return false;
+    }
+  }
 
   @override
   void initState() {
@@ -74,9 +109,13 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
 
     return PopScope(
       canPop: true,
-      onPopInvokedWithResult: (didPop, result) {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) {
-          StorageService().saveRoom(roomState.room);
+          await StorageService().saveRoom(roomState.room);
+          await _logCorrectedGoldIfNeeded(
+            roomState.room,
+            roomState.pixelsPerFoot,
+          );
         }
       },
       child: Scaffold(
@@ -98,9 +137,19 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
               icon: const Icon(Icons.save),
               onPressed: () async {
                 await StorageService().saveRoom(roomState.room);
+                final logged = await _logCorrectedGoldIfNeeded(
+                  roomState.room,
+                  roomState.pixelsPerFoot,
+                );
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Blueprint Saved Locally')),
+                    SnackBar(
+                      content: Text(
+                        logged
+                            ? 'Blueprint saved · training gold pair logged'
+                            : 'Blueprint Saved Locally',
+                      ),
+                    ),
                   );
                 }
               },
