@@ -92,7 +92,8 @@ class OpeningPriors {
   static double defaultWidth(StrokeType type) {
     switch (type) {
       case StrokeType.door:
-        return 3.0;
+        // +107: gold-plan / feedback doors ~2.8 ft (was 3.0)
+        return 2.8;
       case StrokeType.window:
         return 4.0;
       case StrokeType.balcony:

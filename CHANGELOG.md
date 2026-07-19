@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+107 (2026-07-19)
+
+### Accuracy — opening chain fidelity (Planner5D-class doors/mesh)
+- New **`OpeningChainFidelity`**: snap walk-through doors to gold **2.8 ft**, reclassify oversized “doors” as mesh when inventory wants balcony, de-overlap same-wall openings, seed missing doors/mesh from inventory counts.
+- Wired into study finalize + non-study density; score blends geometry + opening fidelity.
+- Default door prior **2.8** ft (was 3.0). Addresses feedback “door not identified” / wrong spans.
+- Tests +107. See `docs/ACCURACY_TURN_LOG.md` Turn 57.
+- Version **+107**.
+
 ## 1.0.0-beta.1+106 (2026-07-19)
 
 ### Accuracy — non-study bedroom/living dense gold (+106)

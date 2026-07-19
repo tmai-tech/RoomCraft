@@ -7,6 +7,7 @@ import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
 import 'auto_scale.dart';
+import 'opening_chain_fidelity.dart';
 import 'wall_relative_scan.dart';
 
 /// Photo-true quality bar (study-room feedback gold *quality*, not invented inventory).
@@ -265,6 +266,7 @@ class PhotoTrueLayout {
 
   /// Score + notes when plan meets photo-true gold quality (+67).
   /// +105: blend structural gold-geometry match (Planner5D-class fidelity).
+  /// +107: opening chain fidelity (door widths / mesh / de-overlap).
   static ScanResult _finalizePhotoTrue(
     ScanResult r, {
     required ScanResult vision,
@@ -272,6 +274,9 @@ class PhotoTrueLayout {
   }) {
     // +82: last-mile gold details (desk on work wall + chair) before score bar
     var cur = alignGoldStudyDetails(r);
+    // +107: Planner5D-class opening chain before quality bar
+    cur = OpeningChainFidelity.ensure(cur);
+    cur = resolveWallClearances(cur);
     if (!isPhotoTrue(cur)) {
       final raw = cur.accuracyScore ?? 0.4;
       return cur.copyWith(
@@ -284,19 +289,21 @@ class PhotoTrueLayout {
     }
     final bar = photoTrueScoreBar(cur, vision: vision);
     final geom = goldGeometryMatchScore(cur);
-    // Inventory bar (0.74–0.88) + geometry match can reach ~0.98 when structure
-    // matches feedback gold (32ffdc65). Not tape/LiDAR 100% — honest ceiling.
+    final openFid = OpeningChainFidelity.score(cur);
+    // Inventory bar + geometry + opening chain → honest ceiling ~0.98
+    final blended = 0.55 * geom + 0.45 * openFid;
     final combined =
-        math.max(bar, 0.72 + 0.26 * geom).clamp(bar, 0.98).toDouble();
+        math.max(bar, 0.72 + 0.26 * blended).clamp(bar, 0.98).toDouble();
     final pct = (combined * 100).round();
     final geomPct = (geom * 100).round();
+    final openPct = (openFid * 100).round();
     return cur.copyWith(
       accuracyScore: math.max(cur.accuracyScore ?? 0, combined).clamp(combined, 0.98),
       warnings: [
         ...cur.warnings,
         if (!cur.warnings.any((w) => w.contains('ensureGoldQuality: finalized')))
-          'ensureGoldQuality: finalized photo-true (+105 $path) '
-              'score $pct% · geometry match $geomPct%'
+          'ensureGoldQuality: finalized photo-true (+107 $path) '
+              'score $pct% · geometry $geomPct% · openings $openPct%'
               '${matchesDefaultGoldOrientation(cur) ? " · gold orientation" : ""}',
       ],
     );
@@ -544,6 +551,9 @@ class PhotoTrueLayout {
 
     cur = _ensureNonStudyRoomSize(cur);
     cur = mergeWithNonStudyGold(cur);
+    // +107: standard door widths / de-overlap after bedroom-living seed
+    cur = OpeningChainFidelity.ensure(cur);
+    cur = resolveWallClearances(cur);
 
     final dense = isNonStudyDense(cur);
     final types =

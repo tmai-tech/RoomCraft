@@ -163,7 +163,7 @@ Across **Turns 44–54 (+83→+93)** the recurring miss was **claiming product p
 | | Turn | Version | Status |
 |--|-----:|---------|--------|
 | **Firebase (latest distributed)** | **54** | **1.0.0-beta.1+93** | Built & uploaded via [run 29628861956](https://github.com/tmai-tech/RoomCraft/actions/runs/29628861956) |
-| **Local / accuracy resume** | **56** | **1.0.0-beta.1+106** | Accuracy loop: +105 scale/geometry +106 non-study density — see `docs/ACCURACY_TURN_LOG.md` |
+| **Local / accuracy resume** | **57** | **1.0.0-beta.1+107** | Accuracy loop: +105–+107 (scale, non-study, opening chain) — see `docs/ACCURACY_TURN_LOG.md` |
 
 **Tester install:** Firebase App Tester invite → latest release should show **+93** (or newer if a later build was distributed). Confirm on device Settings version label.
 
@@ -177,8 +177,9 @@ Accuracy work paused after Turn 43 (+82) for Planner5D product. Resumed in **`do
 |-----:|------:|-----------------|-----------------|---------------------------|
 | **55** | **+105** | 100% proper accuracy; Planner5D reference; log each turn | Full-wall wardrobe no longer scales room down; gold floor **20.3×17**; `goldGeometryMatchScore` → finalize ~98% ceiling | Should have blocked wardrobe scale-down earlier; still need non-study gold, AR metric truth, device re-test of gold photos |
 | **56** | **+106** | Non-study dense accuracy (bedroom/living e89c) | `ensureNonStudyDensity` + inventory MUST bed/sofa/tv wall-fill; fix polish "no bed invent" poison | Device re-test; AR metric; Phase B IoU metrics |
+| **57** | **+107** | Opening chain fidelity (doors/mesh Planner5D) | `OpeningChainFidelity` gold 2.8 doors, mesh reclass, de-overlap | Device re-test; AR scale; Phase B IoU |
 
-**Local latest:** +106 · see `docs/ACCURACY_TURN_LOG.md` for ongoing loop.
+**Local latest:** +107 · see `docs/ACCURACY_TURN_LOG.md` for ongoing loop.
 
 ---
 
