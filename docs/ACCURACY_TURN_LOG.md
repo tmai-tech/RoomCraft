@@ -20,6 +20,7 @@
 | Turn | Build | What was asked? | What model did? | What it should have done? |
 |-----:|------:|-----------------|-----------------|---------------------------|
 | **55** | **+105** | Resume accuracy toward 100% proper; use Planner5D as reference; after each turn log What was asked / What model did / What it should have done | (1) Stop AutoScale from shrinking rooms when vision reports a **full-wall wardrobe ≥7 ft** (6.5 ft freestanding prior was crushing gold 20×17 plans — Planner5D treats wall units as fixed, not scale-down anchors). (2) Gold room floor **20.3×17.0** matching feedback `32ffdc65` manual plan. (3) **`goldGeometryMatchScore`** (room size, wardrobe span, work-wall desk, dual doors, mesh, chair) blended into photo-true finalize → score up to ~**98%** when structure matches gold (honest ceiling; not LiDAR 100%). Tests +105 green. | **Should have done earlier:** treat wall-spanning wardrobes as non-scale anchors from the first gold density work (+53), not only after 43 study-template turns. **Still lacking for true ~100%:** (a) device re-test of same gold photos on +105; (b) bedroom/living dense gold when inventory has bed/sofa (study-only template); (c) AR/tape scale for metric truth; (d) Phase B labeled error metrics (door IoU, room % error) vs heuristic score; (e) multi-view depth / wall polygon like Planner5D AI floor recognition. **Next turn priority:** non-study inventory dense fill OR live gold-photo regression if vision fixtures available. |
+| **56** | **+106** | Continue accuracy loop; next highest-impact gap after +105; Planner5D reference; log turn | **Non-study dense gold** for bedroom/living (e89c quality class). (1) `ensureNonStudyDensity` + `composeNonStudyGold` / `mergeWithNonStudyGold` — wall-anchored bed@N wardrobe@S sofa@W tv@E + doors. (2) Pending-inventory gate so polish wardrobe+table cannot early-accept study photo-true when MUST bed/sofa/tv missing. (3) Inventory parse: polish note "no bed invent" no longer forbids bedroom — `must include bed` wins. Dense score **72–84%**. Tests +106 green. | **Should have done:** never treat study photo-true as complete when inventory lists bed/sofa/tv (bug since polish confidence notes said "no bed"). **Still lacking:** (a) device re-test gold photos on +106; (b) AR/tape metric scale; (c) Phase B labeled IoU metrics; (d) bedroom openings can still conflict with dense multi-piece clearances on tight rooms; (e) Planner5D multi-view wall polygon. **Next turn priority:** door/window chain fidelity vs gold photos OR AR scale lock confidence. |
 
 ---
 
@@ -30,7 +31,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55+ / +105+ | Geometry score + scale fix |
+| D Accuracy resume | 55+ / +105+ | Geometry score, wardrobe scale, non-study density |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
@@ -45,7 +46,7 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 | No free-float random XY | Wall-relative + gold ensure | Good for study |
 | Opening widths labeled | Openings + size labels | Good |
 | Room size trustworthy | Gold floor 20.3×17; door prior scale | Full-wall wardrobe no longer destroys scale |
-| Multi-room types | Study gold strong; bedroom polish-only | **Open** |
+| Multi-room types | Study gold + bedroom/living density (+106) | Device proof still open |
 | Honest confidence | Geometry match % in warnings | Heuristic ≠ survey |
 
 ---

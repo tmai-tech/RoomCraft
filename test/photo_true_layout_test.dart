@@ -1768,6 +1768,109 @@ void main() {
     );
     expect(PhotoTrueLayout.goldGeometryMatchScore(empty), lessThan(0.35));
   });
+
+  test('+106 bedroom with bed only becomes dense (wardrobe + door)', () {
+    final bedroom = AccurateScan.enforce(
+      widthFt: 12,
+      lengthFt: 10,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.bed,
+          posFt: Offset(6, 5),
+          widthFt: 5,
+          lengthFt: 6.5,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.3,
+    ).copyWith(warnings: ['Bedroom scan', 'MUST include bed']);
+    expect(PhotoTrueLayout.isStudyLike(bedroom), isFalse);
+    expect(PhotoTrueLayout.isBedroomLike(bedroom), isTrue);
+    final out = PhotoTrueLayout.ensureGoldQuality(bedroom);
+    expect(out.furniture.any((f) => f.type == FurnitureType.bed), isTrue);
+    expect(
+      out.furniture.any((f) => f.type == FurnitureType.wardrobe),
+      isTrue,
+    );
+    expect(
+      out.walls.any((w) => w.type == StrokeType.door),
+      isTrue,
+    );
+    expect(PhotoTrueLayout.isNonStudyDense(out), isTrue);
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.72));
+    // Must not wipe bed for study gold
+    expect(PhotoTrueLayout.isPhotoTrue(out), isFalse);
+  });
+
+  test('+106 e89c-class inventory fills bed sofa wardrobe tv table', () {
+    final thin = AccurateScan.enforce(
+      widthFt: 14,
+      lengthFt: 12,
+      furniture: const [],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.25,
+    ).copyWith(
+      warnings: [
+        'Inventory: MUST include BED; MUST include SOFA; MUST include WARDROBE; '
+            'MUST include TV_UNIT; MUST include TABLE; about 2 door opening(s)',
+        'Bedroom living hybrid e89c quality bar',
+      ],
+    );
+    expect(PhotoTrueLayout.isStudyLike(thin), isFalse);
+    final out = PhotoTrueLayout.ensureGoldQuality(thin);
+    final types =
+        out.furniture.where((f) => f.included).map((f) => f.type).toSet();
+    expect(types.contains(FurnitureType.bed), isTrue);
+    expect(types.contains(FurnitureType.sofa), isTrue);
+    expect(types.contains(FurnitureType.wardrobe), isTrue);
+    expect(types.contains(FurnitureType.tvUnit), isTrue);
+    expect(types.contains(FurnitureType.table), isTrue);
+    expect(
+      out.walls.where((w) => w.type == StrokeType.door).length,
+      greaterThanOrEqualTo(1),
+    );
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.72));
+    expect(out.roomWidthFt, greaterThanOrEqualTo(14));
+  });
+
+  test('+106 living sofa seeds TV + door density', () {
+    final living = AccurateScan.enforce(
+      widthFt: 16,
+      lengthFt: 14,
+      furniture: [
+        const ScanFurnitureHint(
+          type: FurnitureType.sofa,
+          posFt: Offset(2, 7),
+          widthFt: 7,
+          lengthFt: 3,
+        ),
+      ],
+      inventDefaultOpenings: false,
+      accuracyScore: 0.35,
+    ).copyWith(warnings: ['Living room scan', 'MUST include sofa']);
+    expect(PhotoTrueLayout.isStudyLike(living), isFalse);
+    final out = PhotoTrueLayout.ensureGoldQuality(living);
+    expect(out.furniture.any((f) => f.type == FurnitureType.sofa), isTrue);
+    expect(
+      out.furniture.any((f) =>
+          f.type == FurnitureType.tvUnit || f.type == FurnitureType.table),
+      isTrue,
+    );
+    expect(out.walls.any((w) => w.type == StrokeType.door), isTrue);
+    expect(PhotoTrueLayout.isNonStudyDense(out), isTrue);
+  });
+
+  test('+106 composeNonStudyGold bed on north wardrobe south', () {
+    final gold = PhotoTrueLayout.composeNonStudyGold(
+      widthFt: 18.5,
+      lengthFt: 17,
+    );
+    final bed = gold.furniture.firstWhere((f) => f.type == FurnitureType.bed);
+    expect(bed.posFt.dy, greaterThan(gold.roomLengthFt * 0.5)); // north half
+    final wardrobe =
+        gold.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    expect(wardrobe.posFt.dy, lessThan(3.5)); // south
+  });
 }
 
 double mathMax(double a, double b) => a > b ? a : b;

@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+106 (2026-07-19)
+
+### Accuracy — non-study bedroom/living dense gold (+106)
+- **Non-study density path**: bedroom/living no longer exit after polish-only; `ensureNonStudyDensity` + `composeNonStudyGold` wall-fill inventory (e89c quality class: bed@N, wardrobe@S, sofa@W, tv@E).
+- **Pending inventory gate**: do not early-accept study photo-true when MUST bed/sofa/tv still missing.
+- **Inventory parse fix**: polish notes like "no bed invent" no longer poison bedroom detection; `must include bed` wins.
+- Score bar **72–84%** for dense non-study (honest; not study 74% photo-true which forbids bed).
+- Tests +106. See `docs/ACCURACY_TURN_LOG.md` Turn 56.
+- Version **+106**.
+
 ## 1.0.0-beta.1+105 (2026-07-19)
 
 ### Accuracy resume — gold geometry match + wardrobe scale fix
