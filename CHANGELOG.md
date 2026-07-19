@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+109 (2026-07-19)
+
+### Accuracy — Phase B metrics in training export + Review UI
+- **Training JSONL v2**: feedback + plan snapshots include `phase_b` diagnostics (vs gold template composite, door MAE, type recall, opening fidelity, scale source, room type) and full plan geometry.
+- **`PlanAccuracyMetrics.syntheticReference` / `diagnosticsJson` / `planToJson`**: template baseline when no user-corrected gold exists.
+- **Review**: “Phase B vs template” line under plan confidence; feedback snackbar shows metrics.
+- Tests +109. See `docs/ACCURACY_TURN_LOG.md` Turn 59.
+- Version **+109**.
+
 ## 1.0.0-beta.1+108 (2026-07-19)
 
 ### Accuracy — AR/tape scale lock + Phase B metrics scaffolding

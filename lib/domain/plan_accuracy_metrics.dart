@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
+import 'opening_chain_fidelity.dart';
+import 'photo_true_layout.dart';
 import 'wall_relative_scan.dart';
 
 /// Phase B labeled accuracy metrics (+108).
@@ -58,6 +60,26 @@ class PlanAccuracyReport {
         'type recall ${(furnitureTypeRecall * 100).round()}% · '
         'center MAE ${furnitureCenterMaeFt.toStringAsFixed(1)} ft';
   }
+
+  /// Short Review / snackbar line (+109).
+  String reviewLine() {
+    return 'Phase B vs template ${(compositeScore * 100).round()}% · '
+        'doors MAE ${doorWidthMaeFt.toStringAsFixed(1)} ft · '
+        'types ${(furnitureTypeRecall * 100).round()}%';
+  }
+
+  Map<String, dynamic> toJson() => {
+        'composite': double.parse(compositeScore.toStringAsFixed(4)),
+        'room_size_error_pct':
+            double.parse(roomSizeErrorPct.toStringAsFixed(4)),
+        'door_width_mae_ft': double.parse(doorWidthMaeFt.toStringAsFixed(3)),
+        'door_count_recall': double.parse(doorCountRecall.toStringAsFixed(3)),
+        'furniture_type_recall':
+            double.parse(furnitureTypeRecall.toStringAsFixed(3)),
+        'furniture_center_mae_ft':
+            double.parse(furnitureCenterMaeFt.toStringAsFixed(3)),
+        'room_size_score': double.parse(roomSizeScore.toStringAsFixed(3)),
+      };
 }
 
 class PlanAccuracyMetrics {
@@ -121,6 +143,148 @@ class PlanAccuracyMetrics {
           ? r.compositeScore
           : math.max(predicted.accuracyScore!, r.compositeScore * 0.9),
     );
+  }
+
+  /// Build a gold-class template reference from inventory cues (+109).
+  ///
+  /// Used when no user-corrected plan exists yet — Phase B baseline against
+  /// Planner5D-class dense layout for the same room size / room type.
+  static ScanResult syntheticReference(ScanResult predicted) {
+    final w = predicted.roomWidthFt > 0
+        ? predicted.roomWidthFt
+        : PhotoTrueLayout.goldRoomWidthFt;
+    final l = predicted.roomLengthFt > 0
+        ? predicted.roomLengthFt
+        : PhotoTrueLayout.goldRoomLengthFt;
+    // Promote visible furniture types into MUST inventory so empty-shell gold
+    // matches the room class (study vs bedroom/living).
+    final must = <String>[];
+    final types = predicted.furniture
+        .where((f) => f.included)
+        .map((f) => f.type)
+        .toSet();
+    if (types.contains(FurnitureType.bed) ||
+        PhotoTrueLayout.isBedroomLike(predicted)) {
+      must.add('MUST include BED');
+    }
+    if (types.contains(FurnitureType.sofa) ||
+        PhotoTrueLayout.isLivingLike(predicted)) {
+      must.add('MUST include SOFA');
+    }
+    if (types.contains(FurnitureType.wardrobe) ||
+        predicted.warnings.join(' ').toLowerCase().contains('wardrobe')) {
+      must.add('MUST include WARDROBE');
+    }
+    if (types.contains(FurnitureType.table) ||
+        predicted.warnings.join(' ').toLowerCase().contains('table') ||
+        predicted.warnings.join(' ').toLowerCase().contains('desk')) {
+      must.add('MUST include TABLE');
+    }
+    if (types.contains(FurnitureType.tvUnit)) {
+      must.add('MUST include TV_UNIT');
+    }
+    final blob = predicted.warnings.join(' ').toLowerCase();
+    if (blob.contains('mesh') || blob.contains('balcony')) {
+      must.add('MUST include mesh balcony');
+    }
+    if (blob.contains('2 door') || blob.contains('about 2 door')) {
+      must.add('about 2 door opening(s)');
+    }
+    final shell = ScanResult(
+      roomWidthFt: w,
+      roomLengthFt: l,
+      walls: const [],
+      furniture: const [],
+      warnings: [
+        ...predicted.warnings,
+        if (must.isNotEmpty) 'Inventory: ${must.join('; ')}',
+        'phase_b synthetic gold template (+109)',
+      ],
+      accuracyScore: 0.3,
+    );
+    return PhotoTrueLayout.ensureGoldQuality(shell);
+  }
+
+  /// Full diagnostics map for training export + Review (+109).
+  static Map<String, dynamic> diagnosticsJson(ScanResult predicted) {
+    final ref = syntheticReference(predicted);
+    final report = compare(predicted, ref);
+    final openingFid = OpeningChainFidelity.score(predicted);
+    final geom = PhotoTrueLayout.isStudyLike(predicted)
+        ? PhotoTrueLayout.goldGeometryMatchScore(predicted)
+        : null;
+    final scale = _detectScaleSource(predicted.warnings);
+    return {
+      'schema': 'phase_b_v1',
+      'vs_template': report.toJson(),
+      'opening_fidelity': double.parse(openingFid.toStringAsFixed(3)),
+      if (geom != null) 'geometry_match': double.parse(geom.toStringAsFixed(3)),
+      'scale_source': scale,
+      'heuristic_accuracy': predicted.accuracyScore,
+      'room_type': PhotoTrueLayout.isBedroomLike(predicted)
+          ? 'bedroom'
+          : PhotoTrueLayout.isLivingLike(predicted)
+              ? 'living'
+              : PhotoTrueLayout.isStudyLike(predicted)
+                  ? 'study'
+                  : 'generic',
+      'template': PhotoTrueLayout.isStudyLike(predicted) &&
+              !PhotoTrueLayout.isBedroomLike(predicted)
+          ? 'study_gold'
+          : 'non_study_gold',
+    };
+  }
+
+  /// Compare predicted to template; return report for UI (+109).
+  static PlanAccuracyReport vsTemplate(ScanResult predicted) {
+    return compare(predicted, syntheticReference(predicted));
+  }
+
+  static String _detectScaleSource(List<String> warnings) {
+    final blob = warnings.join(' ').toLowerCase();
+    if (blob.contains('tape') || blob.contains('field measure')) return 'tape';
+    if (blob.contains('4-wall') || blob.contains('ar chain')) return 'ar_chain';
+    if (blob.contains('arcore') || blob.contains('ar ')) return 'ar_quick';
+    if (blob.contains('scale lock (+108)')) {
+      if (blob.contains('tape')) return 'tape';
+      if (blob.contains('chain')) return 'ar_chain';
+      if (blob.contains('user-typed')) return 'user_typed';
+    }
+    if (blob.contains('user') && blob.contains('size')) return 'user_typed';
+    return 'photo_estimate';
+  }
+
+  /// Serialize plan geometry for training JSONL (+109).
+  static Map<String, dynamic> planToJson(ScanResult r) {
+    return {
+      'width_ft': r.roomWidthFt,
+      'length_ft': r.roomLengthFt,
+      'accuracy': r.accuracyScore,
+      'openings': [
+        for (final w in r.walls)
+          if (w.type != StrokeType.wall)
+            {
+              'type': w.type.name,
+              'x0': double.parse(w.startFt.dx.toStringAsFixed(3)),
+              'y0': double.parse(w.startFt.dy.toStringAsFixed(3)),
+              'x1': double.parse(w.endFt.dx.toStringAsFixed(3)),
+              'y1': double.parse(w.endFt.dy.toStringAsFixed(3)),
+              'len_ft': double.parse(w.lengthFt.toStringAsFixed(3)),
+            },
+      ],
+      'furniture': [
+        for (final f in r.furniture)
+          if (f.included)
+            {
+              'type': f.type.name,
+              'x': double.parse(f.posFt.dx.toStringAsFixed(3)),
+              'y': double.parse(f.posFt.dy.toStringAsFixed(3)),
+              'w': double.parse(f.widthFt.toStringAsFixed(3)),
+              'l': double.parse(f.lengthFt.toStringAsFixed(3)),
+              'rot': double.parse(f.rotationRad.toStringAsFixed(4)),
+            },
+      ],
+    };
   }
 
   static double _roomSizeError(ScanResult a, ScanResult b) {

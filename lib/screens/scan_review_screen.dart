@@ -95,6 +95,9 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
             w.type == StrokeType.window ||
             w.type == StrokeType.balcony)
         .length;
+    // +109: Phase B metrics vs gold template for training export
+    final phaseB = PlanAccuracyMetrics.diagnosticsJson(_result);
+    final vs = PlanAccuracyMetrics.vsTemplate(_result);
     await TrainingExportService().logScanFeedback(
       rating: rating,
       mode: 'review',
@@ -103,17 +106,20 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
       roomLengthFt: _result.roomLengthFt,
       furnitureCount: _result.furniture.where((f) => f.included).length,
       openingsCount: openings,
+      phaseB: phaseB,
+      plan: _result,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           rating == 'good'
-              ? 'Thanks — saved for model training'
+              ? 'Thanks — saved for training · ${vs.reviewLine()}'
               : rating == 'ok'
-                  ? 'Noted — we’ll improve scale & placement'
-                  : 'Thanks — bad scans guide the next model update',
+                  ? 'Noted · ${vs.reviewLine()}'
+                  : 'Logged bad scan · ${vs.reviewLine()}',
         ),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -138,35 +144,11 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
         );
     await StorageService().saveRoom(ref.read(roomProvider).room);
     await AnalyticsService.instance.openEditorFromScan();
-    // Snapshot corrected plan for training (after user toggled furniture etc.)
+    // Snapshot corrected plan + Phase B metrics for training (+109)
     try {
-      await TrainingExportService().logPlanSnapshot(
+      await TrainingExportService().logScanResultSnapshot(
         source: 'open_editor',
-        widthFt: _result.roomWidthFt,
-        lengthFt: _result.roomLengthFt,
-        openings: [
-          for (final w in _result.walls)
-            if (w.type != StrokeType.wall)
-              {
-                'type': w.type.name,
-                'x0': w.startFt.dx,
-                'y0': w.startFt.dy,
-                'x1': w.endFt.dx,
-                'y1': w.endFt.dy,
-              },
-        ],
-        furniture: [
-          for (final f in _result.furniture)
-            if (f.included)
-              {
-                'type': f.type.name,
-                'x': f.posFt.dx,
-                'y': f.posFt.dy,
-                'w': f.widthFt,
-                'l': f.lengthFt,
-                'rot': f.rotationRad,
-              },
-        ],
+        plan: _result,
         feedbackRating: _feedbackRating,
       );
     } catch (_) {}
@@ -584,6 +566,24 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  // +109: Phase B vs gold-template diagnostics (Planner5D-class)
+                  Builder(
+                    builder: (context) {
+                      final vs = PlanAccuracyMetrics.vsTemplate(_result);
+                      final color = vs.compositeScore >= 0.75
+                          ? Colors.teal.shade700
+                          : vs.compositeScore >= 0.5
+                              ? Colors.orange.shade800
+                              : Colors.red.shade700;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          vs.reviewLine(),
+                          style: TextStyle(fontSize: 11, color: color),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ],
