@@ -7,7 +7,9 @@ import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
+import 'opening_chain_fidelity.dart';
 import 'photo_true_layout.dart';
+import 'plan_accuracy_metrics.dart';
 import 'wall_relative_scan.dart';
 
 /// Post-process scan geometry for higher layout accuracy.
@@ -100,11 +102,17 @@ class ScanRefine {
   }
 
   /// Rescale an existing plan to new AR/tape size (keeps relative layout).
+  ///
+  /// +108: Planner5D-class scale lock — measured W×L raises confidence floor
+  /// (AR chain / tape), runs opening-chain fidelity, and does not let geometry
+  /// refine silently drop AR trust below the measured-scale floor.
   static ScanResult lockSize(
     ScanResult input, {
     required double widthFt,
     required double lengthFt,
     String reason = 'Size locked from AR refine',
+    ScaleSource scaleSource = ScaleSource.arChain,
+    double oppositeWallError = 0,
   }) {
     final ox = input.roomWidthFt <= 0 ? 1.0 : input.roomWidthFt;
     final oy = input.roomLengthFt <= 0 ? 1.0 : input.roomLengthFt;
@@ -114,6 +122,7 @@ class ScanRefine {
 
     Offset map(Offset p) => Offset(p.dx * sx, p.dy * sy);
 
+    final sourceName = ScaleLockConfidence.sourceLabel(scaleSource);
     final scaled = ScanResult(
       roomWidthFt: widthFt,
       roomLengthFt: lengthFt,
@@ -130,16 +139,47 @@ class ScanRefine {
           ScanFurnitureHint(
             type: f.type,
             posFt: map(f.posFt),
-            widthFt: f.widthFt * sAvg,
-            lengthFt: f.lengthFt * sAvg,
+            // Keep catalog-ish footprints; only rescale freeform extremes mildly
+            widthFt: f.widthFt * math.min(sAvg, 1.35).clamp(0.75, 1.35),
+            lengthFt: f.lengthFt * math.min(sAvg, 1.35).clamp(0.75, 1.35),
             rotationRad: f.rotationRad,
             included: f.included,
           ),
       ],
-      warnings: [...input.warnings, reason],
-      accuracyScore: ((input.accuracyScore ?? 0.55) + 0.2).clamp(0.5, 0.95),
+      warnings: [
+        ...input.warnings,
+        reason,
+        'Scale lock (+108): $sourceName → '
+            '${widthFt.toStringAsFixed(1)}×${lengthFt.toStringAsFixed(1)} ft'
+            '${oppositeWallError > 0.01 ? " · opposite-wall err ${(oppositeWallError * 100).round()}%" : ""}',
+      ],
+      accuracyScore: ScaleLockConfidence.blend(
+        layoutScore: input.accuracyScore,
+        source: scaleSource,
+        oppositeWallError: oppositeWallError,
+      ),
     );
-    return refine(scaled);
+
+    // Refine geometry but preserve measured-scale confidence floor
+    final refined = refine(scaled);
+    final opened = OpeningChainFidelity.ensure(refined);
+    final floor = ScaleLockConfidence.sourceFloor(
+      scaleSource,
+      oppositeWallError: oppositeWallError,
+    );
+    final score = ScaleLockConfidence.blend(
+      layoutScore: opened.accuracyScore ?? refined.accuracyScore,
+      source: scaleSource,
+      oppositeWallError: oppositeWallError,
+    );
+    return opened.copyWith(
+      accuracyScore: math.max(score, floor).clamp(floor, 0.98),
+      warnings: [
+        ...opened.warnings,
+        'Scale lock confidence (+108): ${(math.max(score, floor) * 100).round()}% '
+            '($sourceName floor ${(floor * 100).round()}%)',
+      ],
+    );
   }
 
   static List<ScanWallSegment> _refineOpenings(

@@ -3,14 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../catalog/furniture_catalog.dart';
 import '../domain/photo_true_layout.dart';
+import '../domain/plan_accuracy_metrics.dart';
 import '../domain/scan_parser.dart';
+import '../domain/scan_refine.dart';
 import '../domain/units.dart';
 import '../domain/wall_relative_scan.dart';
 import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import '../providers/room_provider.dart';
-import '../domain/scan_refine.dart';
 import '../services/analytics_service.dart';
 import '../services/ar_measure_service.dart';
 import '../services/storage_service.dart';
@@ -57,6 +58,10 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
           lengthFt: m.lengthFt,
           reason:
               'Size re-locked from AR 4-wall measure (${m.widthFt.toStringAsFixed(1)}×${m.lengthFt.toStringAsFixed(1)} ft)',
+          scaleSource: m.isChain
+              ? ScaleSource.arChain
+              : ScaleSource.arQuick,
+          oppositeWallError: m.oppositeWallError,
         );
       });
       ScaffoldMessenger.of(context).showSnackBar(

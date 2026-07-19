@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+108 (2026-07-19)
+
+### Accuracy — AR/tape scale lock + Phase B metrics scaffolding
+- **`ScaleLockConfidence`**: measured scale floors (tape 96%, AR chain 94%, AR quick 88%, photo 45%); blend with layout score; Review AR refine + scanner AR paths use it.
+- **`ScanRefine.lockSize` (+108)**: preserves measured-scale floor through refine; runs opening-chain fidelity; softer furniture footprint rescale.
+- **`PlanAccuracyMetrics` (Phase B)**: compare predicted vs reference — room size error %, door width MAE, type recall, center MAE, composite score. For tests/training, not fake LiDAR 100%.
+- Tests +108. See `docs/ACCURACY_TURN_LOG.md` Turn 58.
+- Version **+108**.
+
 ## 1.0.0-beta.1+107 (2026-07-19)
 
 ### Accuracy — opening chain fidelity (Planner5D-class doors/mesh)

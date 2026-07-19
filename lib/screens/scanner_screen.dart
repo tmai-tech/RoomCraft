@@ -8,8 +8,9 @@ import '../catalog/furniture_catalog.dart';
 import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/layout/auto_arrange.dart';
-import '../domain/scan_refine.dart';
+import '../domain/plan_accuracy_metrics.dart';
 import '../domain/scan_keyframes.dart';
+import '../domain/scan_refine.dart';
 import '../domain/units.dart';
 import '../domain/wall_relative_scan.dart';
 import '../models/furniture_item.dart';
@@ -810,19 +811,33 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             autoScale: false,
             layoutType: RoomLayoutType.empty,
           );
+          final chain = _arMeasure?.isChain == true;
+          final oppErr = _arMeasure?.oppositeWallError ?? 0;
+          final src =
+              chain ? ScaleSource.arChain : ScaleSource.arQuick;
           result = ScanRefine.refine(raw.copyWith(
             warnings: [
               ...raw.warnings,
               'Room size from ARCore floor measure '
                   '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
+              'Scale lock (+108): ${ScaleLockConfidence.sourceLabel(src)}',
             ],
-            accuracyScore:
-                ((raw.accuracyScore ?? 0.72) + 0.12).clamp(0.55, 0.95),
+            accuracyScore: ScaleLockConfidence.blend(
+              layoutScore: raw.accuracyScore ?? 0.72,
+              source: src,
+              oppositeWallError: oppErr,
+            ),
           ));
         } else {
           // AR size only — exact rectangle; add furniture from catalog or photos later
           final chain = _arMeasure?.isChain == true;
           final oppErr = _arMeasure?.oppositeWallError ?? 0;
+          final src =
+              chain ? ScaleSource.arChain : ScaleSource.arQuick;
+          final floor = ScaleLockConfidence.sourceFloor(
+            src,
+            oppositeWallError: oppErr,
+          );
           result = ScanRefine.refine(AccurateScan.enforce(
             widthFt: w,
             lengthFt: l,
@@ -838,12 +853,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 'Opposite walls differ by ${(oppErr * 100).round()}% — edit in Review if needed',
               if (frames.isEmpty)
                 'No photos yet — add openings/furniture in Review or re-scan with photos',
+              'Scale lock (+108): ${ScaleLockConfidence.sourceLabel(src)} '
+                  'floor ${(floor * 100).round()}%',
             ],
             sourceLabel: chain ? 'ARCore 4-wall chain' : 'ARCore guided measure',
             inventDefaultOpenings: false,
-            accuracyScore: chain
-                ? (oppErr > 0.12 ? 0.82 : 0.92)
-                : 0.88,
+            accuracyScore: floor,
           ));
         }
       } else if (mode == 'field_measure') {
