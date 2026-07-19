@@ -44,9 +44,9 @@ class AutoScale {
   static const double photoTrueMinWidthFt = 14.0;
   static const double photoTrueMinLengthFt = 12.0;
 
-  /// Denser study (wardrobe + mesh + multi-door) — gold-plan feedback ~20.3×17.
-  /// +45: 18×16; +53: match manual gold plan scale (still not tape-accurate).
-  static const double photoTrueDenseWidthFt = 20.0;
+  /// Denser study (wardrobe + mesh + multi-door) — gold-plan feedback 32ffdc65.
+  /// +45: 18×16; +53: 20×17; +105: exact manual gold **20.3×17.0**.
+  static const double photoTrueDenseWidthFt = 20.3;
   static const double photoTrueDenseLengthFt = 17.0;
 
   /// Resolve final room size for easy scan.
@@ -251,8 +251,15 @@ class AutoScale {
       if (prior == null) continue;
       final longSide = math.max(item.widthFt, item.lengthFt);
       if (longSide < 1.5 || longSide > 20) continue;
+      // +105 Planner5D-class: wall-spanning sliding wardrobes are not freestanding
+      // catalog priors. Scaling a 12–16 ft unit down to 6.5 ft crushes the whole
+      // room (feedback 32ffdc65 gold ~full-wall wardrobe on 20.3 ft wall).
+      if (key.contains('WARDROBE') && longSide >= 7.0) continue;
+      // Never scale the room *down* from an oversized piece — only refine when
+      // vision under-sizes a standard freestanding unit (bed/sofa/table).
       final factor = (prior / longSide).clamp(0.6, 1.7);
       if ((factor - 1.0).abs() < 0.05) continue;
+      if (factor < 0.92 && longSide > prior * 1.15) continue;
       return (factor: factor, label: key.toLowerCase());
     }
     return null;

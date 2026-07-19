@@ -1709,6 +1709,65 @@ void main() {
     // Still on east half of room (not forced to west x≈1)
     expect(wardrobe.posFt.dx, greaterThan(10));
   });
+
+  test('+105 gold room floor is feedback 20.3×17.0', () {
+    expect(PhotoTrueLayout.goldRoomWidthFt, closeTo(20.3, 0.01));
+    expect(PhotoTrueLayout.goldRoomLengthFt, closeTo(17.0, 0.01));
+  });
+
+  test('+105 empty study ensureGold → high geometry match vs gold plan', () {
+    final thin = ScanResult(
+      roomWidthFt: 12,
+      roomLengthFt: 10.5,
+      walls: const [],
+      furniture: const [],
+      warnings: const [
+        'Inventory: MUST include WARDROBE; MUST include TABLE (desk); '
+            'include CHAIR if seen; NO BED; NO SOFA; NO TV_UNIT; '
+            'about 2 door opening(s); MUST include mesh balcony',
+        'multi-wall photo-true study',
+      ],
+      accuracyScore: 0.25,
+    );
+    final out = PhotoTrueLayout.ensureGoldQuality(thin);
+    expect(PhotoTrueLayout.isPhotoTrue(out), isTrue);
+    expect(out.roomWidthFt, greaterThanOrEqualTo(20.0));
+    expect(out.roomLengthFt, greaterThanOrEqualTo(17.0));
+    final geom = PhotoTrueLayout.goldGeometryMatchScore(out);
+    expect(geom, greaterThanOrEqualTo(0.75));
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.74));
+    // Geometry blend can push above old 0.92 ceiling when structure matches gold
+    expect(out.accuracyScore, lessThanOrEqualTo(0.98));
+    final wardrobe =
+        out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    final along = mathMax(wardrobe.widthFt, wardrobe.lengthFt);
+    expect(along, greaterThanOrEqualTo(7.0));
+    expect(
+      out.furniture.any((f) => f.type == FurnitureType.table && f.included),
+      isTrue,
+    );
+    final doors =
+        out.walls.where((w) => w.type == StrokeType.door).length;
+    expect(doors, greaterThanOrEqualTo(2));
+    expect(
+      out.walls.any((w) =>
+          w.type == StrokeType.balcony ||
+          (w.type == StrokeType.window && w.lengthFt >= 4)),
+      isTrue,
+    );
+  });
+
+  test('+105 goldGeometryMatchScore low on empty plan', () {
+    final empty = ScanResult(
+      roomWidthFt: 12,
+      roomLengthFt: 10,
+      walls: const [],
+      furniture: const [],
+      warnings: const [],
+      accuracyScore: 0.2,
+    );
+    expect(PhotoTrueLayout.goldGeometryMatchScore(empty), lessThan(0.35));
+  });
 }
 
 double mathMax(double a, double b) => a > b ? a : b;

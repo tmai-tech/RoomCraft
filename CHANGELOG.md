@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+105 (2026-07-19)
+
+### Accuracy resume — gold geometry match + wardrobe scale fix
+- **No scale-down from full-wall wardrobes**: AutoScale skips freestanding 6.5 ft prior when vision reports ≥7 ft slider (Planner5D-class: wall units are not catalog freestanding priors). Prevents crushing 20×17 gold rooms.
+- **Gold room floor** matched to feedback `32ffdc65` manual plan: **20.3×17.0** ft (was 20.0).
+- **`goldGeometryMatchScore`**: structural fidelity vs gold (room size, wardrobe span, work-wall desk, dual doors, mesh, chair) blended into finalize score (ceiling ~98%, not fake 100% LiDAR).
+- Tests: auto_scale + photo_true +105. See `docs/ACCURACY_TURN_LOG.md` Turn 55.
+- Version **+105**.
+
 ## 1.0.0-beta.1+104 (2026-07-18)
 
 ### Room notes · smart search · feature graphic

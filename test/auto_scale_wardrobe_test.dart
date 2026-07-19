@@ -90,6 +90,32 @@ void main() {
     expect(min.lengthFt, 10);
   });
 
+  test('+105 full-wall wardrobe does not scale room down to 6.5 prior', () {
+    // Vision sees ~14 ft slider on ~20 ft wall — must not crush room by 6.5/14
+    final size = AutoScale.resolve(
+      visionWidthFt: 20.3,
+      visionLengthFt: 17.0,
+      visionSizeConfidence: 0.65,
+      furniture: [
+        (type: 'WARDROBE', widthFt: 14.0, lengthFt: 1.6),
+        (type: 'TABLE', widthFt: 4.0, lengthFt: 2.0),
+      ],
+    );
+    expect(size.widthFt, greaterThanOrEqualTo(19.5));
+    expect(size.lengthFt, greaterThanOrEqualTo(16.0));
+  });
+
+  test('+105 dense gold floor matches manual 20.3×17', () {
+    final min = AutoScale.ensurePhotoTrueMinSize(
+      widthFt: 12.0,
+      lengthFt: 10.5,
+      inventoryHint:
+          'MUST include WARDROBE; MUST include mesh balcony; about 2 door opening(s)',
+    );
+    expect(min.widthFt, closeTo(20.3, 0.05));
+    expect(min.lengthFt, closeTo(17.0, 0.05));
+  });
+
   test('+38 accurate scan keeps long wardrobe ~6.5 not crush to 4', () {
     final result = AccurateScan.enforce(
       widthFt: 14,
