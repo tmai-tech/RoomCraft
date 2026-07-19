@@ -163,7 +163,7 @@ Across **Turns 44–54 (+83→+93)** the recurring miss was **claiming product p
 | | Turn | Version | Status |
 |--|-----:|---------|--------|
 | **Firebase (latest distributed)** | **54** | **1.0.0-beta.1+93** | Built & uploaded via [run 29628861956](https://github.com/tmai-tech/RoomCraft/actions/runs/29628861956) |
-| **Local / accuracy resume** | **55** | **1.0.0-beta.1+106** | Accuracy loop: +105 scale/geometry +106 non-study density — see `docs/ACCURACY_TURN_LOG.md` |
+| **Local / accuracy resume** | **56** | **1.0.0-beta.1+106** | Accuracy loop: +105 scale/geometry +106 non-study density — see `docs/ACCURACY_TURN_LOG.md` |
 
 **Tester install:** Firebase App Tester invite → latest release should show **+93** (or newer if a later build was distributed). Confirm on device Settings version label.
 
