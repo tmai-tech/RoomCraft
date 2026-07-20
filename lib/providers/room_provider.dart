@@ -11,6 +11,7 @@ import '../models/room_model.dart';
 import '../models/stroke_model.dart';
 import '../domain/layout/ai_designer.dart';
 import '../domain/layout/auto_arrange.dart';
+import '../domain/layout/blueprint_safety.dart';
 import '../domain/layout/clearances.dart';
 import '../domain/layout/furniture_bounds.dart';
 import '../domain/layout/layout_score.dart';
@@ -236,11 +237,14 @@ class RoomNotifier extends Notifier<RoomState> {
     if (state.currentTool == ToolMode.balcony) type = StrokeType.balcony;
 
     var snapped = _snapToGrid(position);
-    // Openings prefer the room perimeter so left/top edges are easy to hit.
+    // +113: larger edge magnet so left/top walls are easy (feedback 7be5dbfd)
     if (type == StrokeType.door ||
         type == StrokeType.window ||
         type == StrokeType.wall) {
-      snapped = _snapToRoomEdge(snapped, thresholdPx: state.pixelsPerFoot * 0.6);
+      snapped = _snapToRoomEdge(
+        snapped,
+        thresholdPx: state.pixelsPerFoot * 1.15,
+      );
     }
 
     state = state.copyWith(
@@ -266,7 +270,10 @@ class RoomNotifier extends Notifier<RoomState> {
       // Keep both ends on the same perimeter wall once started near an edge.
       snapped = _projectOpeningOntoWall(start, snapped);
     } else if (t == StrokeType.wall) {
-      snapped = _snapToRoomEdge(snapped, thresholdPx: state.pixelsPerFoot * 0.45);
+      snapped = _snapToRoomEdge(
+        snapped,
+        thresholdPx: state.pixelsPerFoot * 0.95,
+      );
     }
 
     final updatedPoints = List<Offset>.from(state.currentStroke!.points);
@@ -592,20 +599,27 @@ class RoomNotifier extends Notifier<RoomState> {
   ) {
     _undoStack.clear();
     _redoStack.clear();
+    final (w, l) = BlueprintSafety.safeRoomSize(width, length);
+    final pxf = BlueprintSafety.safePixelsPerFoot(state.pixelsPerFoot);
+    // +113: sanitize + clear furniture blocking door swings (table-in-front-of-door)
+    var room = BlueprintSafety.sanitizeRoom(RoomModel(
+      id: _uuid.v4(),
+      name:
+          'AI Scan ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+      widthInFeet: w,
+      lengthInFeet: l,
+      strokes: strokes,
+      furniture: furniture,
+    ));
+    room = BlueprintSafety.resolveDoorFurnitureBlocks(room, pxf);
     state = state.copyWith(
-      room: RoomModel(
-        id: _uuid.v4(),
-        name:
-            'AI Scan ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-        widthInFeet: width,
-        lengthInFeet: length,
-        strokes: strokes,
-        furniture: furniture,
-      ),
+      room: room,
+      pixelsPerFoot: pxf,
       clearSelected: true,
       isDraggingFurniture: false,
       canUndo: false,
       canRedo: false,
+      currentTool: ToolMode.select,
     );
     _refreshLayout();
   }
@@ -613,13 +627,44 @@ class RoomNotifier extends Notifier<RoomState> {
   void loadRoom(RoomModel room) {
     _undoStack.clear();
     _redoStack.clear();
+    final pxf = BlueprintSafety.safePixelsPerFoot(AppConfig.defaultPixelsPerFoot);
+    final safe = BlueprintSafety.sanitizeRoom(room);
     state = state.copyWith(
-      room: room,
+      room: safe,
       clearSelected: true,
-      pixelsPerFoot: AppConfig.defaultPixelsPerFoot,
+      pixelsPerFoot: pxf,
       isDraggingFurniture: false,
       canUndo: false,
       canRedo: false,
+    );
+    _refreshLayout();
+  }
+
+  /// Fresh empty room at [width]×[length] for manual draw (+113).
+  ///
+  /// Avoids undo restoring a mystery 10×10 after size dialog.
+  void beginManualRoom(double width, double length) {
+    _undoStack.clear();
+    _redoStack.clear();
+    final (w, l) = BlueprintSafety.safeRoomSize(width, length);
+    final pxf = BlueprintSafety.safePixelsPerFoot(AppConfig.defaultPixelsPerFoot);
+    state = state.copyWith(
+      room: RoomModel(
+        id: _uuid.v4(),
+        name:
+            'Manual ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+        widthInFeet: w,
+        lengthInFeet: l,
+        strokes: const [],
+        furniture: const [],
+      ),
+      pixelsPerFoot: pxf,
+      clearSelected: true,
+      isDraggingFurniture: false,
+      canUndo: false,
+      canRedo: false,
+      currentTool: ToolMode.wall,
+      clearStroke: true,
     );
     _refreshLayout();
   }
@@ -646,16 +691,18 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 
   void updateRoomSize(double width, double length) {
+    final (w, l) = BlueprintSafety.safeRoomSize(width, length);
     _pushHistory();
     state = state.copyWith(
       room: state.room.copyWith(
-        widthInFeet: width,
-        lengthInFeet: length,
+        widthInFeet: w,
+        lengthInFeet: l,
         clearFloorPolygon: true,
         updatedAt: DateTime.now(),
       ),
     );
     _syncHistoryFlags();
+    _refreshLayout();
   }
 
   /// Convert current bounding box to an L-shape floor (free polygon path).
@@ -736,12 +783,34 @@ class RoomNotifier extends Notifier<RoomState> {
   }
 
   void _refreshLayout() {
-    final score = LayoutScore.evaluate(state.room, state.pixelsPerFoot);
-    state = state.copyWith(
-      collisionIds: score.collisionIds,
-      layoutScore: score.score,
-      layoutTips: score.tips,
-    );
+    try {
+      final pxf = BlueprintSafety.safePixelsPerFoot(state.pixelsPerFoot);
+      final room = BlueprintSafety.sanitizeRoom(state.room);
+      final score = LayoutScore.evaluate(room, pxf);
+      state = state.copyWith(
+        room: room.widthInFeet != state.room.widthInFeet ||
+                room.lengthInFeet != state.room.lengthInFeet ||
+                room.furniture.length != state.room.furniture.length
+            ? room
+            : state.room,
+        pixelsPerFoot: pxf,
+        collisionIds: score.collisionIds,
+        layoutScore: score.score,
+        layoutTips: score.tips,
+      );
+    } catch (_) {
+      // Never let layout scoring crash the blueprint editor (feedback red screen)
+      state = state.copyWith(
+        collisionIds: const {},
+        layoutScore: state.layoutScore,
+        layoutTips: const [
+          LayoutTip(
+            'Layout tips unavailable — plan is still editable',
+            severity: 'info',
+          ),
+        ],
+      );
+    }
   }
 
   /// Auto-arrange furniture.

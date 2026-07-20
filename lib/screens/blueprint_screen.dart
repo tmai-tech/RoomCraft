@@ -111,11 +111,15 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
       canPop: true,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) {
-          await StorageService().saveRoom(roomState.room);
-          await _logCorrectedGoldIfNeeded(
-            roomState.room,
-            roomState.pixelsPerFoot,
-          );
+          try {
+            await StorageService().saveRoom(roomState.room);
+            await _logCorrectedGoldIfNeeded(
+              roomState.room,
+              roomState.pixelsPerFoot,
+            );
+          } catch (_) {
+            // Save failure must not crash exit (feedback 9bbf5b05 red screen)
+          }
         }
       },
       child: Scaffold(
@@ -136,7 +140,16 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: () async {
-                await StorageService().saveRoom(roomState.room);
+                try {
+                  await StorageService().saveRoom(roomState.room);
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Save failed: $e')),
+                    );
+                  }
+                  return;
+                }
                 final logged = await _logCorrectedGoldIfNeeded(
                   roomState.room,
                   roomState.pixelsPerFoot,

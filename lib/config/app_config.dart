@@ -120,7 +120,8 @@ Plans stay on your device. Optional free vision and cloud backup when you enable
 
   /// Pixel inset so the room outline is not glued to the canvas top-left.
   /// Lets users draw the left/top walls without fighting the screen edge.
-  static const double canvasOriginPx = 56.0;
+  /// +113: larger inset (was 56) — feedback 7be5dbfd left edge stuck.
+  static const double canvasOriginPx = 80.0;
 
   /// Furniture rotate snap (degrees).
   static const double rotateSnapDegrees = 45.0;

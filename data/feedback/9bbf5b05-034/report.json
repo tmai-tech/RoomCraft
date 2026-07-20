@@ -1,0 +1,31 @@
+{
+  "id": "9bbf5b05-034",
+  "message": "app giving error on manual blue print \nscan output is wrong the tablei s present in the scan print just infront of the door which is wrong and other door door place mentioned is wrong read earlier feedbacks where a manual scan screenshot was given expected output",
+  "osVersion": "W1UOS36H.35-39-2",
+  "platform": "android",
+  "buildNumber": 104,
+  "category": "scan",
+  "createdAt": "2026-07-20T17:32:07.488957Z",
+  "screenshotCount": 2,
+  "contactEmail": "",
+  "screenshotUrls": null,
+  "hasLocalScreenshots": true,
+  "uid": "DrreaxO4aYgUlHnFPKayjkCDJKe2",
+  "versionLabel": "1.0.0-beta.1+104 (beta)",
+  "appVersion": "1.0.0-beta.1",
+  "createdAtServer": "2026-07-20T17:32:12.148Z",
+  "downloadedAt": "2026-07-20T17:32:49.562Z",
+  "images": [
+    {
+      "file": "preview_0.jpg",
+      "kind": "preview",
+      "bytes": 4695
+    },
+    {
+      "file": "preview_1.jpg",
+      "kind": "preview",
+      "bytes": 9414
+    }
+  ],
+  "note": "Images from Firestore screenshotPreviews (thumbs). Full-res Storage not available."
+}

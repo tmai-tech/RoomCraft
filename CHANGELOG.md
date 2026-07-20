@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+113 (2026-07-20)
+
+### Fix — manual blueprint red error + table in front of door (feedback 9bbf5b05)
+- **`BlueprintSafety`**: sanitize NaN/zero room sizes, furniture, strokes; safe pixels-per-foot (no infinite grid paint loop).
+- **`resolveDoorFurnitureBlocks`**: on open editor / `initFromScan`, nudge table/desk etc. off door swing keep-outs.
+- **Painters**: guard zero/NaN scale; swallow paint errors (no red ErrorWidget).
+- **Manual draw**: `beginManualRoom` (no undo→10×10), larger canvas inset + edge snap for left/top walls.
+- **Review → editor**: re-run clean study desk/doors before open.
+- Save/pop wrapped so failures cannot crash exit.
+- Tests: `test/blueprint_safety_test.dart`. Version **+113**.
+
 ## 1.0.0-beta.1+112 (2026-07-20)
 
 ### Accuracy — clean desk + door positions (final plan fix)

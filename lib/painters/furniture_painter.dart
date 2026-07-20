@@ -31,18 +31,35 @@ class FurniturePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.translate(origin.dx, origin.dy);
-    for (final item in furniture) {
-      _drawFurnitureItem(
-        canvas,
-        item,
-        _isSelected(item.id),
-        collisionIds.contains(item.id),
-        primary: item.id == selectedId,
-      );
+    final pxf = (pixelsPerFoot.isFinite && pixelsPerFoot > 0.5)
+        ? pixelsPerFoot
+        : 20.0;
+    try {
+      canvas.save();
+      canvas.translate(origin.dx, origin.dy);
+      for (final item in furniture) {
+        if (!item.widthInFeet.isFinite ||
+            !item.lengthInFeet.isFinite ||
+            item.widthInFeet <= 0 ||
+            item.lengthInFeet <= 0) {
+          continue;
+        }
+        if (!item.position.dx.isFinite || !item.position.dy.isFinite) {
+          continue;
+        }
+        _drawFurnitureItem(
+          canvas,
+          item,
+          _isSelected(item.id),
+          collisionIds.contains(item.id),
+          primary: item.id == selectedId,
+          pxf: pxf,
+        );
+      }
+      canvas.restore();
+    } catch (_) {
+      // +113: never red-screen blueprint on bad furniture geometry
     }
-    canvas.restore();
   }
 
   void _drawFurnitureItem(
@@ -51,13 +68,16 @@ class FurniturePainter extends CustomPainter {
     bool isSelected,
     bool inCollision, {
     bool primary = false,
+    double pxf = 20,
   }) {
     canvas.save();
     canvas.translate(item.position.dx, item.position.dy);
-    canvas.rotate(item.rotationAngle);
+    final rot =
+        item.rotationAngle.isFinite ? item.rotationAngle : 0.0;
+    canvas.rotate(rot);
 
-    final itemWidth = item.widthInFeet * pixelsPerFoot;
-    final itemLength = item.lengthInFeet * pixelsPerFoot;
+    final itemWidth = item.widthInFeet * pxf;
+    final itemLength = item.lengthInFeet * pxf;
 
     final rect = Rect.fromCenter(
       center: Offset.zero,

@@ -142,11 +142,15 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   }
 
   Future<void> _openEditor() async {
-    // +51: ensure gold quality before editor so blueprint matches review
-    final polished = PhotoTrueLayout.ensureGoldQuality(_result);
+    // +51/+112: gold quality + clean desk/doors before editor
+    var polished = PhotoTrueLayout.ensureGoldQuality(_result);
+    if (PhotoTrueLayout.isStudyLike(polished)) {
+      polished = PhotoTrueLayout.cleanStudyDeskAndDoors(polished);
+    }
     setState(() => _result = polished);
     final pxf = ref.read(roomProvider).pixelsPerFoot;
     final converted = ScanParser.toEditor(_result, pxf);
+    // +113: initFromScan sanitizes + clears furniture blocking door swings
     ref.read(roomProvider.notifier).initFromScan(
           converted.width,
           converted.length,

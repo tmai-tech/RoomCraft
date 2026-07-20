@@ -30,28 +30,42 @@ class BlueprintPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    _drawGrid(canvas, size);
-    canvas.save();
-    canvas.translate(origin.dx, origin.dy);
-    _drawRoomOutline(canvas);
-    if (showWalkwayHeatmap) {
-      _drawWalkwayHeatmap(canvas);
+    // +113: never paint with zero/NaN scale (infinite grid loop → red screen)
+    final pxf = (pixelsPerFoot.isFinite && pixelsPerFoot > 0.5)
+        ? pixelsPerFoot
+        : 20.0;
+    if (!room.widthInFeet.isFinite ||
+        !room.lengthInFeet.isFinite ||
+        room.widthInFeet <= 0 ||
+        room.lengthInFeet <= 0) {
+      return;
     }
+    try {
+      _drawGrid(canvas, size, pxf);
+      canvas.save();
+      canvas.translate(origin.dx, origin.dy);
+      _drawRoomOutline(canvas, pxf);
+      if (showWalkwayHeatmap) {
+        _drawWalkwayHeatmap(canvas, pxf);
+      }
 
-    for (final stroke in room.strokes) {
-      _drawStroke(canvas, stroke);
-      _drawMeasurements(canvas, stroke);
-    }
+      for (final stroke in room.strokes) {
+        _drawStroke(canvas, stroke);
+        _drawMeasurements(canvas, stroke, pxf);
+      }
 
-    if (currentStroke != null) {
-      _drawStroke(canvas, currentStroke!);
-      _drawMeasurements(canvas, currentStroke!);
+      if (currentStroke != null) {
+        _drawStroke(canvas, currentStroke!);
+        _drawMeasurements(canvas, currentStroke!, pxf);
+      }
+      canvas.restore();
+    } catch (_) {
+      // Swallow paint errors — red ErrorWidget on blueprint was feedback 9bbf5b05
     }
-    canvas.restore();
   }
 
-  void _drawWalkwayHeatmap(Canvas canvas) {
-    final cells = WalkwayHeatmap.compute(room, pixelsPerFoot);
+  void _drawWalkwayHeatmap(Canvas canvas, double pxf) {
+    final cells = WalkwayHeatmap.compute(room, pxf);
     for (final c in cells) {
       final color = c.isBlocked
           ? Colors.red.withValues(alpha: 0.22)
@@ -62,9 +76,9 @@ class BlueprintPainter extends CustomPainter {
     }
   }
 
-  void _drawRoomOutline(Canvas canvas) {
-    final w = room.widthInFeet * pixelsPerFoot;
-    final h = room.lengthInFeet * pixelsPerFoot;
+  void _drawRoomOutline(Canvas canvas, double pxf) {
+    final w = room.widthInFeet * pxf;
+    final h = room.lengthInFeet * pxf;
     final paint = Paint()
       ..color = room.isExterior
           ? Colors.green.withValues(alpha: 0.18)
@@ -79,7 +93,7 @@ class BlueprintPainter extends CustomPainter {
 
     if (room.isPolygonFloor) {
       final path =
-          RoomGeometry.pathFromFt(room.floorPolygonFt!, pixelsPerFoot);
+          RoomGeometry.pathFromFt(room.floorPolygonFt!, pxf);
       canvas.drawPath(path, paint);
       canvas.drawPath(path, border);
       // Dim the cutout area of the bounding box so L-shape is obvious
@@ -115,7 +129,7 @@ class BlueprintPainter extends CustomPainter {
     tp.paint(canvas, Offset(8, h + 6));
   }
 
-  void _drawGrid(Canvas canvas, Size size) {
+  void _drawGrid(Canvas canvas, Size size, double pxf) {
     final paint = Paint()
       ..color = Colors.grey.withValues(alpha: 0.25)
       ..style = PaintingStyle.stroke
@@ -129,20 +143,21 @@ class BlueprintPainter extends CustomPainter {
     // Align major lines with room model origin so the left wall sits on a grid line.
     final ox = origin.dx;
     final oy = origin.dy;
-    for (double i = ox; i <= size.width; i += pixelsPerFoot) {
-      final isMajor = ((i - ox) / pixelsPerFoot).round() % 5 == 0;
+    final step = pxf.clamp(4.0, 200.0);
+    for (double i = ox; i <= size.width; i += step) {
+      final isMajor = ((i - ox) / step).round() % 5 == 0;
       canvas.drawLine(Offset(i, 0), Offset(i, size.height), isMajor ? major : paint);
     }
-    for (double i = ox - pixelsPerFoot; i >= 0; i -= pixelsPerFoot) {
-      final isMajor = ((ox - i) / pixelsPerFoot).round() % 5 == 0;
+    for (double i = ox - step; i >= 0; i -= step) {
+      final isMajor = ((ox - i) / step).round() % 5 == 0;
       canvas.drawLine(Offset(i, 0), Offset(i, size.height), isMajor ? major : paint);
     }
-    for (double i = oy; i <= size.height; i += pixelsPerFoot) {
-      final isMajor = ((i - oy) / pixelsPerFoot).round() % 5 == 0;
+    for (double i = oy; i <= size.height; i += step) {
+      final isMajor = ((i - oy) / step).round() % 5 == 0;
       canvas.drawLine(Offset(0, i), Offset(size.width, i), isMajor ? major : paint);
     }
-    for (double i = oy - pixelsPerFoot; i >= 0; i -= pixelsPerFoot) {
-      final isMajor = ((oy - i) / pixelsPerFoot).round() % 5 == 0;
+    for (double i = oy - step; i >= 0; i -= step) {
+      final isMajor = ((oy - i) / step).round() % 5 == 0;
       canvas.drawLine(Offset(0, i), Offset(size.width, i), isMajor ? major : paint);
     }
   }
@@ -301,15 +316,15 @@ class BlueprintPainter extends CustomPainter {
     }
   }
 
-  void _drawMeasurements(Canvas canvas, StrokeModel stroke) {
+  void _drawMeasurements(Canvas canvas, StrokeModel stroke, double pxf) {
     if (stroke.points.length < 2) return;
     for (var i = 0; i < stroke.points.length - 1; i++) {
       final p1 = stroke.points[i];
       final p2 = stroke.points[i + 1];
       final dist = (p1 - p2).distance;
 
-      if (dist > pixelsPerFoot * 0.4) {
-        final lengthInFeet = dist / pixelsPerFoot;
+      if (dist > pxf * 0.4) {
+        final lengthInFeet = dist / pxf;
         final label = LengthFormat.formatFeet(lengthInFeet, unitSystem);
         final textPainter = TextPainter(
           text: TextSpan(

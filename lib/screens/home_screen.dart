@@ -125,11 +125,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _createNewManual() async {
     final size = await _promptRoomSize();
     if (!mounted || size == null) return;
+    // +113: dedicated manual room init (no undo→mystery 10×10, wall tool ready)
     ref.invalidate(roomProvider);
-    // Reading after invalidate creates a fresh editor room, then apply size.
     ref.read(roomProvider);
-    ref.read(roomProvider.notifier).updateRoomSize(size.$1, size.$2);
-    ref.read(roomProvider.notifier).setTool(ToolMode.wall);
+    ref.read(roomProvider.notifier).beginManualRoom(size.$1, size.$2);
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const BlueprintScreen()))
         .then((_) => _loadRooms());
