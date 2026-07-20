@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+112 (2026-07-20)
+
+### Accuracy — clean desk + door positions (final plan fix)
+- **Root cause:** vision mid-wall door `fromLeft` (5–9 ft) and mid-work-wall desk were preferred over gold corners / NW desk.
+- **`cleanStudyDeskAndDoors` (+112):** last-win pass — dual doors on gold walls at fromLeft **1.2 / 1.0**, width **2.8 ft**; desk forced to **NW work wall**; chair beside desk; mesh fromLeft 1.5.
+- **`preferVisionOpenings`:** keeps vision **walls** only; snaps door/mesh fromLeft + widths to gold (no more mid-wall doors).
+- **`alignGoldStudyDetails` / preferVisionFurniture:** always snap desk along-wall center to gold NW.
+- Tests: `test/desk_door_accuracy_test.dart`. Version **+112**.
+
 ## 1.0.0-beta.1+111 (2026-07-20)
 
 ### Accuracy — final device-proof build (furniture + door/window positions)

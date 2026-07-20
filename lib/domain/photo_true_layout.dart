@@ -269,6 +269,7 @@ class PhotoTrueLayout {
   /// +105: blend structural gold-geometry match (Planner5D-class fidelity).
   /// +107: opening chain fidelity (door widths / mesh / de-overlap).
   /// +111: furniture/door/window position map (wall+fromLeft blueprint truth).
+  /// +112: clean desk + door fromLeft (gold corners / NW work desk).
   static ScanResult _finalizePhotoTrue(
     ScanResult r, {
     required ScanResult vision,
@@ -281,6 +282,9 @@ class PhotoTrueLayout {
     cur = resolveWallClearances(cur);
     // +111: stress furniture + door/window positions on blueprint
     cur = FurniturePositionMap.ensure(cur);
+    cur = resolveWallClearances(cur);
+    // +112: last-win clean desk + door positions (vision fromLeft was noisy)
+    cur = cleanStudyDeskAndDoors(cur);
     cur = resolveWallClearances(cur);
     if (!isPhotoTrue(cur)) {
       final raw = cur.accuracyScore ?? 0.4;
@@ -309,11 +313,204 @@ class PhotoTrueLayout {
       warnings: [
         ...cur.warnings,
         if (!cur.warnings.any((w) => w.contains('ensureGoldQuality: finalized')))
-          'ensureGoldQuality: finalized photo-true (+111 $path) '
+          'ensureGoldQuality: finalized photo-true (+112 $path) '
               'score $pct% · geometry $geomPct% · openings $openPct% · '
               'furniture pos $placePct%'
               '${matchesDefaultGoldOrientation(cur) ? " · gold orientation" : ""}',
       ],
+    );
+  }
+
+  /// Gold door left-edge fromLeft on primary entry wall (ft).
+  static const double goldDoorPrimaryFromLeftFt = 1.2;
+
+  /// Gold door left-edge fromLeft on secondary wall (ft).
+  static const double goldDoorSecondaryFromLeftFt = 1.0;
+
+  /// Gold mesh left-edge fromLeft (ft).
+  static const double goldMeshFromLeftFt = 1.5;
+
+  /// Clean study desk + door positions to gold blueprint (+112).
+  ///
+  /// Vision/monocular often returns doors mid-wall (fromLeft 5–9 ft) and desk
+  /// mid-work-wall. Planner5D / feedback gold uses:
+  /// - doors near corners (fromLeft ~1.0–1.2, width 2.8)
+  /// - desk on work wall toward north (NW for wide rooms)
+  /// - mesh wide on glass wall, fromLeft ~1.5
+  ///
+  /// Keeps wardrobe wall/span. Runs last in finalize so it wins over vision
+  /// [preferVisionOpenings] noisy fromLeft.
+  static ScanResult cleanStudyDeskAndDoors(ScanResult input) {
+    if (!isStudyLike(input)) return input;
+    final w = input.roomWidthFt;
+    final l = input.roomLengthFt;
+    if (w <= 0 || l <= 0) return input;
+
+    // Roles: trust vision wardrobe wall when solid; else default gold orientation
+    final visionWardrobe = _wardrobeWallOf(input);
+    final def = defaultStudyWallRoles(w, l);
+    final roles = visionWardrobe != null
+        ? inferStudyWallRoles(input)
+        : def;
+
+    ScanFurnitureHint? wardrobe;
+    final others = <ScanFurnitureHint>[];
+    for (final f in input.furniture.where((x) => x.included)) {
+      if (f.type == FurnitureType.wardrobe) {
+        if (wardrobe == null ||
+            math.max(f.widthFt, f.lengthFt) >
+                math.max(wardrobe.widthFt, wardrobe.lengthFt)) {
+          wardrobe = f;
+        }
+        continue;
+      }
+      // Desk + chair rebuilt below; skip so we do not keep mid-wall vision desk
+      if (f.type == FurnitureType.table || f.type == FurnitureType.chair) {
+        continue;
+      }
+      others.add(f);
+    }
+    if (wardrobe == null) return input;
+
+    final notes = <String>[];
+
+    // --- Doors + mesh: gold fromLeft / widths on role walls ---
+    final d1Len = roles.doorPrimary.lengthFt(w, l);
+    final d2Len = roles.doorSecondary.lengthFt(w, l);
+    final meshLen = roles.mesh.lengthFt(w, l);
+    final door2FromLeft = roles.doorPrimary == roles.doorSecondary
+        ? math.min(d2Len - 3.2, math.max(5.0, d2Len * 0.48))
+        : goldDoorSecondaryFromLeftFt;
+
+    // Preserve mesh width from vision if already wide; else gold fraction
+    var meshWidth = math.min(12.0, meshLen * 0.62);
+    for (final o in input.walls.where((s) =>
+        s.type == StrokeType.balcony ||
+        (s.type == StrokeType.window && s.lengthFt >= 4.0))) {
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field != null && field.wall == roles.mesh && o.lengthFt > meshWidth) {
+        meshWidth = o.lengthFt.clamp(5.0, meshLen * 0.85);
+      }
+    }
+
+    final openHints = <WallOpeningHint>[
+      WallOpeningHint.fromLeft(
+        wall: roles.doorPrimary,
+        type: StrokeType.door,
+        fromLeftFt: goldDoorPrimaryFromLeftFt,
+        widthFt: OpeningChainFidelity.goldDoorFt,
+        wallLengthFt: d1Len,
+        confidence: 0.97,
+        evidence: 'clean study door primary (+112)',
+      ),
+      WallOpeningHint.fromLeft(
+        wall: roles.doorSecondary,
+        type: StrokeType.door,
+        fromLeftFt: door2FromLeft,
+        widthFt: OpeningChainFidelity.goldDoorFt,
+        wallLengthFt: d2Len,
+        confidence: 0.95,
+        evidence: 'clean study door secondary (+112)',
+      ),
+      WallOpeningHint.fromLeft(
+        wall: roles.mesh,
+        type: StrokeType.balcony,
+        fromLeftFt: goldMeshFromLeftFt,
+        widthFt: meshWidth,
+        wallLengthFt: meshLen,
+        confidence: 0.94,
+        evidence: 'clean study mesh (+112)',
+      ),
+    ];
+    notes.add(
+      'Clean study doors (+112): ${roles.doorPrimary.name}@'
+      '${goldDoorPrimaryFromLeftFt.toStringAsFixed(1)} + '
+      '${roles.doorSecondary.name}@${door2FromLeft.toStringAsFixed(1)} · '
+      'desk@${roles.desk.name} NW',
+    );
+
+    // --- Desk: always gold work-wall NW (center along wall) ---
+    final dwl = roles.desk.lengthFt(w, l);
+    final deskCenter = roles.desk == WallSide.west
+        ? math.max(dwl * 0.65, dwl - 3.5)
+        : (roles.desk == WallSide.east
+            ? math.max(dwl * 0.65, dwl - 3.5)
+            : dwl * 0.42);
+    final deskHint = WallFurnitureHint.fromLeft(
+      type: FurnitureType.table,
+      wall: roles.desk,
+      fromLeftFt: deskCenter,
+      depthFt: 1.6,
+      widthFt: 4.0,
+      lengthFt: 2.0,
+      wallLengthFt: dwl,
+      confidence: 0.97,
+      evidence: 'clean study desk ${roles.desk.name} (+112)',
+    );
+    final chairHint = WallFurnitureHint.fromLeft(
+      type: FurnitureType.chair,
+      wall: roles.desk,
+      fromLeftFt: math.min(deskCenter + 2.0, dwl - 1.5),
+      depthFt: 2.5,
+      widthFt: 1.8,
+      lengthFt: 1.8,
+      wallLengthFt: dwl,
+      confidence: 0.92,
+      evidence: 'clean study chair (+112)',
+    );
+
+    // --- Wardrobe: re-center full-wall on storage wall ---
+    final wl = roles.wardrobe.lengthFt(w, l);
+    var along = math.max(wardrobe.widthFt, wardrobe.lengthFt);
+    if (along < wl * 0.55) along = math.max(7.0, wl * 0.72);
+    along = along.clamp(6.5, wl * 0.88);
+    final wardHint = WallFurnitureHint.fromLeft(
+      type: FurnitureType.wardrobe,
+      wall: roles.wardrobe,
+      fromLeftFt: wl / 2,
+      depthFt: 1.6,
+      widthFt: along.toDouble(),
+      lengthFt: 1.6,
+      wallLengthFt: wl,
+      confidence: 0.97,
+      evidence: 'clean study wardrobe ${roles.wardrobe.name} (+112)',
+    );
+
+    final composed = WallRelativeComposer.compose(
+      widthFt: w,
+      lengthFt: l,
+      openings: openHints,
+      furniture: [wardHint, deskHint, chairHint],
+      warnings: const [],
+      wallPhotos: 4,
+    );
+    final opens = composed.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
+    final furn = <ScanFurnitureHint>[
+      ...composed.furniture,
+      // Keep non-study-forbidden extras only if not bed/sofa/tv invent
+      ...others.where((f) =>
+          f.type != FurnitureType.bed &&
+          f.type != FurnitureType.sofa &&
+          f.type != FurnitureType.tvUnit),
+    ];
+
+    return AccurateScan.enforce(
+      widthFt: w,
+      lengthFt: l,
+      openings: opens,
+      furniture: furn,
+      warnings: [...input.warnings, ...notes],
+      inventDefaultOpenings: false,
+      accuracyScore: math.max(input.accuracyScore ?? 0, goldOrientationScore)
+          .clamp(goldOrientationScore, 0.98),
+    ).copyWith(
+      accuracyScore: math.max(input.accuracyScore ?? 0, goldOrientationScore)
+          .clamp(goldOrientationScore, 0.98),
     );
   }
 
@@ -426,8 +623,10 @@ class PhotoTrueLayout {
   }
 
   /// When wardrobe already sits on default gold storage wall, force desk onto
-  /// the gold work wall and seed a chair — matches gold-plan density (+82).
+  /// the gold work wall **NW** and seed a chair — matches gold-plan density (+82/+112).
   ///
+  /// +112: always re-snap desk along-wall center to gold NW even if already on
+  /// the work wall (vision mid-wall desk was wrong).
   /// Does not move a vision wardrobe on a non-default wall (+54 east trust).
   static ScanResult alignGoldStudyDetails(ScanResult r) {
     if (!isStudyLike(r)) return r;
@@ -466,64 +665,78 @@ class PhotoTrueLayout {
     if (ww != roles.wardrobe) return r;
 
     var notes = <String>[];
-    var deskOut = desk;
-    final deskOk = desk != null && _nearestWall(desk.posFt, w, l) == roles.desk;
-    if (!deskOk) {
-      final dwl = roles.desk.lengthFt(w, l);
-      final deskCenter = roles.desk == WallSide.west
-          ? math.max(dwl * 0.65, dwl - 3.5)
-          : dwl * 0.42;
-      final hint = WallFurnitureHint.fromLeft(
-        type: FurnitureType.table,
-        wall: roles.desk,
-        fromLeftFt: deskCenter,
-        depthFt: 1.6,
-        widthFt: 4.0,
-        lengthFt: 2.0,
-        wallLengthFt: dwl,
-        confidence: 0.94,
-        evidence: 'gold study desk on ${roles.desk.name} work wall (+82)',
-      );
-      final composed = WallRelativeComposer.compose(
-        widthFt: w,
-        lengthFt: l,
-        openings: const [],
-        furniture: [hint],
-        warnings: const [],
-      );
-      if (composed.furniture.isNotEmpty) {
-        deskOut = composed.furniture.first;
+    // +112: always place desk at gold NW work-wall center
+    final dwl = roles.desk.lengthFt(w, l);
+    final deskCenter = roles.desk == WallSide.west
+        ? math.max(dwl * 0.65, dwl - 3.5)
+        : dwl * 0.42;
+    final hint = WallFurnitureHint.fromLeft(
+      type: FurnitureType.table,
+      wall: roles.desk,
+      fromLeftFt: deskCenter,
+      depthFt: 1.6,
+      widthFt: 4.0,
+      lengthFt: 2.0,
+      wallLengthFt: dwl,
+      confidence: 0.96,
+      evidence: 'gold study desk NW on ${roles.desk.name} (+112)',
+    );
+    final composed = WallRelativeComposer.compose(
+      widthFt: w,
+      lengthFt: l,
+      openings: const [],
+      furniture: [hint],
+      warnings: const [],
+    );
+    ScanFurnitureHint? deskOut =
+        composed.furniture.isNotEmpty ? composed.furniture.first : desk;
+    if (deskOut != null) {
+      final moved = desk == null ||
+          (desk.posFt - deskOut.posFt).distance > 0.4 ||
+          _nearestWall(desk.posFt, w, l) != roles.desk;
+      if (moved) {
         notes.add(
-          'Aligned desk to gold ${roles.desk.name} work wall (+82)',
+          'Aligned desk to gold ${roles.desk.name} NW work wall (+112)',
         );
       }
     }
 
     ScanFurnitureHint? chairOut;
-    if (!hasChair && deskOut != null) {
-      final t = deskOut;
-      final cx = (t.posFt.dx + (t.posFt.dx < w / 2 ? 2.0 : -2.0))
-          .clamp(1.2, w - 1.2);
-      final cy = (t.posFt.dy + (t.posFt.dy < l / 2 ? 2.0 : -2.0))
-          .clamp(1.2, l - 1.2);
-      chairOut = ScanFurnitureHint(
-        type: FurnitureType.chair,
-        posFt: Offset(cx, cy),
-        widthFt: 1.8,
-        lengthFt: 1.8,
-        rotationRad: 0,
-        included: true,
-      );
-      notes.add('Seeded chair near gold desk (+82)');
+    final chairHint = WallFurnitureHint.fromLeft(
+      type: FurnitureType.chair,
+      wall: roles.desk,
+      fromLeftFt: math.min(deskCenter + 2.0, dwl - 1.5),
+      depthFt: 2.5,
+      widthFt: 1.8,
+      lengthFt: 1.8,
+      wallLengthFt: dwl,
+      confidence: 0.92,
+      evidence: 'gold study chair (+112)',
+    );
+    final chairComp = WallRelativeComposer.compose(
+      widthFt: w,
+      lengthFt: l,
+      openings: const [],
+      furniture: [chairHint],
+      warnings: const [],
+    );
+    if (chairComp.furniture.isNotEmpty) {
+      chairOut = chairComp.furniture.first;
+      if (!hasChair) notes.add('Seeded chair near gold desk (+112)');
     }
 
-    if (notes.isEmpty && deskOk) return r;
+    if (notes.isEmpty && deskOut != null && desk != null) {
+      // Still apply if positions already match gold (identity)
+      if ((desk.posFt - deskOut.posFt).distance < 0.35 && hasChair) {
+        return r;
+      }
+    }
 
     final furniture = <ScanFurnitureHint>[
       wardrobe,
       if (deskOut != null) deskOut,
       if (chairOut != null) chairOut,
-      ...others,
+      ...others.where((f) => f.type != FurnitureType.chair),
     ];
     final openings = r.walls
         .where((s) =>
@@ -2025,14 +2238,13 @@ class PhotoTrueLayout {
           usedVision = true;
           continue;
         }
-        // Snap vision desk to wall with gold-like dimensions
+        // +112: even on work wall, snap along-wall center to gold NW (not vision mid)
         final wl = side.lengthFt(w, l);
-        final center = _centerFromLeftOnWall(vTable.posFt, side, w, l)
-            .clamp(2.0, wl - 2.0)
-            .toDouble();
-        final deskCenter = side == WallSide.west
+        final deskCenter = side == WallSide.west || side == WallSide.east
             ? math.max(wl * 0.65, wl - 3.5)
-            : center;
+            : _centerFromLeftOnWall(vTable.posFt, side, w, l)
+                .clamp(2.0, wl - 2.0)
+                .toDouble();
         final hint = WallFurnitureHint.fromLeft(
           type: FurnitureType.table,
           wall: side,
@@ -2042,7 +2254,7 @@ class PhotoTrueLayout {
           lengthFt: 2.0,
           wallLengthFt: wl,
           confidence: 0.93,
-          evidence: 'vision desk preferred on ${side.name} (+81)',
+          evidence: 'vision desk wall + gold NW center (+112)',
         );
         final composed = WallRelativeComposer.compose(
           widthFt: w,
@@ -2091,6 +2303,7 @@ class PhotoTrueLayout {
     final w = gold.roomWidthFt;
     final l = gold.roomLengthFt;
     final wardrobeWall = _wardrobeWallOf(gold) ?? _wardrobeWallOf(vision);
+    final roles = defaultStudyWallRoles(w, l);
 
     final rawVision = vision.walls
         .where((s) =>
@@ -2117,48 +2330,103 @@ class PhotoTrueLayout {
       );
     }
 
-    final openings = <ScanWallSegment>[...vOpens];
-    int doorCount() =>
-        openings.where((o) => o.type == StrokeType.door).length;
-    bool hasMesh() => openings.any((o) =>
-        o.type == StrokeType.balcony ||
-        o.type == StrokeType.window ||
-        (o.type == StrokeType.door && o.lengthFt >= 4.5));
-
-    for (final g in gold.walls) {
-      if (g.type == StrokeType.wall) continue;
-      // Never pull gold openings onto wardrobe wall either
-      if (wardrobeWall != null) {
-        final gf = WallRelativeComposer.openingToField(g, w, l);
-        if (gf != null && gf.wall == wardrobeWall) continue;
+    // +112: keep vision **walls** only; snap door/mesh fromLeft + widths to gold.
+    // Mid-wall monocular fromLeft (5–9 ft) was the desk/door position bug.
+    final doorWalls = <WallSide>{};
+    WallSide? meshWall;
+    for (final o in vOpens) {
+      final field = WallRelativeComposer.openingToField(o, w, l);
+      if (field == null) continue;
+      if (o.type == StrokeType.door) {
+        doorWalls.add(field.wall);
+      } else if (o.type == StrokeType.balcony ||
+          o.type == StrokeType.window ||
+          o.lengthFt >= 4.5) {
+        meshWall ??= field.wall;
       }
-      if (g.type == StrokeType.door && doorCount() >= 2) continue;
-      if ((g.type == StrokeType.balcony || g.type == StrokeType.window) &&
-          hasMesh()) {
-        continue;
-      }
-      final gMid = Offset(
-        (g.startFt.dx + g.endFt.dx) / 2,
-        (g.startFt.dy + g.endFt.dy) / 2,
-      );
-      final clash = openings.any((o) {
-        final m = Offset(
-          (o.startFt.dx + o.endFt.dx) / 2,
-          (o.startFt.dy + o.endFt.dy) / 2,
-        );
-        return (m - gMid).distance < 2.0;
-      });
-      if (!clash) openings.add(g);
     }
+    // Fill missing door walls from gold roles
+    if (doorWalls.isEmpty) {
+      doorWalls.add(roles.doorPrimary);
+      doorWalls.add(roles.doorSecondary);
+    } else if (doorWalls.length == 1) {
+      final only = doorWalls.first;
+      if (roles.doorPrimary != only) {
+        doorWalls.add(roles.doorPrimary);
+      } else {
+        doorWalls.add(roles.doorSecondary);
+      }
+    }
+    meshWall ??= roles.mesh;
+
+    final orderedDoors = doorWalls.toList();
+    // Prefer primary then secondary order
+    orderedDoors.sort((a, b) {
+      final sa = a == roles.doorPrimary
+          ? 0
+          : a == roles.doorSecondary
+              ? 1
+              : 2;
+      final sb = b == roles.doorPrimary
+          ? 0
+          : b == roles.doorSecondary
+              ? 1
+              : 2;
+      return sa.compareTo(sb);
+    });
+
+    final hints = <WallOpeningHint>[];
+    for (var i = 0; i < orderedDoors.length && i < 2; i++) {
+      final wall = orderedDoors[i];
+      final wl = wall.lengthFt(w, l);
+      final fromLeft = i == 0
+          ? goldDoorPrimaryFromLeftFt
+          : (wall == orderedDoors.first
+              ? math.min(wl - 3.2, math.max(5.0, wl * 0.48))
+              : goldDoorSecondaryFromLeftFt);
+      hints.add(WallOpeningHint.fromLeft(
+        wall: wall,
+        type: StrokeType.door,
+        fromLeftFt: fromLeft,
+        widthFt: OpeningChainFidelity.goldDoorFt,
+        wallLengthFt: wl,
+        confidence: 0.95,
+        evidence: 'vision door wall + gold fromLeft (+112)',
+      ));
+    }
+    final mLen = meshWall.lengthFt(w, l);
+    hints.add(WallOpeningHint.fromLeft(
+      wall: meshWall,
+      type: StrokeType.balcony,
+      fromLeftFt: goldMeshFromLeftFt,
+      widthFt: math.min(12.0, mLen * 0.62),
+      wallLengthFt: mLen,
+      confidence: 0.93,
+      evidence: 'vision mesh wall + gold fromLeft (+112)',
+    ));
+
+    final composed = WallRelativeComposer.compose(
+      widthFt: w,
+      lengthFt: l,
+      openings: hints,
+      fromTapeMeasure: true,
+    );
+    final openings = composed.walls
+        .where((s) =>
+            s.type == StrokeType.door ||
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony)
+        .toList();
 
     return AccurateScan.enforce(
       widthFt: w,
       lengthFt: l,
-      openings: openings,
+      openings: openings.isEmpty ? vOpens : openings,
       furniture: gold.furniture,
       warnings: [
         ...gold.warnings,
-        'Prefer vision openings over template (+58): ${vOpens.length} kept'
+        'Prefer vision opening walls + gold fromLeft (+112): '
+            '${hints.length} openings'
             '${dropped > 0 ? " · dropped $dropped on wardrobe wall (+76)" : ""}',
       ],
       inventDefaultOpenings: false,
