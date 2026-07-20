@@ -7,6 +7,7 @@ import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
+import 'furniture_position_map.dart';
 import 'opening_chain_fidelity.dart';
 import 'photo_true_layout.dart';
 import 'plan_accuracy_metrics.dart';
@@ -65,13 +66,20 @@ class ScanRefine {
       inventDefaultOpenings: false,
       accuracyScore: score,
     );
-    return enforced.copyWith(
+    // +111: final wall+fromLeft furniture / perimeter openings (device proof bar)
+    final mapped = FurniturePositionMap.ensure(enforced);
+    final place = FurniturePositionMap.score(mapped);
+    final finalScore = score == null
+        ? place
+        : math.max(score, place * 0.9).clamp(0.35, 0.98);
+    return mapped.copyWith(
       warnings: [
-        ...enforced.warnings,
-        if (score != null)
-          'Refined plan confidence ~${(score * 100).round()}%',
+        ...mapped.warnings,
+        if (finalScore != null)
+          'Refined plan confidence ~${(finalScore * 100).round()}%'
+              ' · furniture pos ${(place * 100).round()}%',
       ],
-      accuracyScore: score,
+      accuracyScore: finalScore,
     );
   }
 

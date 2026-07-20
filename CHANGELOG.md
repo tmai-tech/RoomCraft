@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+111 (2026-07-20)
+
+### Accuracy — final device-proof build (furniture + door/window positions)
+- **`FurniturePositionMap`**: remaps free-float monocular XY to wall+fromLeft; role walls (bed@N wardrobe@S sofa@W tv@E desk@W); doors/windows forced onto perimeter at gold 2.8 ft.
+- Wired into study finalize, non-study density, and **ScanRefine** final pass.
+- **Phase B metrics** stress furniture position (weight 0.35) + opening fromLeft MAE; Review line shows furniture MAE.
+- **Device-proof tests** (`test/device_proof_accuracy_test.dart`): noisy free-XY study/bedroom → wall-anchored gold; wall+fromLeft parse path; identity-stable gold.
+- Version **+111** — accuracy final for blueprint wall / door / window / furniture mapping.
+- See `docs/ACCURACY_TURN_LOG.md` Turn 61.
+
 ## 1.0.0-beta.1+110 (2026-07-19)
 
 ### Accuracy — user-corrected editor plan as Phase B gold

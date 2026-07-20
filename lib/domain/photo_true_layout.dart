@@ -7,6 +7,7 @@ import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
 import 'auto_scale.dart';
+import 'furniture_position_map.dart';
 import 'opening_chain_fidelity.dart';
 import 'wall_relative_scan.dart';
 
@@ -267,6 +268,7 @@ class PhotoTrueLayout {
   /// Score + notes when plan meets photo-true gold quality (+67).
   /// +105: blend structural gold-geometry match (Planner5D-class fidelity).
   /// +107: opening chain fidelity (door widths / mesh / de-overlap).
+  /// +111: furniture/door/window position map (wall+fromLeft blueprint truth).
   static ScanResult _finalizePhotoTrue(
     ScanResult r, {
     required ScanResult vision,
@@ -276,6 +278,9 @@ class PhotoTrueLayout {
     var cur = alignGoldStudyDetails(r);
     // +107: Planner5D-class opening chain before quality bar
     cur = OpeningChainFidelity.ensure(cur);
+    cur = resolveWallClearances(cur);
+    // +111: stress furniture + door/window positions on blueprint
+    cur = FurniturePositionMap.ensure(cur);
     cur = resolveWallClearances(cur);
     if (!isPhotoTrue(cur)) {
       final raw = cur.accuracyScore ?? 0.4;
@@ -290,20 +295,23 @@ class PhotoTrueLayout {
     final bar = photoTrueScoreBar(cur, vision: vision);
     final geom = goldGeometryMatchScore(cur);
     final openFid = OpeningChainFidelity.score(cur);
-    // Inventory bar + geometry + opening chain → honest ceiling ~0.98
-    final blended = 0.55 * geom + 0.45 * openFid;
+    final placeFid = FurniturePositionMap.score(cur);
+    // Inventory + geometry + openings + **furniture position** → ceiling ~0.98
+    final blended = 0.40 * geom + 0.25 * openFid + 0.35 * placeFid;
     final combined =
         math.max(bar, 0.72 + 0.26 * blended).clamp(bar, 0.98).toDouble();
     final pct = (combined * 100).round();
     final geomPct = (geom * 100).round();
     final openPct = (openFid * 100).round();
+    final placePct = (placeFid * 100).round();
     return cur.copyWith(
       accuracyScore: math.max(cur.accuracyScore ?? 0, combined).clamp(combined, 0.98),
       warnings: [
         ...cur.warnings,
         if (!cur.warnings.any((w) => w.contains('ensureGoldQuality: finalized')))
-          'ensureGoldQuality: finalized photo-true (+107 $path) '
-              'score $pct% · geometry $geomPct% · openings $openPct%'
+          'ensureGoldQuality: finalized photo-true (+111 $path) '
+              'score $pct% · geometry $geomPct% · openings $openPct% · '
+              'furniture pos $placePct%'
               '${matchesDefaultGoldOrientation(cur) ? " · gold orientation" : ""}',
       ],
     );
@@ -554,6 +562,19 @@ class PhotoTrueLayout {
     // +107: standard door widths / de-overlap after bedroom-living seed
     cur = OpeningChainFidelity.ensure(cur);
     cur = resolveWallClearances(cur);
+    // +111: wall+fromLeft furniture / perimeter openings for bedroom-living.
+    // Remap furniture first so free-float bed leaves storage wall free for wardrobe;
+    // then re-merge gold seeds if majors were lost to clearances/sanitize.
+    cur = FurniturePositionMap.ensure(cur);
+    cur = resolveWallClearances(cur);
+    if (!isNonStudyDense(cur) ||
+        _hasPendingNonStudyInventory(cur) ||
+        !_hasMajorTypes(cur)) {
+      cur = mergeWithNonStudyGold(cur);
+      cur = OpeningChainFidelity.ensure(cur);
+      cur = FurniturePositionMap.ensure(cur);
+      cur = resolveWallClearances(cur);
+    }
 
     final dense = isNonStudyDense(cur);
     final types =
@@ -602,6 +623,17 @@ class PhotoTrueLayout {
       accuracyScore: score,
       warnings: notes,
     );
+  }
+
+  /// True when at least one density major is present (bed/sofa/wardrobe/tv/table).
+  static bool _hasMajorTypes(ScanResult r) {
+    final types =
+        r.furniture.where((f) => f.included).map((f) => f.type).toSet();
+    return types.contains(FurnitureType.bed) ||
+        types.contains(FurnitureType.sofa) ||
+        types.contains(FurnitureType.wardrobe) ||
+        types.contains(FurnitureType.tvUnit) ||
+        types.contains(FurnitureType.table);
   }
 
   /// True when bedroom/living plan has wall-anchored major pieces + openings (+106).

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/furniture_item.dart';
 import '../models/scan_result.dart';
 import '../models/stroke_model.dart';
+import 'furniture_position_map.dart';
 import 'opening_chain_fidelity.dart';
 import 'photo_true_layout.dart';
 import 'wall_relative_scan.dart';
@@ -33,6 +34,9 @@ class PlanAccuracyReport {
   /// Mean center distance (ft) for matched types (largest of each type).
   final double furnitureCenterMaeFt;
 
+  /// Mean door/window along-wall fromLeft error (ft) when wall matches (+111).
+  final double openingFromLeftMaeFt;
+
   /// Composite 0..1 (higher = better match to reference).
   final double compositeScore;
 
@@ -42,6 +46,7 @@ class PlanAccuracyReport {
     required this.doorCountRecall,
     required this.furnitureTypeRecall,
     required this.furnitureCenterMaeFt,
+    this.openingFromLeftMaeFt = 0,
     required this.compositeScore,
   });
 
@@ -54,16 +59,18 @@ class PlanAccuracyReport {
   }
 
   String summaryLine() {
-    return 'PlanAccuracy (+108): composite ${(compositeScore * 100).round()}% · '
+    return 'PlanAccuracy (+111): composite ${(compositeScore * 100).round()}% · '
         'size err ${(roomSizeErrorPct * 100).toStringAsFixed(1)}% · '
         'door MAE ${doorWidthMaeFt.toStringAsFixed(2)} ft · '
         'type recall ${(furnitureTypeRecall * 100).round()}% · '
-        'center MAE ${furnitureCenterMaeFt.toStringAsFixed(1)} ft';
+        'furn MAE ${furnitureCenterMaeFt.toStringAsFixed(1)} ft · '
+        'open fromLeft MAE ${openingFromLeftMaeFt.toStringAsFixed(1)} ft';
   }
 
-  /// Short Review / snackbar line (+109).
+  /// Short Review / snackbar line (+109/+111) — stresses furniture position.
   String reviewLine() {
     return 'Phase B vs template ${(compositeScore * 100).round()}% · '
+        'furniture MAE ${furnitureCenterMaeFt.toStringAsFixed(1)} ft · '
         'doors MAE ${doorWidthMaeFt.toStringAsFixed(1)} ft · '
         'types ${(furnitureTypeRecall * 100).round()}%';
   }
@@ -78,6 +85,8 @@ class PlanAccuracyReport {
             double.parse(furnitureTypeRecall.toStringAsFixed(3)),
         'furniture_center_mae_ft':
             double.parse(furnitureCenterMaeFt.toStringAsFixed(3)),
+        'opening_fromleft_mae_ft':
+            double.parse(openingFromLeftMaeFt.toStringAsFixed(3)),
         'room_size_score': double.parse(roomSizeScore.toStringAsFixed(3)),
       };
 }
@@ -86,6 +95,9 @@ class PlanAccuracyMetrics {
   PlanAccuracyMetrics._();
 
   /// Compare [predicted] to [reference] (gold / corrected plan).
+  ///
+  /// +111: weights stress **furniture position** (placement 0.35) and opening
+  /// fromLeft along walls so blueprint mapping is the primary accuracy bar.
   static PlanAccuracyReport compare(
     ScanResult predicted,
     ScanResult reference,
@@ -93,8 +105,10 @@ class PlanAccuracyMetrics {
     final roomErr = _roomSizeError(predicted, reference);
     final doors = _doorMetrics(predicted, reference);
     final furn = _furnitureMetrics(predicted, reference);
+    final openPos = _openingFromLeftMae(predicted, reference);
 
-    // Weights: size 0.25, doors 0.30, type recall 0.25, placement 0.20
+    // Weights (+111): size 0.15, doors 0.20, type recall 0.20, furn place 0.35,
+    // opening fromLeft 0.10 — furniture position is the stressed bar.
     final sizeScore = roomErr <= 0.05
         ? 1.0
         : roomErr >= 0.30
@@ -106,16 +120,23 @@ class PlanAccuracyMetrics {
             ? 0.0
             : 1.0 - (doors.mae - 0.15) / 0.85;
     final doorScore = 0.55 * doors.recall + 0.45 * doorWidthScore;
+    // Tighter furniture MAE curve: ≤1.0 ft full credit; ≥4.5 ft zero (+111)
     final placeScore = furn.centerMae <= 1.0
         ? 1.0
-        : furn.centerMae >= 6.0
+        : furn.centerMae >= 4.5
             ? 0.0
-            : 1.0 - (furn.centerMae - 1.0) / 5.0;
+            : 1.0 - (furn.centerMae - 1.0) / 3.5;
+    final openPosScore = openPos <= 0.5
+        ? 1.0
+        : openPos >= 4.0
+            ? 0.0
+            : 1.0 - (openPos - 0.5) / 3.5;
 
-    final composite = (0.25 * sizeScore +
-            0.30 * doorScore +
-            0.25 * furn.typeRecall +
-            0.20 * placeScore)
+    final composite = (0.15 * sizeScore +
+            0.20 * doorScore +
+            0.20 * furn.typeRecall +
+            0.35 * placeScore +
+            0.10 * openPosScore)
         .clamp(0.0, 1.0);
 
     return PlanAccuracyReport(
@@ -124,6 +145,7 @@ class PlanAccuracyMetrics {
       doorCountRecall: doors.recall,
       furnitureTypeRecall: furn.typeRecall,
       furnitureCenterMaeFt: furn.centerMae,
+      openingFromLeftMaeFt: openPos,
       compositeScore: composite,
     );
   }
@@ -215,6 +237,7 @@ class PlanAccuracyMetrics {
     final ref = syntheticReference(predicted);
     final report = compare(predicted, ref);
     final openingFid = OpeningChainFidelity.score(predicted);
+    final placeFid = FurniturePositionMap.score(predicted);
     final geom = PhotoTrueLayout.isStudyLike(predicted)
         ? PhotoTrueLayout.goldGeometryMatchScore(predicted)
         : null;
@@ -228,6 +251,8 @@ class PlanAccuracyMetrics {
       'vs_template': report.toJson(),
       if (vsUser != null) 'vs_user_corrected': vsUser.toJson(),
       'opening_fidelity': double.parse(openingFid.toStringAsFixed(3)),
+      'furniture_position_fidelity':
+          double.parse(placeFid.toStringAsFixed(3)),
       if (geom != null) 'geometry_match': double.parse(geom.toStringAsFixed(3)),
       'scale_source': scale,
       'heuristic_accuracy': predicted.accuracyScore,
@@ -370,6 +395,71 @@ class PlanAccuracyMetrics {
       }
     }
     return (mae: n == 0 ? 0.0 : errSum / n, recall: recall.toDouble());
+  }
+
+  /// Mean absolute fromLeft error for doors/windows/balcony on matching walls.
+  static double _openingFromLeftMae(ScanResult pred, ScanResult ref) {
+    final pOp = pred.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .toList();
+    final rOp = ref.walls
+        .where((w) =>
+            w.type == StrokeType.door ||
+            w.type == StrokeType.window ||
+            w.type == StrokeType.balcony)
+        .toList();
+    if (rOp.isEmpty) return pOp.isEmpty ? 0.0 : 1.0;
+    if (pOp.isEmpty) return 3.0;
+
+    final pw = pred.roomWidthFt;
+    final pl = pred.roomLengthFt;
+    final rw = ref.roomWidthFt;
+    final rl = ref.roomLengthFt;
+    final used = <int>{};
+    var errSum = 0.0;
+    var n = 0;
+    for (final r in rOp) {
+      final rf = WallRelativeComposer.openingToField(r, rw, rl);
+      var bestI = -1;
+      var best = double.infinity;
+      for (var i = 0; i < pOp.length; i++) {
+        if (used.contains(i)) continue;
+        final pf = WallRelativeComposer.openingToField(pOp[i], pw, pl);
+        if (rf == null || pf == null) continue;
+        if (rf.wall != pf.wall || r.type != pOp[i].type) continue;
+        final d = (pf.fromLeftFt - rf.fromLeftFt).abs();
+        if (d < best) {
+          best = d;
+          bestI = i;
+        }
+      }
+      if (bestI < 0) {
+        // Any same type
+        for (var i = 0; i < pOp.length; i++) {
+          if (used.contains(i) || pOp[i].type != r.type) continue;
+          final pf = WallRelativeComposer.openingToField(pOp[i], pw, pl);
+          final d = pf == null || rf == null
+              ? 4.0
+              : (pf.fromLeftFt - rf.fromLeftFt).abs() + 1.5;
+          if (d < best) {
+            best = d;
+            bestI = i;
+          }
+        }
+      }
+      if (bestI >= 0) {
+        used.add(bestI);
+        errSum += best.isFinite ? best : 3.0;
+        n++;
+      } else {
+        errSum += 3.0;
+        n++;
+      }
+    }
+    return n == 0 ? 0.0 : errSum / n;
   }
 
   static ({double typeRecall, double centerMae}) _furnitureMetrics(

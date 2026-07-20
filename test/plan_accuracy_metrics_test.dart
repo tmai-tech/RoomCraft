@@ -48,7 +48,7 @@ void main() {
     final r = PlanAccuracyMetrics.compare(pred, gold);
     expect(r.furnitureTypeRecall, greaterThanOrEqualTo(0.66));
     expect(r.compositeScore, greaterThanOrEqualTo(0.55));
-    expect(r.summaryLine(), contains('+108'));
+    expect(r.summaryLine(), contains('+111'));
   });
 
   test('+108 AR scale lock raises confidence floor', () {
