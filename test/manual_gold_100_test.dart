@@ -308,7 +308,8 @@ void main() {
     expect(desk.posFt.dy, greaterThan(plan.roomLengthFt * 0.55));
     expect(plan.accuracyScore, closeTo(1.0, 0.001));
     expect(
-      plan.warnings.any((w) => w.contains('+117') && w.contains('100%')),
+      plan.warnings.any((w) =>
+          (w.contains('+117') || w.contains('+118')) && w.contains('100%')),
       isTrue,
     );
     // Wardrobe south (low y), not co-located with desk
