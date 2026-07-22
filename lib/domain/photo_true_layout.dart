@@ -187,7 +187,7 @@ class PhotoTrueLayout {
         includeChair: true,
         warnings: [
           ...input.warnings,
-          'Review forced pure study gold (+117): '
+          'Review forced pure study gold (+117/+118): '
               'wardrobe south · desk NW · doors clear of table',
         ],
       );
@@ -208,7 +208,7 @@ class PhotoTrueLayout {
         accuracyScore: 1.0,
         warnings: [
           ...pure.warnings,
-          'Review resolve (+117): 100% manual-gold identity (forced)',
+          'Review resolve (+118): 100% manual-gold identity (forced) · N↑ preview',
         ],
       );
     }

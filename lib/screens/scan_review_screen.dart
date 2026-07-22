@@ -595,12 +595,12 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                       ),
                     ],
                   ),
-                  // +117: prove which build + resolve path is on device
+                  // +118: build + resolve path + north-up preview
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      'Build +${AppConfig.buildNumber}'
-                      '${_result.warnings.any((w) => w.contains('+117') || w.contains('forced')) ? " · study gold forced" : ""}'
+                      'Build +${AppConfig.buildNumber} · N↑'
+                      '${_result.warnings.any((w) => w.contains('forced') || w.contains('+117') || w.contains('+118')) ? " · study gold forced" : ""}'
                       '${_result.accuracyScore! >= 0.99 ? " · 100% identity" : ""}',
                       style: TextStyle(
                         fontSize: 11,
@@ -910,22 +910,27 @@ class _ScanPreviewPainter extends CustomPainter {
 
   _ScanPreviewPainter({required this.result});
 
+  /// +118: model y=0 is **south**; Flutter y grows down. Flip so **north is up**
+  /// — matches manual gold (desk top-left / wardrobe bottom). Without flip,
+  /// gold NW desk (high y) painted at screen bottom and looked like "table
+  /// still in front of door" (feedback d29c51d4 on +116).
+  Offset _toScreen(Offset ft, double scale, double lengthFt) {
+    return Offset(ft.dx * scale, (lengthFt - ft.dy) * scale);
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (result.roomWidthFt <= 0 || result.roomLengthFt <= 0) return;
 
     const pad = 24.0;
-    final scale = ((size.width - pad * 2) / result.roomWidthFt)
-        .clamp(0.0, (size.height - pad * 2) / result.roomLengthFt);
+    final wFt = result.roomWidthFt;
+    final lFt = result.roomLengthFt;
+    final scale = ((size.width - pad * 2) / wFt)
+        .clamp(0.0, (size.height - pad * 2) / lFt);
 
     canvas.translate(pad, pad);
 
-    final roomRect = Rect.fromLTWH(
-      0,
-      0,
-      result.roomWidthFt * scale,
-      result.roomLengthFt * scale,
-    );
+    final roomRect = Rect.fromLTWH(0, 0, wFt * scale, lFt * scale);
     canvas.drawRect(roomRect, Paint()..color = Colors.white);
     canvas.drawRect(
       roomRect,
@@ -935,9 +940,23 @@ class _ScanPreviewPainter extends CustomPainter {
         ..strokeWidth = 1,
     );
 
+    // North indicator (top of preview after +118 flip)
+    final nTp = TextPainter(
+      text: const TextSpan(
+        text: 'N ↑',
+        style: TextStyle(
+          color: Colors.blueGrey,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    nTp.paint(canvas, Offset(roomRect.width / 2 - nTp.width / 2, 2));
+
     for (final w in result.walls) {
-      final p1 = Offset(w.startFt.dx * scale, w.startFt.dy * scale);
-      final p2 = Offset(w.endFt.dx * scale, w.endFt.dy * scale);
+      final p1 = _toScreen(w.startFt, scale, lFt);
+      final p2 = _toScreen(w.endFt, scale, lFt);
       final paint = Paint()
         ..strokeWidth = w.type == StrokeType.wall ? 4 : 3.5
         ..strokeCap = StrokeCap.round
@@ -948,7 +967,6 @@ class _ScanPreviewPainter extends CustomPainter {
           StrokeType.balcony => Colors.green.shade700,
         };
       canvas.drawLine(p1, p2, paint);
-      // +48: opening labels like gold plan
       if (w.type != StrokeType.wall) {
         final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
         final name = switch (w.type) {
@@ -957,10 +975,9 @@ class _ScanPreviewPainter extends CustomPainter {
           StrokeType.balcony => 'Mesh',
           StrokeType.wall => '',
         };
-        final lenFt = w.lengthFt;
         final tp = TextPainter(
           text: TextSpan(
-            text: '$name ${lenFt.toStringAsFixed(1)}′',
+            text: '$name ${w.lengthFt.toStringAsFixed(1)}′',
             style: TextStyle(
               color: paint.color,
               fontSize: 8,
@@ -974,13 +991,12 @@ class _ScanPreviewPainter extends CustomPainter {
     }
 
     for (final f in result.furniture.where((e) => e.included)) {
-      final cx = f.posFt.dx * scale;
-      final cy = f.posFt.dy * scale;
+      final c = _toScreen(f.posFt, scale, lFt);
       final rw = f.widthFt * scale;
       final rh = f.lengthFt * scale;
-      // +42: type colors so gold-plan pieces read clearly on review
       final (Color fill, Color stroke) = switch (f.type) {
-        FurnitureType.wardrobe => (Colors.indigo.shade100, Colors.indigo.shade800),
+        FurnitureType.wardrobe =>
+          (Colors.indigo.shade100, Colors.indigo.shade800),
         FurnitureType.table => (Colors.amber.shade100, Colors.brown.shade700),
         FurnitureType.chair => (Colors.orange.shade100, Colors.orange.shade800),
         FurnitureType.bed => (Colors.purple.shade100, Colors.purple.shade700),
@@ -988,34 +1004,14 @@ class _ScanPreviewPainter extends CustomPainter {
         _ => (Colors.teal.shade100, Colors.teal.shade700),
       };
       canvas.save();
-      canvas.translate(cx, cy);
-      canvas.rotate(f.rotationRad);
+      canvas.translate(c.dx, c.dy);
+      // Negate rotation under Y-flip so wall-facing orientation stays correct
+      canvas.rotate(-f.rotationRad);
       final rect = Rect.fromCenter(center: Offset.zero, width: rw, height: rh);
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
         Paint()..color = fill,
       );
-      // +117: label majors so door/table issues are obvious on Review
-      final label = switch (f.type) {
-        FurnitureType.wardrobe => 'Wardrobe',
-        FurnitureType.table => 'Table',
-        FurnitureType.chair => 'Chair',
-        FurnitureType.bed => 'Bed',
-        FurnitureType.sofa => 'Sofa',
-        _ => f.type.name,
-      };
-      final tp = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: TextStyle(
-            color: stroke,
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: rw > 40 ? rw : 40);
-      tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
         Paint()
@@ -1023,8 +1019,7 @@ class _ScanPreviewPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
-      // Label with size like gold plan (+47)
-      canvas.rotate(-f.rotationRad);
+      canvas.rotate(f.rotationRad); // un-rotate for upright label
       final name = switch (f.type) {
         FurnitureType.wardrobe => 'Wardrobe',
         FurnitureType.table => 'Desk',
