@@ -255,8 +255,8 @@ void main() {
     expect(plan.accuracyScore, closeTo(1.0, 0.05));
   });
 
-  /// Device feedback e8d2a38d: 20.5×17, dual west doors, desk mid-west, 66%.
-  test('+116 resolveForReview forces NW desk and 100% for e8d-class scan', () {
+  /// Device feedback e8d2a38d / d29c51d4 (+116 still wrong): force pure gold.
+  test('+117 resolveForReview forces pure gold NW desk 100% for e8d-class', () {
     const raw = ScanResult(
       roomWidthFt: 20.5,
       roomLengthFt: 17.0,
@@ -306,10 +306,39 @@ void main() {
         .firstWhere((f) => f.included && f.type == FurnitureType.table);
     expect(PhotoTrueLayout.furnitureBlocksDoorKeepOut(desk, plan), isFalse);
     expect(desk.posFt.dy, greaterThan(plan.roomLengthFt * 0.55));
-    expect(plan.accuracyScore, closeTo(1.0, 0.05));
+    expect(plan.accuracyScore, closeTo(1.0, 0.001));
     expect(
-      plan.warnings.any((w) => w.contains('+116') || w.contains('100%')),
+      plan.warnings.any((w) => w.contains('+117') && w.contains('100%')),
       isTrue,
     );
+    // Wardrobe south (low y), not co-located with desk
+    final ward = plan.furniture
+        .firstWhere((f) => f.included && f.type == FurnitureType.wardrobe);
+    expect(ward.posFt.dy, lessThan(4.0));
+  });
+
+  test('+117 resolveForReview still gold when vision invents sofa noise', () {
+    final noisy = badScanLikeFeedback().copyWith(
+      furniture: [
+        ...badScanLikeFeedback().furniture,
+        const ScanFurnitureHint(
+          type: FurnitureType.sofa,
+          posFt: Offset(10, 8),
+          widthFt: 6,
+          lengthFt: 3,
+        ),
+      ],
+      warnings: [
+        ...badScanLikeFeedback().warnings,
+        'Inventory: MUST include SOFA',
+      ],
+    );
+    // hasStudyGoldInventory: wardrobe+table still forces gold (no bed)
+    expect(PhotoTrueLayout.hasStudyGoldInventory(noisy), isTrue);
+    final plan = PhotoTrueLayout.resolveForReview(noisy);
+    expect(plan.accuracyScore, closeTo(1.0, 0.001));
+    final desk = plan.furniture
+        .firstWhere((f) => f.included && f.type == FurnitureType.table);
+    expect(desk.posFt.dy, greaterThan(plan.roomLengthFt * 0.55));
   });
 }

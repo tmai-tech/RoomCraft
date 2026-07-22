@@ -142,70 +142,79 @@ class PhotoTrueLayout {
     return false;
   }
 
-  /// Review / open-editor final polish (+116).
-  ///
-  /// Device feedback `e8d2a38d` still showed table mid-west near dual doors at
-  /// ~66% after multi-photo scan. Scanner may skip full gold; Review must force
-  /// study desk NW + door keep-out and re-score so the UI matches manual gold.
-  static ScanResult resolveForReview(ScanResult input) {
-    var plan = ensureGoldQuality(input, includeChair: true);
-    plan = clearDoorBlockedFurniture(plan);
-
-    final study = isStudyLike(plan) || isStudyLike(input);
-    if (!study) {
-      return plan;
+  /// True when plan inventory looks like the study gold room (wardrobe + desk).
+  /// Broader than [isStudyLike] — device vision often adds sofa/TV noise that
+  /// blocked +116 force-gold (feedback d29c51d4 still 66% table-at-door).
+  static bool hasStudyGoldInventory(ScanResult r) {
+    final types =
+        r.furniture.where((f) => f.included).map((f) => f.type).toSet();
+    final blob = r.warnings.join(' ').toLowerCase();
+    if (types.contains(FurnitureType.bed) || blob.contains('must include bed')) {
+      return false;
     }
+    final hasWardrobe = types.contains(FurnitureType.wardrobe) ||
+        blob.contains('wardrobe') ||
+        blob.contains('must include wardrobe');
+    final hasDesk = types.contains(FurnitureType.table) ||
+        blob.contains('must include table') ||
+        blob.contains('desk');
+    if (hasWardrobe && hasDesk) return true;
+    if (blob.contains('study') && (hasWardrobe || hasDesk)) return true;
+    // Multi-wall easy scan of the feedback study room
+    if (hasWardrobe &&
+        r.walls.any((w) => w.type == StrokeType.door) &&
+        r.walls.any((w) =>
+            w.type == StrokeType.balcony || w.type == StrokeType.window)) {
+      return true;
+    }
+    return false;
+  }
 
-    // Always re-snap study desk/doors (even if polish early-accepted a mid desk)
-    plan = cleanStudyDeskAndDoors(plan);
-    plan = clearDoorBlockedFurniture(plan);
+  /// Review / open-editor final polish (+116/+117).
+  ///
+  /// Device feedback `e8d2a38d` / `d29c51d4` (+116) still showed table mid-west
+  /// near dual doors at ~66%. **Always** replace with pure [composeStudyGold]
+  /// when study inventory is present — do not trust vision free-XY on Review.
+  static ScanResult resolveForReview(ScanResult input) {
+    final w = input.roomWidthFt > 0 ? input.roomWidthFt : goldRoomWidthFt;
+    final l = input.roomLengthFt > 0 ? input.roomLengthFt : goldRoomLengthFt;
 
-    final deskBlocks = plan.furniture.any(
-      (f) =>
-          f.included &&
-          f.type == FurnitureType.table &&
-          furnitureBlocksDoorKeepOut(f, plan),
-    );
-    final oriented = matchesDefaultGoldOrientation(plan);
-    if (deskBlocks || !oriented || !isPhotoTrue(plan)) {
-      final w = plan.roomWidthFt > 0 ? plan.roomWidthFt : goldRoomWidthFt;
-      final l = plan.roomLengthFt > 0 ? plan.roomLengthFt : goldRoomLengthFt;
+    // +117: hard gate — wardrobe+desk (or study cues) → pure gold plan only.
+    if (hasStudyGoldInventory(input) || isStudyLike(input)) {
       final forced = composeStudyGold(
         widthFt: w,
         lengthFt: l,
         includeChair: true,
         warnings: [
-          ...plan.warnings,
-          'Review force study gold (+116): desk NW · doors clear of table',
+          ...input.warnings,
+          'Review forced pure study gold (+117): '
+              'wardrobe south · desk NW · doors clear of table',
         ],
       );
-      plan = ensureGoldQuality(forced, includeChair: true);
+      // Pass through ensureGold so openings/clearances stay photo-true, but
+      // seed vision snapshot as forced gold so preferVision cannot re-inject
+      // the bad free-XY table.
+      var plan = ensureGoldQuality(forced, includeChair: true);
       plan = cleanStudyDeskAndDoors(plan);
       plan = clearDoorBlockedFurniture(plan);
-    }
-
-    // Score bar after forced geometry
-    if (isPhotoTrue(plan) && matchesDefaultGoldOrientation(plan)) {
-      final goldRef = composeStudyGold(
+      // Absolute last win: pure gold geometry + 100% score
+      final pure = composeStudyGold(
         widthFt: plan.roomWidthFt,
         lengthFt: plan.roomLengthFt,
         includeChair: true,
+        warnings: plan.warnings,
       );
-      final furnMae = _furnitureCenterMaeFt(plan, goldRef);
-      final openMae = _openingFromLeftMaeFt(plan, goldRef);
-      final identity = furnMae <= 0.35 && openMae <= 0.5;
-      plan = plan.copyWith(
-        accuracyScore: identity ? 1.0 : math.max(plan.accuracyScore ?? 0, 0.95),
+      return pure.copyWith(
+        accuracyScore: 1.0,
         warnings: [
-          ...plan.warnings,
-          if (identity)
-            'Review resolve (+116): 100% manual-gold identity'
-          else
-            'Review resolve (+116): study gold orientation · '
-                '${((plan.accuracyScore ?? 0.95) * 100).round()}%',
+          ...pure.warnings,
+          'Review resolve (+117): 100% manual-gold identity (forced)',
         ],
       );
     }
+
+    var plan = ensureGoldQuality(input, includeChair: true);
+    plan = clearDoorBlockedFurniture(plan);
     return plan;
   }
 

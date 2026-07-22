@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../catalog/furniture_catalog.dart';
+import '../config/app_config.dart';
 import '../domain/photo_true_layout.dart';
 import '../domain/plan_accuracy_metrics.dart';
 import '../domain/scan_parser.dart';
@@ -594,6 +595,22 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                       ),
                     ],
                   ),
+                  // +117: prove which build + resolve path is on device
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Build +${AppConfig.buildNumber}'
+                      '${_result.warnings.any((w) => w.contains('+117') || w.contains('forced')) ? " · study gold forced" : ""}'
+                      '${_result.accuracyScore! >= 0.99 ? " · 100% identity" : ""}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _result.accuracyScore! >= 0.99
+                            ? Colors.teal.shade800
+                            : Colors.orange.shade900,
+                      ),
+                    ),
+                  ),
                   // +109: Phase B vs gold-template diagnostics (Planner5D-class)
                   Builder(
                     builder: (context) {
@@ -978,6 +995,27 @@ class _ScanPreviewPainter extends CustomPainter {
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
         Paint()..color = fill,
       );
+      // +117: label majors so door/table issues are obvious on Review
+      final label = switch (f.type) {
+        FurnitureType.wardrobe => 'Wardrobe',
+        FurnitureType.table => 'Table',
+        FurnitureType.chair => 'Chair',
+        FurnitureType.bed => 'Bed',
+        FurnitureType.sofa => 'Sofa',
+        _ => f.type.name,
+      };
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: stroke,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: rw > 40 ? rw : 40);
+      tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
         Paint()
