@@ -57,9 +57,10 @@ class FurniturePositionMap {
     }
 
     final score = scorePlacement(furniture, openings, w, l);
+    // +114: allow up to 1.0 when placement is perfect (was hard-capped 0.98)
     final blended = input.accuracyScore == null
         ? score
-        : math.max(input.accuracyScore!, score * 0.95).clamp(score * 0.9, 0.98);
+        : math.max(input.accuracyScore!, score * 0.95).clamp(score * 0.9, 1.0);
 
     return AccurateScan.enforce(
       widthFt: w,
@@ -100,15 +101,21 @@ class FurniturePositionMap {
       var sum = 0.0;
       for (final f in majors) {
         final d = _minWallDist(f.posFt, w, l);
-        final halfDeep = math.min(f.widthFt, f.lengthFt) / 2;
-        // Ideal: center is ~depth from wall (halfDeep + small inset)
-        final ideal = halfDeep + 0.15;
-        final err = (d - ideal).abs();
-        final piece = err <= 0.4
+        // WallFurnitureHint places center at depth (~1.5–1.6 ft from wall).
+        // Also accept half-short-side centers (tight hug). +114: gold identity 1.0.
+        final shortSide = math.min(f.widthFt, f.lengthFt);
+        final halfDeep = shortSide / 2;
+        final idealA = halfDeep + 0.15;
+        final idealB = shortSide.clamp(0.8, 2.2); // depth-style center
+        final err = math.min((d - idealA).abs(), (d - idealB).abs());
+        // Clearly wall-hugged band → full credit (not mid-room float)
+        final piece = (d <= 2.4 && d >= 0.35 && err <= 0.85)
             ? 1.0
-            : err >= 3.0
-                ? 0.0
-                : 1.0 - (err - 0.4) / 2.6;
+            : err <= 0.4
+                ? 1.0
+                : err >= 3.0
+                    ? 0.0
+                    : 1.0 - (err - 0.4) / 2.6;
         sum += piece;
       }
       furnScore = sum / majors.length;

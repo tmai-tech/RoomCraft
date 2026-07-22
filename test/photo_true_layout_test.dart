@@ -1736,8 +1736,10 @@ void main() {
     final geom = PhotoTrueLayout.goldGeometryMatchScore(out);
     expect(geom, greaterThanOrEqualTo(0.75));
     expect(out.accuracyScore, greaterThanOrEqualTo(0.74));
-    // Geometry blend can push above old 0.92 ceiling when structure matches gold
-    expect(out.accuracyScore, lessThanOrEqualTo(0.98));
+    // +114: gold identity can reach 1.0 (was hard-capped 0.98)
+    expect(out.accuracyScore, lessThanOrEqualTo(1.0));
+    // Empty study with full gold fill should hit 100% manual-gold identity
+    expect(out.accuracyScore, closeTo(1.0, 0.001));
     final wardrobe =
         out.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
     final along = mathMax(wardrobe.widthFt, wardrobe.lengthFt);

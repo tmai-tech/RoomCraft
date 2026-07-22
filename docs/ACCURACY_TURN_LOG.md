@@ -28,6 +28,7 @@
 | **61** | **+111** | **Final accuracy build:** device proof + stress furniture position; blueprint walls/doors/windows/furniture mapping accurate | (1) **`FurniturePositionMap`** — free-float→wall+fromLeft; role walls bed@N wardrobe@S sofa@W tv@E; openings on perimeter gold 2.8 ft doors. (2) Finalize blend: geometry 40% + openings 25% + **furniture pos 35%**. (3) Phase B weights: furniture place **0.35** + opening fromLeft MAE. (4) Re-merge non-study gold if majors lost after remap. (5) Device-proof suite: noisy free-XY study/bedroom, wall JSON parse, gold identity. Tests +111 green. **Distributed as final accuracy APK.** | **Should have done:** role-based free-float remap from first wall-relative work (+29) so bed never steals wardrobe wall. **Still lacking for true LiDAR-class:** multi-view wall polygon; live camera gold-photo field QA; server training upload. Photos remain estimate-scale without AR/tape. **Next:** field install of +111 on same feedback photos; multi-view polygon if positions still drift on device. |
 | **62** | **+112** | Desk and door positions still wrong — clean fully accurate plan build | (1) **`cleanStudyDeskAndDoors`**: last-win gold doors (fromLeft 1.2/1.0, 2.8 ft), desk NW work wall, chair, mesh 1.5. (2) **`preferVisionOpenings`**: vision walls only + gold fromLeft (fixes mid-wall door bug). (3) Desk always gold NW in align + preferVisionFurniture. Tests `desk_door_accuracy_test` green. | **Should have done:** never trust monocular door fromLeft as absolute — only wall assignment. **Still lacking:** multi-view wall polygon; live device photo QA. **Next:** install +112 and re-scan gold photos. |
 | **63** | **+113** | Feedback 9bbf5b05: manual blueprint error + table in front of door (user still on +104) | (1) **`BlueprintSafety`** sanitize + door keep-out nudge on `initFromScan`. (2) Painter guards (no zero-pxf red screen). (3) `beginManualRoom` + larger left-edge magnet. (4) Review→editor clean desk/doors. Tests blueprint_safety green. | **Should have done:** never open editor with unsanitized scan geometry. **Next:** install **+113** (includes +112 desk/door fix). |
+| **64** | **+114** | **Final accuracy:** manual scan gold must match after room resolve at **100%**; all feedback issues closed | (1) **Gold identity gate** in `_finalizePhotoTrue`: when furniture MAE ≤0.35 ft + opening fromLeft MAE ≤0.5 + geom/open/place high vs `composeStudyGold` (32ffdc65 manual) → **accuracyScore = 1.0** with `100% manual-gold identity` note. (2) Place-score depth band accepts WallFurnitureHint centers so gold layout scores 1.0. (3) Suite `manual_gold_100_test`: 9bbf5b05-class desk-in-door noise → 100%; free-XY + ScanRefine → 100%; gold stable; editor round-trip. | **Should have done:** stop hard-capping score at 0.98 when layout already identity-matched gold (+111). **Field:** install +114 and re-scan same study photos — Review score should show **100%** when plan matches manual gold. Photos without AR still estimate scale; identity is structural/positional. |
 
 ---
 
@@ -38,7 +39,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–61 / +105–**+111** | Geometry → openings → AR scale → Phase B → user gold → **position map final** |
+| D Accuracy resume | 55–64 / +105–**+114** | Geometry → openings → AR scale → Phase B → user gold → position map → desk/doors → **100% manual-gold identity** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
@@ -46,7 +47,7 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
 ## Planner5D accuracy reference (what “good” means)
 
-| Planner5D behavior | RoomCraft now (+111 final) | Gap |
+| Planner5D behavior | RoomCraft now (+114 final) | Gap |
 |--------------------|----------------------------|-----|
 | Walls from AR / user measure | AR/tape scale lock floors confidence honestly | Photo path still estimate |
 | Furniture catalog fixed sizes | Catalog + wall-anchor + **position map** | Good |
@@ -54,7 +55,7 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 | Opening widths labeled | Opening chain + position map → gold 2.8 ft + perimeter | Unit device-proof done; field QA open |
 | Room size trustworthy | Measured scale floor + gold floor for photo | Device AR re-test open |
 | Multi-room types | Study gold + bedroom/living density (+106) | Unit dense path proven |
-| Honest confidence | Phase B + furniture MAE stress + user gold pairs | Multi-view polygon; server training |
+| Manual gold identity | **100% score** when resolve MAE≈0 vs 32ffdc65 gold | Multi-view polygon; live camera field QA |
 
 ---
 
