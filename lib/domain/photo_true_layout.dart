@@ -165,8 +165,10 @@ class PhotoTrueLayout {
     // +106: bedroom/living with missing MUST bed/sofa/tv must not early-accept
     // study photo-true (polish seeds wardrobe+table only → fake "complete").
     if (_hasPendingNonStudyInventory(cur)) {
-      return resolveWallClearances(
-        ensureNonStudyDensity(cur, vision: visionSnapshot),
+      return clearDoorBlockedFurniture(
+        resolveWallClearances(
+          ensureNonStudyDensity(cur, vision: visionSnapshot),
+        ),
       );
     }
     if (isPhotoTrue(cur)) {
@@ -183,8 +185,10 @@ class PhotoTrueLayout {
     }
     if (!isStudyLike(cur)) {
       // +106: Planner5D-class density for bedroom/living (was polish-only exit)
-      return resolveWallClearances(
-        ensureNonStudyDensity(cur, vision: visionSnapshot),
+      return clearDoorBlockedFurniture(
+        resolveWallClearances(
+          ensureNonStudyDensity(cur, vision: visionSnapshot),
+        ),
       );
     }
     cur = mergeWithStudyGold(cur, includeChair: includeChair);
@@ -287,6 +291,8 @@ class PhotoTrueLayout {
     // +112: last-win clean desk + door positions (vision fromLeft was noisy)
     cur = cleanStudyDeskAndDoors(cur);
     cur = resolveWallClearances(cur);
+    // +115: clear pieces that sit *in front of* doors (not only same-wall span)
+    cur = clearDoorBlockedFurniture(cur);
     if (!isPhotoTrue(cur)) {
       final raw = cur.accuracyScore ?? 0.4;
       return cur.copyWith(
@@ -421,6 +427,156 @@ class PhotoTrueLayout {
 
   /// Gold mesh left-edge fromLeft (ft).
   static const double goldMeshFromLeftFt = 1.5;
+
+  /// Door swing keep-out radius in feet (matches [ClearanceRules.doorSwingFt]).
+  static const double doorSwingKeepOutFt = 2.5;
+
+  /// True when furniture center/extent sits in a door swing keep-out (+115).
+  ///
+  /// [resolveWallClearances] only moves pieces that share a *wall span* with an
+  /// opening. Real multi-photo scans often place a free-XY **table in front of**
+  /// a door (feedback 9bbf5b05) without collinear wall overlap — Review still
+  /// shows "table in door". Matches blueprint door-mid keep-out (~2.5 ft).
+  static bool furnitureBlocksDoorKeepOut(
+    ScanFurnitureHint f,
+    ScanResult plan, {
+    Offset? atPos,
+  }) {
+    final pos = atPos ?? f.posFt;
+    final w = plan.roomWidthFt;
+    final l = plan.roomLengthFt;
+    if (w <= 0 || l <= 0) return false;
+    // Circle at door mid + light half-depth (not full half-width — that false-
+    // positive's gold NW desk/chair near corner doors).
+    final halfDeep = math.min(f.widthFt, f.lengthFt).clamp(0.8, 2.5) / 2;
+    final reach = doorSwingKeepOutFt + halfDeep * 0.35;
+    for (final o in plan.walls.where((s) => s.type == StrokeType.door)) {
+      final mid = Offset(
+        (o.startFt.dx + o.endFt.dx) / 2,
+        (o.startFt.dy + o.endFt.dy) / 2,
+      );
+      if ((pos - mid).distance < reach) return true;
+    }
+    return false;
+  }
+
+  /// Nudge major furniture out of door swing keep-outs in plan space (+115).
+  ///
+  /// Always safe to call — study and non-study. When a study table sits in a
+  /// door keep-out, prefer [cleanStudyDeskAndDoors] (gold NW desk) first.
+  static ScanResult clearDoorBlockedFurniture(ScanResult input) {
+    final w = input.roomWidthFt;
+    final l = input.roomLengthFt;
+    if (w <= 0 || l <= 0) return input;
+    final hasDoor = input.walls.any((s) => s.type == StrokeType.door);
+    if (!hasDoor || input.furniture.isEmpty) return input;
+
+    var cur = input;
+    // Study: table-in-front-of-door → gold desk/doors (wardrobe required inside)
+    final tableInDoor = cur.furniture.any(
+      (f) =>
+          f.included &&
+          f.type == FurnitureType.table &&
+          furnitureBlocksDoorKeepOut(f, cur),
+    );
+    if (tableInDoor && isStudyLike(cur)) {
+      final cleaned = cleanStudyDeskAndDoors(cur);
+      final deskOk = cleaned.furniture
+          .where((f) => f.included && f.type == FurnitureType.table)
+          .every((f) => !furnitureBlocksDoorKeepOut(f, cleaned));
+      if (deskOk && cleaned.furniture.any((f) => f.type == FurnitureType.table)) {
+        cur = cleaned;
+      }
+    }
+
+    final center = Offset(w / 2, l / 2);
+    final fixed = <ScanFurnitureHint>[];
+    var moved = 0;
+
+    for (final f in cur.furniture) {
+      if (!f.included ||
+          f.type == FurnitureType.rug ||
+          f.type == FurnitureType.plant ||
+          // Chairs often sit near desk/door; table-in-door is the user bug (+115)
+          f.type == FurnitureType.chair) {
+        fixed.add(f);
+        continue;
+      }
+      if (!furnitureBlocksDoorKeepOut(f, cur)) {
+        fixed.add(f);
+        continue;
+      }
+
+      var pos = f.posFt;
+      final dir = center - pos;
+      final len = dir.distance;
+      final step = len < 0.05
+          ? const Offset(0.35, 0.35)
+          : Offset(dir.dx / len * 0.4, dir.dy / len * 0.4);
+      var resolved = false;
+      for (var i = 0; i < 28; i++) {
+        pos = Offset(
+          (pos.dx + step.dx).clamp(1.0, w - 1.0),
+          (pos.dy + step.dy).clamp(1.0, l - 1.0),
+        );
+        if (!furnitureBlocksDoorKeepOut(f, cur, atPos: pos)) {
+          resolved = true;
+          break;
+        }
+      }
+      if (!resolved) {
+        final candidates = <Offset>[
+          center,
+          Offset(w * 0.35, l * 0.65),
+          Offset(w * 0.25, l * 0.75),
+          Offset(w * 0.5, l * 0.5),
+          Offset(2.5, l * 0.7),
+          Offset(w * 0.7, 2.5),
+        ];
+        for (final c in candidates) {
+          if (!furnitureBlocksDoorKeepOut(f, cur, atPos: c)) {
+            pos = c;
+            resolved = true;
+            break;
+          }
+        }
+      }
+      if (resolved || (pos - f.posFt).distance > 0.2) {
+        fixed.add(ScanFurnitureHint(
+          type: f.type,
+          posFt: pos,
+          widthFt: f.widthFt,
+          lengthFt: f.lengthFt,
+          rotationRad: f.rotationRad,
+          included: f.included,
+        ));
+        moved++;
+      } else {
+        fixed.add(f);
+      }
+    }
+
+    if (moved == 0 && identical(cur, input)) return input;
+    if (moved == 0) {
+      return resolveWallClearances(cur.copyWith(
+        warnings: [
+          ...cur.warnings,
+          if (!cur.warnings.any((w) => w.contains('Door keep-out')))
+            'Door keep-out: study desk cleared from door swing (+115)',
+        ],
+      ));
+    }
+
+    return resolveWallClearances(
+      cur.copyWith(
+        furniture: fixed,
+        warnings: [
+          ...cur.warnings,
+          'Door keep-out: moved $moved piece(s) off door swing (+115)',
+        ],
+      ),
+    );
+  }
 
   /// Clean study desk + door positions to gold blueprint (+112).
   ///
@@ -2322,9 +2478,13 @@ class PhotoTrueLayout {
         }
         final side = _nearestWall(vTable.posFt, w, l);
         final depth = _depthFromWall(vTable.posFt, side, w, l);
+        // +115: never keep vision desk that sits in a door swing keep-out
+        final doorBlocked = furnitureBlocksDoorKeepOut(vTable, vision) ||
+            furnitureBlocksDoorKeepOut(vTable, gold);
         final conflict = side == storage ||
             side == roles.mesh ||
-            depth > 3.2; // free-floating center → gold NW desk
+            depth > 3.2 || // free-floating center → gold NW desk
+            doorBlocked;
         if (conflict) {
           furniture.add(g); // gold template desk on work wall
           usedVision = true;

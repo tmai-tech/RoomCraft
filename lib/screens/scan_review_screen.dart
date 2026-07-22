@@ -41,8 +41,17 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   @override
   void initState() {
     super.initState();
-    _result = widget.initial;
+    // Keep raw model output for Phase B training baseline
     _predictedBaseline = widget.initial;
+    // +115: always show door-clear / gold-resolved plan on Review (multi-photo
+    // vision often leaves table in front of door even after scanner polish)
+    var plan = PhotoTrueLayout.ensureGoldQuality(widget.initial);
+    plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
+    if (PhotoTrueLayout.isStudyLike(plan)) {
+      plan = PhotoTrueLayout.cleanStudyDeskAndDoors(plan);
+      plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
+    }
+    _result = plan;
     ScanTrainingSession.begin(widget.initial);
   }
 

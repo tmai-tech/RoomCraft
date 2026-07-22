@@ -170,4 +170,88 @@ void main() {
     expect(report.furnitureCenterMaeFt, lessThanOrEqualTo(0.5));
     expect(report.compositeScore, greaterThanOrEqualTo(0.95));
   });
+
+  /// Multi-photo free-XY: table *in front of* door (not same-wall span).
+  /// resolveWallClearances alone did not move it — +115 door keep-out does.
+  test('+115 table in front of door cleared after multi-photo resolve', () {
+    const raw = ScanResult(
+      roomWidthFt: 20.3,
+      roomLengthFt: 17.0,
+      walls: [
+        // West door near SW — table sits inward of swing, not on wall span
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0.1, 0.8),
+          endFt: Offset(0.1, 3.6),
+        ),
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(1.0, 16.9),
+          endFt: Offset(3.8, 16.9),
+        ),
+        ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20.2, 3),
+          endFt: Offset(20.2, 12),
+        ),
+      ],
+      furniture: [
+        ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10.15, 0.9),
+          widthFt: 14,
+          lengthFt: 1.6,
+        ),
+        // Table floating in door swing (user: multi gallery still wrong)
+        ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(2.2, 2.0),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; study; mesh; 2 door',
+        'Easy photo scan multi-gallery 4 frames',
+      ],
+      accuracyScore: 0.55,
+    );
+
+    expect(
+      PhotoTrueLayout.furnitureBlocksDoorKeepOut(
+        raw.furniture.firstWhere((f) => f.type == FurnitureType.table),
+        raw,
+      ),
+      isTrue,
+      reason: 'fixture must start with table in door keep-out',
+    );
+
+    final out = PhotoTrueLayout.ensureGoldQuality(raw);
+    final desk = out.furniture
+        .firstWhere((f) => f.included && f.type == FurnitureType.table);
+    expect(
+      PhotoTrueLayout.furnitureBlocksDoorKeepOut(desk, out),
+      isFalse,
+      reason: 'after resolve table must leave door swing',
+    );
+    // NW work desk, not SW door zone
+    expect(desk.posFt.dx, lessThan(4.0));
+    expect(desk.posFt.dy, greaterThan(out.roomLengthFt * 0.5));
+    expect(out.accuracyScore, greaterThanOrEqualTo(0.9));
+  });
+
+  test('+115 Review re-polish clears free-XY table in door', () {
+    // Mirrors ScanReviewScreen.initState polish path
+    final raw = badScanLikeFeedback();
+    var plan = PhotoTrueLayout.ensureGoldQuality(raw);
+    plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
+    if (PhotoTrueLayout.isStudyLike(plan)) {
+      plan = PhotoTrueLayout.cleanStudyDeskAndDoors(plan);
+      plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
+    }
+    final desk = plan.furniture
+        .firstWhere((f) => f.included && f.type == FurnitureType.table);
+    expect(PhotoTrueLayout.furnitureBlocksDoorKeepOut(desk, plan), isFalse);
+    expect(plan.accuracyScore, closeTo(1.0, 0.05));
+  });
 }

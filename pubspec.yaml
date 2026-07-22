@@ -1,7 +1,7 @@
 name: room_craft
 description: A room blueprint and furniture planner.
 publish_to: 'none'
-version: 1.0.0-beta.1+114
+version: 1.0.0-beta.1+115
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
