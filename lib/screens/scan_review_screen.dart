@@ -43,15 +43,9 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
     super.initState();
     // Keep raw model output for Phase B training baseline
     _predictedBaseline = widget.initial;
-    // +115: always show door-clear / gold-resolved plan on Review (multi-photo
-    // vision often leaves table in front of door even after scanner polish)
-    var plan = PhotoTrueLayout.ensureGoldQuality(widget.initial);
-    plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
-    if (PhotoTrueLayout.isStudyLike(plan)) {
-      plan = PhotoTrueLayout.cleanStudyDeskAndDoors(plan);
-      plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
-    }
-    _result = plan;
+    // +116: hard Review resolve — study rooms always desk NW / doors clear
+    // (e8d2a38d still showed mid-west table near dual doors at 66% on device)
+    _result = PhotoTrueLayout.resolveForReview(widget.initial);
     ScanTrainingSession.begin(widget.initial);
   }
 
@@ -151,11 +145,8 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
   }
 
   Future<void> _openEditor() async {
-    // +51/+112: gold quality + clean desk/doors before editor
-    var polished = PhotoTrueLayout.ensureGoldQuality(_result);
-    if (PhotoTrueLayout.isStudyLike(polished)) {
-      polished = PhotoTrueLayout.cleanStudyDeskAndDoors(polished);
-    }
+    // +116: same hard Review resolve before blueprint
+    final polished = PhotoTrueLayout.resolveForReview(_result);
     setState(() => _result = polished);
     final pxf = ref.read(roomProvider).pixelsPerFoot;
     final converted = ScanParser.toEditor(_result, pxf);

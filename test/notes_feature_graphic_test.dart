@@ -4,8 +4,8 @@ import 'package:room_craft/models/room_model.dart';
 import 'package:room_craft/services/export_service.dart';
 
 void main() {
-  test('buildNumber is 104', () {
-    expect(AppConfig.buildNumber, 104);
+  test('buildNumber tracks current beta ship', () {
+    expect(AppConfig.buildNumber, greaterThanOrEqualTo(116));
   });
 
   test('notes round-trip and searchText includes notes', () {

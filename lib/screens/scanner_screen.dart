@@ -8,6 +8,7 @@ import '../catalog/furniture_catalog.dart';
 import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/layout/auto_arrange.dart';
+import '../domain/photo_true_layout.dart';
 import '../domain/plan_accuracy_metrics.dart';
 import '../domain/scan_keyframes.dart';
 import '../domain/scan_refine.dart';
@@ -938,7 +939,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         );
       } else {
         await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => ScanReviewScreen(initial: result)),
+          // +116: resolve before Review so first paint is door-clear / gold
+          MaterialPageRoute(
+            builder: (_) => ScanReviewScreen(
+              initial: PhotoTrueLayout.resolveForReview(result),
+            ),
+          ),
         );
       }
     } catch (e) {

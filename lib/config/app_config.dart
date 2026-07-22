@@ -3,9 +3,10 @@ class AppConfig {
   static const String appName = 'RoomCraft';
   static const String packageId = 'com.logicrequire.room_craft';
 
-  /// Display version (keep in sync with pubspec.yaml).
+  /// Display version (keep in sync with pubspec.yaml `version: x.y.z+build`).
   static const String appVersion = '1.0.0-beta.1';
-  static const int buildNumber = 104;
+  /// Must match pubspec `+NNN` — feedback / Settings use this (not package_info).
+  static const int buildNumber = 116;
   static const bool isBeta = true;
 
   /// Firebase Google Sign-In Web client ID (oauth_client client_type 3).

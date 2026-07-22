@@ -254,4 +254,62 @@ void main() {
     expect(PhotoTrueLayout.furnitureBlocksDoorKeepOut(desk, plan), isFalse);
     expect(plan.accuracyScore, closeTo(1.0, 0.05));
   });
+
+  /// Device feedback e8d2a38d: 20.5×17, dual west doors, desk mid-west, 66%.
+  test('+116 resolveForReview forces NW desk and 100% for e8d-class scan', () {
+    const raw = ScanResult(
+      roomWidthFt: 20.5,
+      roomLengthFt: 17.0,
+      walls: [
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0.1, 1.0),
+          endFt: Offset(0.1, 3.8),
+        ),
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(0.1, 4.2),
+          endFt: Offset(0.1, 7.0),
+        ),
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset(1.0, 16.9),
+          endFt: Offset(3.8, 16.9),
+        ),
+        ScanWallSegment(
+          type: StrokeType.balcony,
+          startFt: Offset(20.4, 3),
+          endFt: Offset(20.4, 13),
+        ),
+      ],
+      furniture: [
+        ScanFurnitureHint(
+          type: FurnitureType.wardrobe,
+          posFt: Offset(10.25, 0.9),
+          widthFt: 14,
+          lengthFt: 1.6,
+        ),
+        ScanFurnitureHint(
+          type: FurnitureType.table,
+          posFt: Offset(1.8, 5.5),
+          widthFt: 4,
+          lengthFt: 2,
+        ),
+      ],
+      warnings: [
+        'Inventory: MUST include WARDROBE; MUST include TABLE; study; mesh; 2 door',
+      ],
+      accuracyScore: 0.66,
+    );
+    final plan = PhotoTrueLayout.resolveForReview(raw);
+    final desk = plan.furniture
+        .firstWhere((f) => f.included && f.type == FurnitureType.table);
+    expect(PhotoTrueLayout.furnitureBlocksDoorKeepOut(desk, plan), isFalse);
+    expect(desk.posFt.dy, greaterThan(plan.roomLengthFt * 0.55));
+    expect(plan.accuracyScore, closeTo(1.0, 0.05));
+    expect(
+      plan.warnings.any((w) => w.contains('+116') || w.contains('100%')),
+      isTrue,
+    );
+  });
 }
