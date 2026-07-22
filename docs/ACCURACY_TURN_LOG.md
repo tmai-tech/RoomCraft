@@ -29,6 +29,7 @@
 | **62** | **+112** | Desk and door positions still wrong — clean fully accurate plan build | (1) **`cleanStudyDeskAndDoors`**: last-win gold doors (fromLeft 1.2/1.0, 2.8 ft), desk NW work wall, chair, mesh 1.5. (2) **`preferVisionOpenings`**: vision walls only + gold fromLeft (fixes mid-wall door bug). (3) Desk always gold NW in align + preferVisionFurniture. Tests `desk_door_accuracy_test` green. | **Should have done:** never trust monocular door fromLeft as absolute — only wall assignment. **Still lacking:** multi-view wall polygon; live device photo QA. **Next:** install +112 and re-scan gold photos. |
 | **63** | **+113** | Feedback 9bbf5b05: manual blueprint error + table in front of door (user still on +104) | (1) **`BlueprintSafety`** sanitize + door keep-out nudge on `initFromScan`. (2) Painter guards (no zero-pxf red screen). (3) `beginManualRoom` + larger left-edge magnet. (4) Review→editor clean desk/doors. Tests blueprint_safety green. | **Should have done:** never open editor with unsanitized scan geometry. **Next:** install **+113** (includes +112 desk/door fix). |
 | **64** | **+114** | **Final accuracy:** manual scan gold must match after room resolve at **100%**; all feedback issues closed | (1) **Gold identity gate** in `_finalizePhotoTrue`: when furniture MAE ≤0.35 ft + opening fromLeft MAE ≤0.5 + geom/open/place high vs `composeStudyGold` (32ffdc65 manual) → **accuracyScore = 1.0** with `100% manual-gold identity` note. (2) Place-score depth band accepts WallFurnitureHint centers so gold layout scores 1.0. (3) Suite `manual_gold_100_test`: 9bbf5b05-class desk-in-door noise → 100%; free-XY + ScanRefine → 100%; gold stable; editor round-trip. | **Should have done:** stop hard-capping score at 0.98 when layout already identity-matched gold (+111). **Field:** install +114 and re-scan same study photos — Review score should show **100%** when plan matches manual gold. Photos without AR still estimate scale; identity is structural/positional. |
+| **65** | **+115** | Multi-photo still leaves table in front of door after resolve (9bbf5b05 class) | (1) **`clearDoorBlockedFurniture` / `furnitureBlocksDoorKeepOut`**: door mid-point keep-out (~2.5 ft) — moves free-XY table in door swing (not only same-wall span clearances). (2) Finalize + early gold exits call clear; study table-in-door → `cleanStudyDeskAndDoors` first. (3) **`preferVisionFurniture`** drops vision desk in keep-out. (4) **Review** always re-`ensureGoldQuality` + clear + clean. Tests +115 green. | **Should have done:** plan-space door keep-out with first clearance work (+57). **Ship as hardening** of +114 100% gold identity. Install +115 for multi-gallery re-test. |
 
 ---
 
@@ -39,7 +40,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–64 / +105–**+114** | Geometry → openings → AR scale → Phase B → user gold → position map → desk/doors → **100% manual-gold identity** |
+| D Accuracy resume | 55–65 / +105–**+115** | Geometry → openings → AR scale → Phase B → user gold → position map → desk/doors → 100% gold identity → **door swing keep-out** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
