@@ -4,8 +4,8 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <android.opengl.GLSurfaceView
-        android:id="@+id/ar_surface"
+    <io.github.sceneview.ar.ARSceneView
+        android:id="@+id/ar_scene_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
@@ -32,7 +32,7 @@
             android:id="@+id/step_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="AR place furniture"
+            android:text="AR place"
             android:textColor="#FFFFFF"
             android:textSize="18sp"
             android:textStyle="bold" />
@@ -42,7 +42,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Point + at floor, Place."
+            android:text="Point + on the floor, then Place."
             android:textColor="#BDBDBD"
             android:textSize="13sp" />
 
@@ -51,17 +51,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="—"
+            android:text="Starting camera…"
             android:textColor="#80CBC4"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:textSize="16sp" />
 
         <Button
             android:id="@+id/btn_place"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Place" />
+            android:text="Mark origin (SW)" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -73,6 +72,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:layout_marginEnd="8dp"
                 android:text="Next type" />
 
             <Button
@@ -83,24 +83,16 @@
                 android:text="Undo" />
         </LinearLayout>
 
-        <LinearLayout
+        <Button
+            android:id="@+id/btn_done"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:text="Done" />
 
-            <Button
-                android:id="@+id/btn_cancel"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Cancel" />
-
-            <Button
-                android:id="@+id/btn_done"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Done" />
-        </LinearLayout>
+        <Button
+            android:id="@+id/btn_cancel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Cancel" />
     </LinearLayout>
 </FrameLayout>

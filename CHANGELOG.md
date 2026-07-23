@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+122 (2026-07-23)
+
+### Fix — AR still blank on +121 (feedback a41da384)
+- **Root cause:** custom `GLSurfaceView` + hand-rolled OES background never produced camera frames on device (stuck “Starting camera…”).
+- **Replace AR camera stack** with **SceneView `ARSceneView`** (`io.github.sceneview:arsceneview:2.2.1`) — Filament camera stream + ARCore session lifecycle (same path as maintained AR apps).
+- Measure + Place: live camera, plane grid, center hit-test via `hitTestAR`.
+- Depth still disabled; Field measure remains fallback if ARCore unavailable.
+- Version **+122**. Install over +121.
+
 ## 1.0.0-beta.1+121 (2026-07-23)
 
 ### Fix — AR black screen / no camera (device report after +119/+120)

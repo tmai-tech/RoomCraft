@@ -81,8 +81,10 @@ flutter {
 }
 
 dependencies {
-    // Pure ARCore only — Sceneform removed (caused crashes on Measure)
+    // SceneView AR — reliable camera stream + ARCore hit-test (custom GL was black on device)
+    implementation("io.github.sceneview:arsceneview:2.2.1")
     implementation("com.google.ar:core:1.45.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("com.google.android.material:material:1.12.0")
 }

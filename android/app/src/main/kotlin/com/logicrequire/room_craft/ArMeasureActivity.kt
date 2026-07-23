@@ -4,10 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.opengl.GLES20
-import android.opengl.GLSurfaceView
 import android.os.Bundle
-import android.os.SystemClock
 import android.util.Log
 import android.view.WindowManager
 import android.widget.Button
@@ -16,38 +13,23 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.ar.core.Anchor
-import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
-import com.google.ar.core.Frame
+import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
-import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
-import com.google.ar.core.exceptions.CameraNotAvailableException
-import com.google.ar.core.exceptions.UnavailableException
-import com.logicrequire.room_craft.ar.BackgroundRenderer
-import com.logicrequire.room_craft.ar.DisplayRotationHelper
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
-import javax.microedition.khronos.egl.EGLConfig
-import javax.microedition.khronos.opengles.GL10
+import io.github.sceneview.ar.ARSceneView
 import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Pure ARCore room measure.
+ * AR room measure using SceneView [ARSceneView] (+122).
  *
- * +121 black-screen fix (feedback: AR screen black / no camera):
- * - Never enable DepthMode (breaks camera feed on many devices, e.g. Motorola)
- * - Resume session only AFTER GL texture is created and bound
- * - Session.update only on GL thread; Mark is queued
- * - Default UpdateMode.BLOCKING (stable camera rate)
- * - Self-request CAMERA permission
- * - Watchdog if no camera frames for 3s with clear error text
+ * Feedback a41da384 / e43505bf: custom GLSurfaceView camera stayed black.
+ * SceneView owns Filament camera stream + ARCore session lifecycle.
  */
-class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
+class ArMeasureActivity : AppCompatActivity() {
 
-    private lateinit var surfaceView: GLSurfaceView
+    private lateinit var arSceneView: ARSceneView
     private lateinit var stepTitle: TextView
     private lateinit var stepHint: TextView
     private lateinit var liveDistance: TextView
@@ -56,28 +38,13 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private lateinit var btnDone: Button
     private lateinit var btnUndo: Button
 
-    private var session: Session? = null
-    private lateinit var displayRotationHelper: DisplayRotationHelper
-    private val backgroundRenderer = BackgroundRenderer()
-
-    private val installRequested = AtomicBoolean(false)
-    @Volatile private var surfaceCreated = false
-    @Volatile private var sessionResumed = false
-    @Volatile private var textureBound = false
-
-    private val anchors = mutableListOf<Anchor>()
     private val wallMeters = mutableListOf<Double>()
     private var pendingStartPose: FloatArray? = null
-
     private var chainMode = false
     private var tapsInSegment = 0
     private var measuringDiagonal = false
-
-    private val markRequested = AtomicBoolean(false)
-    private val trackingUiCounter = AtomicInteger(0)
-    private var firstFrameAtMs = 0L
-    private var cameraOk = false
-    private var blackScreenWarned = false
+    private var cameraReady = false
+    private var uiTick = 0
 
     private val wallLabelsQuick = listOf("Width (Wall A)", "Length (Wall B)")
     private val wallLabelsChain = listOf(
@@ -94,9 +61,8 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             setContentView(R.layout.activity_ar_measure)
             chainMode = intent.getStringExtra(EXTRA_MODE) == MODE_CHAIN
-            displayRotationHelper = DisplayRotationHelper(this)
 
-            surfaceView = findViewById(R.id.ar_surface)
+            arSceneView = findViewById(R.id.ar_scene_view)
             stepTitle = findViewById(R.id.step_title)
             stepHint = findViewById(R.id.step_hint)
             liveDistance = findViewById(R.id.live_distance)
@@ -111,79 +77,111 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             }
             btnUndo.setOnClickListener { undoLast() }
             btnDone.setOnClickListener { finishWithResult() }
-            btnMark.setOnClickListener {
-                markRequested.set(true)
+            btnMark.setOnClickListener { markCenterHit() }
+
+            // Wire SceneView lifecycle (creates session, camera stream)
+            arSceneView.lifecycle = lifecycle
+            arSceneView.planeRenderer.isEnabled = true
+            arSceneView.planeRenderer.isVisible = true
+
+            arSceneView.configureSession { _, config ->
+                config.depthMode = Config.DepthMode.DISABLED
+                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
+                config.lightEstimationMode = Config.LightEstimationMode.DISABLED
+                config.focusMode = Config.FocusMode.AUTO
+                config.instantPlacementMode = Config.InstantPlacementMode.DISABLED
+                config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
             }
 
-            // Stable EGL for camera OES texture
-            surfaceView.preserveEGLContextOnPause = true
-            surfaceView.setEGLContextClientVersion(2)
-            surfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-            // Keep GL under UI chrome
-            surfaceView.setRenderer(this)
-            surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+            arSceneView.onSessionCreated = {
+                Log.i(TAG, "AR session created (SceneView)")
+                runOnUiThread {
+                    liveDistance.text = "Camera starting…"
+                    liveDistance.setTextColor(0xFFFFCC80.toInt())
+                }
+            }
+
+            arSceneView.onSessionResumed = {
+                Log.i(TAG, "AR session resumed")
+                runOnUiThread {
+                    liveDistance.text = "Camera live · move phone to find floor"
+                    liveDistance.setTextColor(0xFF80CBC4.toInt())
+                    cameraReady = true
+                }
+            }
+
+            arSceneView.onSessionFailed = { e ->
+                Log.e(TAG, "AR session failed", e)
+                runOnUiThread {
+                    liveDistance.text = "AR failed: ${e.message}"
+                    liveDistance.setTextColor(0xFFEF9A9A.toInt())
+                    Toast.makeText(
+                        this,
+                        "AR failed: ${e.message}. Use Field measure or update Play Services for AR.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+
+            arSceneView.onSessionUpdated = { session, frame ->
+                uiTick++
+                if (uiTick % 15 != 0) return@onSessionUpdated
+                if (wallMeters.size >= totalWalls && !measuringDiagonal) return@onSessionUpdated
+                if (pendingStartPose != null) return@onSessionUpdated
+
+                val cam = frame.camera.trackingState
+                var planes = 0
+                for (p in session.getAllTrackables(Plane::class.java)) {
+                    if (p.trackingState == TrackingState.TRACKING) planes++
+                }
+                // frame.timestamp != 0 means camera image is flowing
+                if (frame.timestamp != 0L && !cameraReady) {
+                    cameraReady = true
+                }
+                runOnUiThread {
+                    when (cam) {
+                        TrackingState.TRACKING -> {
+                            liveDistance.text = if (planes > 0) {
+                                "Tracking · $planes floor plane(s) — Mark ready"
+                            } else {
+                                "Tracking · point at floor…"
+                            }
+                            liveDistance.setTextColor(0xFF80CBC4.toInt())
+                        }
+                        TrackingState.PAUSED -> {
+                            liveDistance.text = "Tracking paused — move slowly"
+                            liveDistance.setTextColor(0xFFFFAB91.toInt())
+                        }
+                        TrackingState.STOPPED -> {
+                            liveDistance.text = "Tracking stopped"
+                            liveDistance.setTextColor(0xFFEF9A9A.toInt())
+                        }
+                    }
+                }
+            }
+
+            if (!hasCameraPermission()) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.CAMERA),
+                    REQ_CAMERA,
+                )
+            }
 
             updateUi()
-            liveDistance.text = "Starting camera…"
         } catch (e: Exception) {
             Log.e(TAG, "onCreate", e)
             failAndFinish(e.message ?: "AR failed to start")
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (!hasCameraPermission()) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                REQ_CAMERA,
-            )
-            return
-        }
-        try {
-            ensureSessionCreated()
-            // ARCore requires resume() on the main/UI thread
-            try {
-                session?.resume()
-                sessionResumed = true
-            } catch (e: CameraNotAvailableException) {
-                sessionResumed = false
-                liveDistance.text = "Camera busy — close other camera apps"
-                Toast.makeText(this, "Camera not available", Toast.LENGTH_LONG).show()
-            }
-            surfaceView.onResume()
-            displayRotationHelper.onResume()
-        } catch (e: UnavailableException) {
-            Log.e(TAG, "AR unavailable", e)
-            failAndFinish(e.message ?: "ARCore unavailable on this device")
-        } catch (e: Exception) {
-            Log.e(TAG, "onResume", e)
-            failAndFinish(e.message ?: "Could not start AR session")
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        try {
-            if (::surfaceView.isInitialized) surfaceView.onPause()
-            if (::displayRotationHelper.isInitialized) displayRotationHelper.onPause()
-            sessionResumed = false
-            textureBound = false
-            session?.pause()
-        } catch (e: Exception) {
-            Log.w(TAG, "onPause", e)
-        }
-    }
-
     override fun onDestroy() {
         try {
-            anchors.forEach { it.detach() }
-            anchors.clear()
-            session?.close()
-            session = null
+            if (::arSceneView.isInitialized) {
+                arSceneView.destroy()
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "onDestroy", e)
+            Log.w(TAG, "destroy", e)
         }
         super.onDestroy()
     }
@@ -194,47 +192,16 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQ_CAMERA) return
-        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            onResume()
-        } else {
-            failAndFinish("Camera permission is required for AR measure")
-        }
-    }
-
-    private fun hasCameraPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun ensureSessionCreated() {
-        if (session != null) return
-        when (ArCoreApk.getInstance().requestInstall(this, !installRequested.get())) {
-            ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
-                installRequested.set(true)
-                return
+        if (requestCode == REQ_CAMERA) {
+            if (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+                failAndFinish("Camera permission is required for AR measure")
             }
-            ArCoreApk.InstallStatus.INSTALLED -> {}
-            else -> {}
         }
-        session = Session(this).also { configureSession(it) }
     }
 
-    /**
-     * +121: DepthMode OFF — AUTOMATIC depth is a common cause of black camera
-     * on mid-range Android (Motorola etc.). Plane finding only.
-     */
-    private fun configureSession(session: Session) {
-        val config = Config(session)
-        config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
-        // BLOCKING matches camera rate; more stable than LATEST on some OEMs
-        config.updateMode = Config.UpdateMode.BLOCKING
-        config.focusMode = Config.FocusMode.AUTO
-        config.depthMode = Config.DepthMode.DISABLED
-        config.instantPlacementMode = Config.InstantPlacementMode.DISABLED
-        config.lightEstimationMode = Config.LightEstimationMode.DISABLED
-        session.configure(config)
-    }
+    private fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
 
     private fun failAndFinish(message: String) {
         try {
@@ -245,194 +212,61 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         finish()
     }
 
-    // ─── GL ──────────────────────────────────────────────────────────────
-
-    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES20.glClearColor(0.05f, 0.05f, 0.08f, 1.0f)
+    private fun markCenterHit() {
         try {
-            backgroundRenderer.createOnGlThread(this)
-            surfaceCreated = true
-            firstFrameAtMs = SystemClock.elapsedRealtime()
-            Log.i(TAG, "GL surface + camera texture id=${backgroundRenderer.textureId}")
-        } catch (e: Exception) {
-            Log.e(TAG, "GL init", e)
-            runOnUiThread { failAndFinish("Graphics init failed: ${e.message}") }
-        }
-    }
-
-    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-        displayRotationHelper.onSurfaceChanged(width, height)
-        GLES20.glViewport(0, 0, width, height)
-        Log.i(TAG, "Surface size ${width}x$height")
-    }
-
-    override fun onDrawFrame(gl: GL10?) {
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-
-        // Ensure session exists (created on UI thread in onResume)
-        val session = session
-        if (session == null || !surfaceCreated || backgroundRenderer.textureId < 0) {
-            return
-        }
-
-        try {
-            // hello_ar: set texture name every frame before update (GL thread)
-            displayRotationHelper.updateSessionIfNeeded(session)
-            session.setCameraTextureName(backgroundRenderer.textureId)
-            textureBound = true
-            if (!sessionResumed) {
-                // Session may have been paused; resume must run on UI thread
-                runOnUiThread {
-                    try {
-                        session.resume()
-                        sessionResumed = true
-                    } catch (e: CameraNotAvailableException) {
-                        liveDistance.text = "Camera busy — close other camera apps"
-                    }
-                }
-                return
-            }
-
-            val frame: Frame = session.update()
-            val drew = backgroundRenderer.draw(frame)
-
-            if (drew && !cameraOk) {
-                cameraOk = true
-                runOnUiThread {
-                    liveDistance.text = "Camera OK · move phone to find floor"
-                    liveDistance.setTextColor(0xFF80CBC4.toInt())
-                }
-            }
-
-            // Black-screen watchdog
-            if (!cameraOk && !blackScreenWarned) {
-                val elapsed = SystemClock.elapsedRealtime() - firstFrameAtMs
-                if (firstFrameAtMs > 0 && elapsed > 3500) {
-                    blackScreenWarned = true
-                    val ts = frame.timestamp
-                    val track = frame.camera.trackingState
-                    Log.e(TAG, "No camera frames after ${elapsed}ms ts=$ts track=$track")
-                    runOnUiThread {
-                        liveDistance.text = "No camera image — retry AR"
-                        liveDistance.setTextColor(0xFFEF9A9A.toInt())
-                        stepHint.text =
-                            "Camera feed did not start. Tap Cancel, force-stop any camera app, " +
-                                "ensure Play Services for AR is updated, then try again with good light."
-                        Toast.makeText(
-                            this,
-                            "AR camera failed to start (black). Update Google Play Services for AR and retry.",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    }
-                }
-            }
-
-            val n = trackingUiCounter.incrementAndGet()
-            if (n % 12 == 0 && cameraOk) {
-                val cam = frame.camera.trackingState
-                var planes = 0
-                for (p in session.getAllTrackables(Plane::class.java)) {
-                    if (p.trackingState == TrackingState.TRACKING) planes++
-                }
-                runOnUiThread { updateTrackingUi(cam, planes) }
-            }
-
-            if (markRequested.compareAndSet(true, false)) {
-                processMarkOnGlThread(session, frame)
-            }
-        } catch (e: CameraNotAvailableException) {
-            Log.w(TAG, "camera", e)
-            sessionResumed = false
-        } catch (e: Exception) {
-            Log.w(TAG, "draw", e)
-        }
-    }
-
-    private fun updateTrackingUi(state: TrackingState, planeCount: Int) {
-        if (!::liveDistance.isInitialized) return
-        if (wallMeters.size >= totalWalls && !measuringDiagonal) return
-        if (pendingStartPose != null) return
-        when (state) {
-            TrackingState.TRACKING -> {
-                if (planeCount > 0) {
-                    liveDistance.text = "Tracking · $planeCount floor plane(s) — Mark ready"
-                    liveDistance.setTextColor(0xFF80CBC4.toInt())
-                } else {
-                    liveDistance.text = "Tracking · point at floor to detect plane…"
-                    liveDistance.setTextColor(0xFFFFCC80.toInt())
-                }
-            }
-            TrackingState.PAUSED -> {
-                liveDistance.text = "Tracking paused — move slowly"
-                liveDistance.setTextColor(0xFFFFAB91.toInt())
-            }
-            TrackingState.STOPPED -> {
-                liveDistance.text = "Tracking stopped — restart AR"
-                liveDistance.setTextColor(0xFFEF9A9A.toInt())
-            }
-        }
-    }
-
-    private fun processMarkOnGlThread(session: Session, frame: Frame) {
-        try {
-            if (!cameraOk) {
-                runOnUiThread {
-                    Toast.makeText(this, "Wait for camera image first", Toast.LENGTH_SHORT).show()
-                }
+            val frame = arSceneView.frame
+            if (frame == null || frame.timestamp == 0L) {
+                Toast.makeText(this, "Wait for live camera image first", Toast.LENGTH_SHORT).show()
                 return
             }
             if (frame.camera.trackingState != TrackingState.TRACKING) {
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        "Move phone slowly until tracking is stable (look at the floor)",
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
+                Toast.makeText(
+                    this,
+                    "Move phone slowly until tracking is stable",
+                    Toast.LENGTH_SHORT,
+                ).show()
                 return
             }
-            val w = surfaceView.width
-            val h = surfaceView.height
-            if (w <= 0 || h <= 0) return
-            val hits = frame.hitTest(w / 2f, h / 2f)
-            val hit = hits.firstOrNull { hit ->
-                val t = hit.trackable
-                t is Plane &&
-                    t.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
-                    t.isPoseInPolygon(hit.hitPose) &&
-                    t.trackingState == TrackingState.TRACKING
-            } ?: hits.firstOrNull { hit ->
-                val t = hit.trackable
-                t is Plane && t.trackingState == TrackingState.TRACKING
-            } ?: hits.firstOrNull()
+
+            // Prefer SceneView hit helper (horizontal plane at reticle)
+            val hit: HitResult? = arSceneView.hitTestAR(
+                planeTypes = setOf(Plane.Type.HORIZONTAL_UPWARD_FACING),
+                planePoseInPolygon = true,
+            ) ?: arSceneView.hitTestAR(
+                planeTypes = setOf(
+                    Plane.Type.HORIZONTAL_UPWARD_FACING,
+                    Plane.Type.HORIZONTAL_DOWNWARD_FACING,
+                    Plane.Type.VERTICAL,
+                ),
+                planePoseInPolygon = false,
+            ) ?: run {
+                // Fallback raw hit test at view center
+                val cx = arSceneView.width / 2f
+                val cy = arSceneView.height / 2f
+                frame.hitTest(cx, cy).firstOrNull()
+            }
 
             if (hit == null) {
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        "No floor at center — point + at floor until planes appear, then Mark",
-                        Toast.LENGTH_LONG,
-                    ).show()
-                }
+                Toast.makeText(
+                    this,
+                    "No floor at center — wait for plane grid, then Mark",
+                    Toast.LENGTH_LONG,
+                ).show()
                 return
             }
 
             val pose = hit.hitPose
             val xyz = floatArrayOf(pose.tx(), pose.ty(), pose.tz())
-            val anchor = hit.createAnchor()
-            runOnUiThread {
-                anchors.add(anchor)
-                if (measuringDiagonal) handleDiagonalPoint(xyz) else handleWallPoint(xyz)
+            if (measuringDiagonal) {
+                handleDiagonalPoint(xyz)
+            } else {
+                handleWallPoint(xyz)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "processMark", e)
-            runOnUiThread {
-                Toast.makeText(this, "Measure failed: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            Log.e(TAG, "mark", e)
+            Toast.makeText(this, "Measure failed: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
-
-    // ─── Measure logic ───────────────────────────────────────────────────
 
     private fun handleWallPoint(xyz: FloatArray) {
         if (wallMeters.size >= totalWalls) return
@@ -442,6 +276,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             liveDistance.text = "Corner 1 set — mark other end"
             liveDistance.setTextColor(0xFF80CBC4.toInt())
             Toast.makeText(this, "Corner 1 set", Toast.LENGTH_SHORT).show()
+            updateUi()
         } else {
             val start = pendingStartPose
             if (start == null) {
@@ -451,8 +286,6 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             val dist = distance(start, xyz)
             if (dist < 0.4) {
                 Toast.makeText(this, "Too short — mark corners further apart", Toast.LENGTH_SHORT).show()
-                detachLastAnchor()
-                detachLastAnchor()
                 tapsInSegment = 0
                 pendingStartPose = null
                 return
@@ -470,7 +303,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 measuringDiagonal = true
                 Toast.makeText(
                     this,
-                    "Optional: diagonal check, or Use measurements",
+                    "Optional diagonal, or Use measurements",
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -482,7 +315,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         tapsInSegment++
         if (tapsInSegment == 1) {
             pendingStartPose = xyz
-            liveDistance.text = "Diagonal corner 1 — mark opposite corner"
+            liveDistance.text = "Diagonal corner 1 — mark opposite"
         } else {
             val start = pendingStartPose ?: xyz
             val dist = distance(start, xyz)
@@ -510,7 +343,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
         val scale = 1.0 + (ratio - 1.0) * 0.65
         for (i in wallMeters.indices) wallMeters[i] = wallMeters[i] * scale
-        Toast.makeText(this, String.format("Scale refined from diagonal (×%.2f)", scale), Toast.LENGTH_LONG).show()
+        Toast.makeText(this, String.format("Scale refined (×%.2f)", scale), Toast.LENGTH_LONG).show()
     }
 
     private fun labels() = if (chainMode) wallLabelsChain else wallLabelsQuick
@@ -522,19 +355,8 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         return sqrt(dx * dx + dy * dy + dz * dz)
     }
 
-    private fun detachLastAnchor() {
-        if (anchors.isEmpty()) return
-        try {
-            anchors.removeAt(anchors.lastIndex).detach()
-        } catch (e: Exception) {
-            Log.w(TAG, "detach", e)
-        }
-    }
-
     private fun undoLast() {
-        markRequested.set(false)
         if (tapsInSegment > 0) {
-            detachLastAnchor()
             tapsInSegment = 0
             pendingStartPose = null
             updateUi()
@@ -542,8 +364,6 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
         if (wallMeters.isNotEmpty() && !measuringDiagonal) {
             wallMeters.removeAt(wallMeters.lastIndex)
-            detachLastAnchor()
-            detachLastAnchor()
             measuringDiagonal = false
         }
         updateUi()
@@ -570,8 +390,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         when {
             measuringDiagonal -> {
                 stepTitle.text = "Accuracy check — diagonal (optional)"
-                stepHint.text =
-                    "Wait for camera + Tracking, then Mark two opposite corners — or Use measurements."
+                stepHint.text = "Mark two opposite corners, or Use measurements."
                 btnMark.text = "Mark diagonal corner"
             }
             n >= totalWalls -> {
@@ -582,9 +401,8 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             else -> {
                 stepTitle.text = "Step ${n + 1}/$totalWalls — ${labels[n]}"
                 stepHint.text =
-                    "1) Wait until you SEE the live camera (not black). " +
-                        "2) Move phone until “Tracking · floor plane(s)”. " +
-                        "3) Point + at a floor corner → Mark. Repeat other end."
+                    "You should see LIVE camera + floor grid. " +
+                        "Point + at a floor corner → Mark. Other end of the same wall next."
                 btnMark.text = if (tapsInSegment == 0) "Mark corner 1" else "Mark corner 2"
             }
         }
@@ -618,7 +436,6 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private fun finishWithResult() {
         measuringDiagonal = false
-        markRequested.set(false)
         val w = resolvedWidthM()
         val l = resolvedLengthM()
         if (w == null || l == null || w < 0.5 || l < 0.5) {
