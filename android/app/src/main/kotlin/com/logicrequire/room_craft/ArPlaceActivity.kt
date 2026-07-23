@@ -6,6 +6,7 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -13,6 +14,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.ar.core.Anchor
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
+import com.google.ar.core.Frame
+import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -20,21 +23,16 @@ import com.logicrequire.room_craft.ar.BackgroundRenderer
 import com.logicrequire.room_craft.ar.DisplayRotationHelper
 import java.util.ArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.sqrt
 
 /**
- * AR place furniture on the live camera floor plane (Planner AR room planner path).
+ * AR place furniture on the live camera floor plane.
  *
- * Flow (+119 oriented axes for metric-correct plan feet):
- * 1) Mark room origin (SW corner on floor)
- * 2) Mark +X direction (SE corner / along width wall) — establishes plan axes
- * 3) Cycle furniture types and Mark on floor to place each piece
- * 4) Done → returns placements projected onto axes in feet (not abs world delta)
- *
- * Pure ARCore + camera background (no Sceneform). Furniture shown as counted
- * anchors; Flutter maps types to catalog sizes.
+ * +119: oriented axes (origin + +X) for correct plan feet.
+ * +120: session.update only on GL thread (fixes camera flip / stuck feed).
  */
 class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
@@ -66,15 +64,16 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private val installRequested = AtomicBoolean(false)
     private var surfaceCreated = false
 
-    private var origin: FloatArray? = null // world xyz of SW corner
-    /** Unit vector on floor along plan +X (width). Null until +X corner marked. */
+    private var origin: FloatArray? = null
     private var xAxis: FloatArray? = null
-    /** Unit vector on floor along plan +Z (length / fromBottom). */
     private var zAxis: FloatArray? = null
     private val placed = mutableListOf<Placed>()
     private var typeIndex = 0
     private var roomWidthFt: Double = 12.0
     private var roomLengthFt: Double = 12.0
+
+    private val placeRequested = AtomicBoolean(false)
+    private val trackingUiCounter = AtomicInteger(0)
 
     private data class Placed(
         val type: String,
@@ -85,6 +84,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             roomWidthFt = intent.getDoubleExtra(EXTRA_WIDTH_FT, 12.0).coerceIn(3.0, 120.0)
             roomLengthFt = intent.getDoubleExtra(EXTRA_LENGTH_FT, 12.0).coerceIn(3.0, 120.0)
             setContentView(R.layout.activity_ar_place)
@@ -103,7 +103,10 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 setResult(Activity.RESULT_CANCELED)
                 finish()
             }
-            btnPlace.setOnClickListener { placeAtCenter() }
+            btnPlace.setOnClickListener {
+                placeRequested.set(true)
+                Toast.makeText(this, "Placing… hold steady", Toast.LENGTH_SHORT).show()
+            }
             btnNextType.setOnClickListener {
                 typeIndex = (typeIndex + 1) % FURN_TYPES.size
                 updateUi()
@@ -133,7 +136,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             origin == null -> {
                 stepTitle.text = "AR place · Step 1/3 — SW origin"
                 stepHint.text =
-                    "Point + at the SW corner of the room on the floor, then Mark. " +
+                    "Wait for Tracking · floor plane(s). Point + at SW corner on the floor, then Mark. " +
                         "This is plan (0,0)."
                 btnPlace.text = "Mark origin (SW)"
                 liveInfo.text = "No origin yet"
@@ -142,7 +145,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 stepTitle.text = "AR place · Step 2/3 — width axis (+X)"
                 stepHint.text =
                     "Point + at the SE corner (along the WIDTH wall from SW), then Mark. " +
-                        "This orients plan feet correctly (no abs flip)."
+                        "This orients plan feet correctly."
                 btnPlace.text = "Mark +X (SE / width end)"
                 liveInfo.text = "Origin set · need +X axis"
             }
@@ -158,7 +161,6 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
     }
 
-    /** Project floor vector (dx,dz) onto unit axes → plan feet. */
     private fun projectToPlanFt(world: FloatArray): Pair<Double, Double> {
         val o = origin ?: return 0.0 to 0.0
         val xU = xAxis
@@ -167,22 +169,18 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val dy = (world[1] - o[1]).toDouble()
         val dz = (world[2] - o[2]).toDouble()
         if (xU == null || zU == null) {
-            // Fallback only if axes missing (should not happen after step 2)
             return kotlin.math.abs(dx) * M_TO_FT to kotlin.math.abs(dz) * M_TO_FT
         }
-        // Ignore vertical; project horizontal onto oriented axes
         val fromLeftM = dx * xU[0] + dy * xU[1] + dz * xU[2]
         val fromBottomM = dx * zU[0] + dy * zU[1] + dz * zU[2]
         return fromLeftM * M_TO_FT to fromBottomM * M_TO_FT
     }
 
-    private fun setAxesFromXPoint(xPoint: FloatArray) {
-        val o = origin ?: return
+    private fun setAxesFromXPoint(xPoint: FloatArray): Boolean {
+        val o = origin ?: return false
         var vx = (xPoint[0] - o[0]).toDouble()
-        var vy = (xPoint[1] - o[1]).toDouble()
+        var vy = 0.0
         var vz = (xPoint[2] - o[2]).toDouble()
-        // Flatten to floor (horizontal)
-        vy = 0.0
         val len = sqrt(vx * vx + vy * vy + vz * vz)
         if (len < 0.25) {
             Toast.makeText(
@@ -190,94 +188,101 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 "Too close to origin — mark the far end of the width wall",
                 Toast.LENGTH_SHORT,
             ).show()
-            return
+            return false
         }
         vx /= len
-        vy /= len
         vz /= len
-        // +Z = up × +X  (right-hand: Y-up world → length into room)
-        // ARCore: Y is up. zAxis = cross(Y_up, xAxis) = (-xz, 0, xx) when y≈0
         var zx = -vz
         var zy = 0.0
         var zz = vx
         val zLen = sqrt(zx * zx + zy * zy + zz * zz)
         if (zLen < 1e-6) {
-            // Degenerate: fall back to world Z
             zx = 0.0
-            zy = 0.0
             zz = 1.0
         } else {
             zx /= zLen
-            zy /= zLen
             zz /= zLen
         }
-        xAxis = floatArrayOf(vx.toFloat(), vy.toFloat(), vz.toFloat())
-        zAxis = floatArrayOf(zx.toFloat(), zy.toFloat(), zz.toFloat())
+        xAxis = floatArrayOf(vx.toFloat(), 0f, vz.toFloat())
+        zAxis = floatArrayOf(zx.toFloat(), 0f, zz.toFloat())
         Toast.makeText(this, "Axes set — place furniture on floor", Toast.LENGTH_SHORT).show()
+        return true
     }
 
-    private fun placeAtCenter() {
+    private fun processPlaceOnGlThread(session: Session, frame: Frame) {
         try {
-            val session = session ?: return
-            val frame = session.update()
             if (frame.camera.trackingState != TrackingState.TRACKING) {
-                Toast.makeText(this, "Move phone slowly until tracking locks", Toast.LENGTH_SHORT).show()
+                runOnUiThread {
+                    Toast.makeText(this, "Move phone slowly until tracking locks", Toast.LENGTH_SHORT).show()
+                }
                 return
             }
-            val cx = surfaceView.width / 2f
-            val cy = surfaceView.height / 2f
+            val w = surfaceView.width
+            val h = surfaceView.height
+            if (w <= 0 || h <= 0) return
+            val cx = w / 2f
+            val cy = h / 2f
             val hits = frame.hitTest(cx, cy)
             val hit = hits.firstOrNull {
-                it.trackable is com.google.ar.core.Plane &&
-                    (it.trackable as com.google.ar.core.Plane).type ==
-                    com.google.ar.core.Plane.Type.HORIZONTAL_UPWARD_FACING
-            } ?: hits.firstOrNull { it.trackable is com.google.ar.core.Plane }
+                it.trackable is Plane &&
+                    (it.trackable as Plane).type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
+                    (it.trackable as Plane).trackingState == TrackingState.TRACKING
+            } ?: hits.firstOrNull { it.trackable is Plane }
                 ?: hits.firstOrNull()
 
             if (hit == null) {
-                Toast.makeText(this, "No floor at center — point at floor", Toast.LENGTH_SHORT).show()
+                runOnUiThread {
+                    Toast.makeText(this, "No floor at center — point at floor, wait for planes", Toast.LENGTH_SHORT).show()
+                }
                 return
             }
             val pose = hit.hitPose
             val xyz = floatArrayOf(pose.tx(), pose.ty(), pose.tz())
             val anchor = hit.createAnchor()
 
-            when {
-                origin == null -> {
-                    origin = xyz
-                    Toast.makeText(this, "Origin set — mark +X along width wall", Toast.LENGTH_SHORT).show()
-                }
-                xAxis == null || zAxis == null -> {
-                    setAxesFromXPoint(xyz)
-                    // Detach the axis marker anchor (not a furniture piece)
-                    try {
-                        anchor.detach()
-                    } catch (_: Exception) {
+            runOnUiThread {
+                when {
+                    origin == null -> {
+                        origin = xyz
+                        Toast.makeText(this, "Origin set — mark +X along width wall", Toast.LENGTH_SHORT).show()
+                        updateUi()
+                    }
+                    xAxis == null || zAxis == null -> {
+                        if (setAxesFromXPoint(xyz)) {
+                            try {
+                                anchor.detach()
+                            } catch (_: Exception) {
+                            }
+                            updateUi()
+                        }
+                    }
+                    else -> {
+                        placed.add(Placed(currentType(), xyz, anchor))
+                        val (fl, fb) = projectToPlanFt(xyz)
+                        Toast.makeText(
+                            this,
+                            String.format(
+                                "Placed %s @ %.1f × %.1f ft",
+                                currentType(),
+                                fl.coerceIn(0.0, roomWidthFt),
+                                fb.coerceIn(0.0, roomLengthFt),
+                            ),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        updateUi()
                     }
                 }
-                else -> {
-                    placed.add(Placed(currentType(), xyz, anchor))
-                    val (fl, fb) = projectToPlanFt(xyz)
-                    Toast.makeText(
-                        this,
-                        String.format(
-                            "Placed %s @ %.1f × %.1f ft",
-                            currentType(),
-                            fl.coerceIn(0.0, roomWidthFt),
-                            fb.coerceIn(0.0, roomLengthFt),
-                        ),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
             }
-            updateUi()
         } catch (e: Exception) {
-            Log.e(TAG, "placeAtCenter", e)
-            Toast.makeText(this, "Place failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "processPlace", e)
+            runOnUiThread {
+                Toast.makeText(this, "Place failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     private fun undoLast() {
+        placeRequested.set(false)
         if (placed.isNotEmpty()) {
             val last = placed.removeAt(placed.lastIndex)
             try {
@@ -300,6 +305,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     private fun finishWithResult() {
+        placeRequested.set(false)
         val o = origin
         if (o == null) {
             Toast.makeText(this, "Mark origin first", Toast.LENGTH_SHORT).show()
@@ -312,14 +318,11 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val list = ArrayList<HashMap<String, Any>>()
         for (p in placed) {
             val (left, bottom) = projectToPlanFt(p.world)
-            // Clamp inside measured room (keep on plan if slightly outside)
-            val fromLeftFt = left.coerceIn(0.0, roomWidthFt)
-            val fromBottomFt = bottom.coerceIn(0.0, roomLengthFt)
             list.add(
                 hashMapOf(
                     "type" to p.type,
-                    "fromLeftFt" to fromLeftFt,
-                    "fromBottomFt" to fromBottomFt,
+                    "fromLeftFt" to left.coerceIn(0.0, roomWidthFt),
+                    "fromBottomFt" to bottom.coerceIn(0.0, roomLengthFt),
                     "fromLeftRawFt" to left,
                     "fromBottomRawFt" to bottom,
                     "roomWidthFt" to roomWidthFt,
@@ -349,6 +352,10 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     val config = Config(s)
                     config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                     config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
+                    config.focusMode = Config.FocusMode.AUTO
+                    if (s.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                        config.depthMode = Config.DepthMode.AUTOMATIC
+                    }
                     s.configure(config)
                 }
             }
@@ -391,7 +398,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         surfaceCreated = true
-        GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1f)
+        GLES20.glClearColor(0.05f, 0.05f, 0.05f, 1f)
         try {
             backgroundRenderer.createOnGlThread(this)
             session?.setCameraTextureName(backgroundRenderer.textureId)
@@ -408,10 +415,36 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         val session = session ?: return
+        if (!surfaceCreated || backgroundRenderer.textureId < 0) return
         try {
             displayRotationHelper.updateSessionIfNeeded(session)
+            session.setCameraTextureName(backgroundRenderer.textureId)
             val frame = session.update()
             backgroundRenderer.draw(frame)
+
+            val n = trackingUiCounter.incrementAndGet()
+            if (n % 15 == 0) {
+                val cam = frame.camera.trackingState
+                var planes = 0
+                for (p in session.getAllTrackables(Plane::class.java)) {
+                    if (p.trackingState == TrackingState.TRACKING) planes++
+                }
+                runOnUiThread {
+                    if (origin == null || xAxis == null) {
+                        liveInfo.text = when (cam) {
+                            TrackingState.TRACKING ->
+                                if (planes > 0) "Tracking · $planes floor plane(s) — ready"
+                                else "Tracking · point at floor…"
+                            TrackingState.PAUSED -> "Tracking paused — move slowly"
+                            TrackingState.STOPPED -> "Tracking stopped"
+                        }
+                    }
+                }
+            }
+
+            if (placeRequested.compareAndSet(true, false)) {
+                processPlaceOnGlThread(session, frame)
+            }
         } catch (e: CameraNotAvailableException) {
             Log.w(TAG, "camera", e)
         } catch (e: Exception) {

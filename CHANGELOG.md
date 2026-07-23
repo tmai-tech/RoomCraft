@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+120 (2026-07-23)
+
+### Fix — AR camera flip / blank feed (feedback e43505bf on +119)
+- **Root cause:** `Session.update()` was called from both the UI thread (Mark) and the GL thread → concurrent ARCore update flips camera and breaks tracking (“nothing happens”).
+- **ArMeasureActivity / ArPlaceActivity:** Mark only queues a flag; hit-test runs on the next GL frame after a single `session.update()`.
+- **DisplayRotationHelper:** apply `setDisplayGeometry` only when rotation/size actually change (no thrash flip).
+- **BackgroundRenderer:** seed UVs; force first-frame texture transform so feed is not grey/black.
+- Live **Tracking · N floor plane(s)** status; keep screen on; auto focus + depth when available.
+- Version **+120**. See `docs/ACCURACY_TURN_LOG.md` Turn 69.
+
 ## 1.0.0-beta.1+119 (2026-07-22)
 
 ### Accuracy — AR flow 100% metric path (gallery ceiling honest)

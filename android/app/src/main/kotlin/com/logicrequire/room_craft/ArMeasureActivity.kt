@@ -6,7 +6,7 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.util.Log
-import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -14,6 +14,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.ar.core.Anchor
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
+import com.google.ar.core.Frame
+import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -21,16 +23,21 @@ import com.google.ar.core.exceptions.UnavailableException
 import com.logicrequire.room_craft.ar.BackgroundRenderer
 import com.logicrequire.room_craft.ar.DisplayRotationHelper
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Pure ARCore room measure — no Sceneform (avoids common native crashes).
+ * Pure ARCore room measure — no Sceneform.
  *
- * User points the center reticle at floor corners and taps "Mark corner".
- * Modes: quick (width then length) or chain (walls A–D) + optional diagonal.
+ * +120 critical fix (feedback e43505bf "ar camera just keep fliping nothing happens"):
+ * - [Session.update] runs **only** on the GL thread (never from Mark button).
+ * - Concurrent update() caused camera flip / blank feed / stuck tracking.
+ * - Mark queues a hit-test processed on the next GL frame.
+ * - Display geometry applied only when rotation/size actually changes.
+ * - Live tracking + plane count so user knows when Mark will work.
  */
 class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
@@ -52,12 +59,16 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private val anchors = mutableListOf<Anchor>()
     private val wallMeters = mutableListOf<Double>()
-    private var pendingStartPose: FloatArray? = null // world translation xyz of first corner in segment
+    private var pendingStartPose: FloatArray? = null
 
     private var chainMode = false
     private var tapsInSegment = 0
     private var measuringDiagonal = false
     private var diagonalMeters: Double? = null
+
+    /** +120: UI thread only sets flag; GL thread performs hit-test after update(). */
+    private val markRequested = AtomicBoolean(false)
+    private val trackingUiCounter = AtomicInteger(0)
 
     private val wallLabelsQuick = listOf("Width (Wall A)", "Length (Wall B)")
     private val wallLabelsChain = listOf(
@@ -71,6 +82,8 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            // Keep screen on — sleep breaks AR tracking mid-measure
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             setContentView(R.layout.activity_ar_measure)
             chainMode = intent.getStringExtra(EXTRA_MODE) == MODE_CHAIN
             displayRotationHelper = DisplayRotationHelper(this)
@@ -90,14 +103,18 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             }
             btnUndo.setOnClickListener { undoLast() }
             btnDone.setOnClickListener { finishWithResult() }
-            btnMark.setOnClickListener { markCenterHit() }
+            btnMark.setOnClickListener {
+                // Queue only — do NOT call session.update() on UI thread
+                markRequested.set(true)
+                Toast.makeText(this, "Marking… hold steady on the floor corner", Toast.LENGTH_SHORT).show()
+            }
 
             surfaceView.preserveEGLContextOnPause = true
             surfaceView.setEGLContextClientVersion(2)
             surfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
             surfaceView.setRenderer(this)
             surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-            surfaceView.setOnTouchListener { _, _ -> true } // consume; use button
+            surfaceView.setOnTouchListener { _, _ -> true }
 
             updateUi()
         } catch (e: Exception) {
@@ -161,6 +178,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val config = Config(session)
         config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
         config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+        config.focusMode = Config.FocusMode.AUTO
         if (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
             config.depthMode = Config.DepthMode.AUTOMATIC
         }
@@ -179,9 +197,11 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     // ─── GLSurfaceView.Renderer ───────────────────────────────────────────
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1.0f)
+        GLES20.glClearColor(0.05f, 0.05f, 0.05f, 1.0f)
         try {
             backgroundRenderer.createOnGlThread(this)
+            // Bind texture before first update so camera frames stream immediately
+            session?.setCameraTextureName(backgroundRenderer.textureId)
             surfaceCreated = true
         } catch (e: Exception) {
             Log.e(TAG, "GL init", e)
@@ -197,74 +217,129 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         val session = session ?: return
-        if (!surfaceCreated) return
+        if (!surfaceCreated || backgroundRenderer.textureId < 0) return
         try {
             displayRotationHelper.updateSessionIfNeeded(session)
             session.setCameraTextureName(backgroundRenderer.textureId)
             val frame = session.update()
             backgroundRenderer.draw(frame)
+
+            // Live tracking status (throttle UI)
+            val n = trackingUiCounter.incrementAndGet()
+            if (n % 15 == 0) {
+                val cam = frame.camera.trackingState
+                var planes = 0
+                for (p in session.getAllTrackables(Plane::class.java)) {
+                    if (p.trackingState == TrackingState.TRACKING) planes++
+                }
+                runOnUiThread { updateTrackingUi(cam, planes) }
+            }
+
+            // Process Mark on GL thread only (+120)
+            if (markRequested.compareAndSet(true, false)) {
+                processMarkOnGlThread(session, frame)
+            }
+        } catch (e: CameraNotAvailableException) {
+            Log.w(TAG, "camera", e)
         } catch (e: Exception) {
             Log.w(TAG, "draw", e)
         }
     }
 
-    // ─── Measure logic ───────────────────────────────────────────────────
-
-    private fun markCenterHit() {
-        val session = session
-        if (session == null) {
-            Toast.makeText(this, "AR session not ready", Toast.LENGTH_SHORT).show()
-            return
+    private fun updateTrackingUi(state: TrackingState, planeCount: Int) {
+        if (!::liveDistance.isInitialized) return
+        // Don't overwrite room size readout once walls are done
+        if (wallMeters.size >= totalWalls && !measuringDiagonal) return
+        if (pendingStartPose != null) return
+        when (state) {
+            TrackingState.TRACKING -> {
+                if (planeCount > 0) {
+                    liveDistance.text = "Tracking · $planeCount floor plane(s) — Mark ready"
+                    liveDistance.setTextColor(0xFF80CBC4.toInt())
+                } else {
+                    liveDistance.text = "Tracking · point at floor to detect plane…"
+                    liveDistance.setTextColor(0xFFFFCC80.toInt())
+                }
+            }
+            TrackingState.PAUSED -> {
+                liveDistance.text = "Tracking paused — move slowly"
+                liveDistance.setTextColor(0xFFFFAB91.toInt())
+            }
+            TrackingState.STOPPED -> {
+                liveDistance.text = "Tracking stopped — restart AR"
+                liveDistance.setTextColor(0xFFEF9A9A.toInt())
+            }
         }
+    }
+
+    private fun processMarkOnGlThread(session: Session, frame: Frame) {
         try {
-            val frame = session.update()
             val camera = frame.camera
             if (camera.trackingState != TrackingState.TRACKING) {
-                Toast.makeText(
-                    this,
-                    "Move phone slowly until tracking is stable (look at the floor)",
-                    Toast.LENGTH_SHORT,
-                ).show()
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Move phone slowly until tracking is stable (look at the floor)",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
                 return
             }
 
-            val cx = surfaceView.width / 2f
-            val cy = surfaceView.height / 2f
+            val w = surfaceView.width
+            val h = surfaceView.height
+            if (w <= 0 || h <= 0) {
+                runOnUiThread {
+                    Toast.makeText(this, "Camera view not ready — wait a second", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+            val cx = w / 2f
+            val cy = h / 2f
             val hits = frame.hitTest(cx, cy)
-            // Prefer horizontal plane hits
-            val hit = hits.firstOrNull { h ->
-                val t = h.trackable
-                t is com.google.ar.core.Plane &&
-                    t.type == com.google.ar.core.Plane.Type.HORIZONTAL_UPWARD_FACING &&
-                    t.isPoseInPolygon(h.hitPose)
-            } ?: hits.firstOrNull {
-                it.trackable is com.google.ar.core.Plane
+            val hit = hits.firstOrNull { hit ->
+                val t = hit.trackable
+                t is Plane &&
+                    t.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
+                    t.isPoseInPolygon(hit.hitPose) &&
+                    t.trackingState == TrackingState.TRACKING
+            } ?: hits.firstOrNull { hit ->
+                val t = hit.trackable
+                t is Plane && t.trackingState == TrackingState.TRACKING
             } ?: hits.firstOrNull()
 
             if (hit == null) {
-                Toast.makeText(
-                    this,
-                    "No floor detected at center — point at the floor and try again",
-                    Toast.LENGTH_SHORT,
-                ).show()
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "No floor at center — walk slowly, point + at floor, wait for Tracking · planes, then Mark",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
                 return
             }
 
             val pose = hit.hitPose
             val xyz = floatArrayOf(pose.tx(), pose.ty(), pose.tz())
             val anchor = hit.createAnchor()
-            anchors.add(anchor)
-
-            if (measuringDiagonal) {
-                handleDiagonalPoint(xyz)
-            } else {
-                handleWallPoint(xyz)
+            // anchors list is touched from UI undo — synchronize lightly via UI post
+            runOnUiThread {
+                anchors.add(anchor)
+                if (measuringDiagonal) {
+                    handleDiagonalPoint(xyz)
+                } else {
+                    handleWallPoint(xyz)
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "markCenterHit", e)
-            Toast.makeText(this, "Measure failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "processMark", e)
+            runOnUiThread {
+                Toast.makeText(this, "Measure failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
+
+    // ─── Measure logic (UI thread) ───────────────────────────────────────
 
     private fun handleWallPoint(xyz: FloatArray) {
         if (wallMeters.size >= totalWalls) return
@@ -272,6 +347,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         if (tapsInSegment == 1) {
             pendingStartPose = xyz
             liveDistance.text = "Corner 1 set — mark other end"
+            liveDistance.setTextColor(0xFF80CBC4.toInt())
             Toast.makeText(this, "Corner 1 set", Toast.LENGTH_SHORT).show()
         } else {
             val start = pendingStartPose
@@ -282,7 +358,6 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             val dist = distance(start, xyz)
             if (dist < 0.4) {
                 Toast.makeText(this, "Too short — mark corners further apart", Toast.LENGTH_SHORT).show()
-                // remove last two anchors
                 detachLastAnchor()
                 detachLastAnchor()
                 tapsInSegment = 0
@@ -302,7 +377,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 measuringDiagonal = true
                 Toast.makeText(
                     this,
-                    "Optional: mark two opposite corners for diagonal check",
+                    "Optional: mark two opposite corners for diagonal check, or Use measurements",
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -365,6 +440,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     private fun undoLast() {
+        markRequested.set(false)
         if (tapsInSegment > 0) {
             detachLastAnchor()
             tapsInSegment = 0
@@ -406,7 +482,7 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             measuringDiagonal -> {
                 stepTitle.text = "Accuracy check — diagonal (optional)"
                 stepHint.text =
-                    "Point center reticle at a corner, tap Mark. Then opposite corner. Or skip with Use measurements."
+                    "Wait for Tracking · planes, then Mark two opposite corners. Or skip with Use measurements."
                 btnMark.text = "Mark diagonal corner"
             }
             n >= totalWalls -> {
@@ -417,7 +493,8 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             else -> {
                 stepTitle.text = "Step ${n + 1}/$totalWalls — ${labels[n]}"
                 stepHint.text =
-                    "Point the + reticle at a floor corner of this wall, then tap Mark corner. Repeat for the other end."
+                    "Wait until status shows “Tracking · floor plane(s)”, point + at a floor corner, then Mark. " +
+                        "Repeat for the other end of this wall."
                 btnMark.text = if (tapsInSegment == 0) "Mark corner 1" else "Mark corner 2"
             }
         }
@@ -443,13 +520,15 @@ class ArMeasureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         btnDone.isEnabled = ready
         if (ready && w != null && l != null) {
             liveDistance.text = String.format("%.1f × %.1f ft", w * M_TO_FT, l * M_TO_FT)
-        } else if (wallMeters.isNotEmpty()) {
+            liveDistance.setTextColor(0xFF80CBC4.toInt())
+        } else if (wallMeters.isNotEmpty() && pendingStartPose == null) {
             liveDistance.text = String.format("Last: %.1f ft", wallMeters.last() * M_TO_FT)
         }
     }
 
     private fun finishWithResult() {
         measuringDiagonal = false
+        markRequested.set(false)
         val w = resolvedWidthM()
         val l = resolvedLengthM()
         if (w == null || l == null || w < 0.5 || l < 0.5) {

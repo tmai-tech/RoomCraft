@@ -11,6 +11,9 @@ import java.nio.FloatBuffer
 
 /**
  * Renders the AR camera image to the screen (minimal port of ARCore sample helper).
+ *
+ * +120: seed texture coords so first frames are not black/grey; force transform
+ * on first valid frame (hasDisplayGeometryChanged can lag on some devices).
  */
 class BackgroundRenderer {
     private var quadVertices: FloatBuffer
@@ -19,6 +22,7 @@ class BackgroundRenderer {
     private var quadProgram = 0
     private var quadPositionParam = 0
     private var quadTexCoordParam = 0
+    private var geometryTransformed = false
     var textureId = -1
         private set
 
@@ -37,7 +41,10 @@ class BackgroundRenderer {
 
         val bbTexCoordsTransformed = ByteBuffer.allocateDirect(4 * 2 * FLOAT_SIZE)
         bbTexCoordsTransformed.order(ByteOrder.nativeOrder())
+        // Seed with default so we never draw with empty (all-zero) UVs → grey screen
         quadTexCoordTransformed = bbTexCoordsTransformed.asFloatBuffer()
+        quadTexCoordTransformed.put(QUAD_TEXCOORDS)
+        quadTexCoordTransformed.position(0)
     }
 
     fun createOnGlThread(context: Context) {
@@ -59,23 +66,29 @@ class BackgroundRenderer {
         GLES20.glUseProgram(quadProgram)
         quadPositionParam = GLES20.glGetAttribLocation(quadProgram, "a_Position")
         quadTexCoordParam = GLES20.glGetAttribLocation(quadProgram, "a_TexCoord")
+        geometryTransformed = false
     }
 
     fun draw(frame: Frame) {
-        if (frame.hasDisplayGeometryChanged()) {
+        if (frame.hasDisplayGeometryChanged() || !geometryTransformed) {
             frame.transformCoordinates2d(
                 Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
                 quadVertices,
                 Coordinates2d.TEXTURE_NORMALIZED,
                 quadTexCoordTransformed,
             )
+            geometryTransformed = true
         }
         if (frame.timestamp == 0L) return
 
+        // Camera image is pre-multiplied; disable depth for fullscreen quad
         GLES20.glDisable(GLES20.GL_DEPTH_TEST)
         GLES20.glDepthMask(false)
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
         GLES20.glUseProgram(quadProgram)
+        // Ensure we sample the external OES texture unit 0
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
         GLES20.glVertexAttribPointer(quadPositionParam, COORDS_PER_VERTEX, GLES20.GL_FLOAT, false, 0, quadVertices)
         GLES20.glVertexAttribPointer(quadTexCoordParam, TEXCOORDS_PER_VERTEX, GLES20.GL_FLOAT, false, 0, quadTexCoordTransformed)
         GLES20.glEnableVertexAttribArray(quadPositionParam)
