@@ -88,13 +88,28 @@ class ArPlaceActivity : AppCompatActivity() {
             btnUndo.setOnClickListener { undoLast() }
             btnDone.setOnClickListener { finishWithResult() }
 
-            arSceneView.lifecycle = lifecycle
-            arSceneView.planeRenderer.isEnabled = true
+            // +123: config before lifecycle so session.create applies it
+            arSceneView.sessionConfiguration = { _, config ->
+                config.depthMode = Config.DepthMode.DISABLED
+                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
+                config.lightEstimationMode = Config.LightEstimationMode.DISABLED
+                config.focusMode = Config.FocusMode.AUTO
+                config.instantPlacementMode =
+                    Config.InstantPlacementMode.LOCAL_Y_UP
+            }
             arSceneView.configureSession { _, config ->
                 config.depthMode = Config.DepthMode.DISABLED
                 config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
                 config.lightEstimationMode = Config.LightEstimationMode.DISABLED
                 config.focusMode = Config.FocusMode.AUTO
+                config.instantPlacementMode =
+                    Config.InstantPlacementMode.LOCAL_Y_UP
+            }
+            arSceneView.planeRenderer.isEnabled = true
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                arSceneView.lifecycle = lifecycle
             }
             arSceneView.onSessionFailed = { e ->
                 runOnUiThread {
@@ -153,12 +168,13 @@ class ArPlaceActivity : AppCompatActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_CAMERA &&
-            (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED)
-        ) {
+        if (requestCode != REQ_CAMERA) return
+        if (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
             setResult(Activity.RESULT_CANCELED)
             finish()
+        } else if (::arSceneView.isInitialized && arSceneView.lifecycle == null) {
+            arSceneView.lifecycle = lifecycle
         }
     }
 

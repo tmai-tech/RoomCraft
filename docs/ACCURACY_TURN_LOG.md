@@ -36,6 +36,7 @@
 | **69** | **+120** | Feedback `e43505bf` on +119: **“ar camera just keep fliping nothing happens”** | **ARCore session race:** Mark called `session.update()` on UI thread while GL also updated → flip/blank. Fix: Mark queues flag; hit-test only on GL after single update. Display geometry only when rotation/size changes. Seed camera UVs + first-frame transform. Live Tracking · plane count; keep screen on. | Install **+120** for AR measure; wait for “Tracking · floor plane(s)” then Mark corners. |
 | **70** | **+121** | Still **black AR screen / no camera** | DepthMode **DISABLED** (AUTOMATIC black-camera on many OEMs). UI-thread `session.resume()`; GL texture bind every frame; BLOCKING update; shader checks; 3.5s no-frame watchdog. | Install **+121**; open AR measure — must show live camera within ~2s. Update Play Services for AR if watchdog fires. |
 | **71** | **+122** | Feedback `a41da384` on +121: **“still blank no nothing in ar”** (screenshot: pure black + Starting camera…) | Abandon custom GL camera. **SceneView ARSceneView** for Filament+ARCore camera stream; plane grid; hitTestAR for Mark. | Install **+122** — AR measure must show **live video**, not black. |
+| **72** | **+123** | Continuous AR accuracy: latest feedback still AR blank on +121; Planner5D multi-dot research; ship working scan + APK | (1) **Config-before-lifecycle** fix (late `configureSession` never applied after session create). (2) **Instant Placement** fallback when floor mesh slow. (3) **4-corner multi-dot polygon mode** (default) — sparse point map → W×L via ordered opposite edges (`ArPolygonMap` + native `resolvePolygonMeters`). (4) Camera **watchdog** 6s + permission-before-lifecycle. (5) `ScaleSource.arPolygon` → 100% metric when edges tight. (6) Research notes: Planner5D Home Scan video/cloud + iOS LiDAR; Open3D/RTAB-Map/Meshroom for offline dense. Tests `ar_polygon_map_test`. | **Should have done:** never assign SceneView lifecycle before session config (+122). **Field:** install **+123** → Home → AR Room Planner → Map 4 floor corners. Gallery photos still estimate-only. **Next:** device QA of SceneView camera; optional denser AR hits along walls; Open3D offline training path. |
 
 ---
 
@@ -46,7 +47,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–68 / +105–**+119** | Geometry → openings → AR scale → Phase B → user gold → position map → desk/doors → 100% gold identity → door keep-out → **AR metric path 100%** |
+| D Accuracy resume | 55–72 / +105–**+123** | Geometry → openings → AR scale → Phase B → gold identity → **AR SceneView camera** → **multi-dot polygon metric map** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

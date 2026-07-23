@@ -11,11 +11,13 @@ class ArRoomMeasure {
   final double widthM;
   final double lengthM;
   final String source;
-  /// `quick` (W×L) or `chain` (4 walls A–D).
+  /// `quick` | `chain` | `polygon` (4-corner multi-dot map, +123).
   final String mode;
   /// Per-wall lengths in feet (A,B[,C,D]).
   final List<double> wallsFt;
   final List<double> wallsM;
+  /// Flat world corners meters: [x0,y0,z0, x1,y1,z1, ...] for polygon mode.
+  final List<double> cornersM;
 
   const ArRoomMeasure({
     required this.widthFt,
@@ -26,6 +28,7 @@ class ArRoomMeasure {
     this.mode = 'quick',
     this.wallsFt = const [],
     this.wallsM = const [],
+    this.cornersM = const [],
   });
 
   factory ArRoomMeasure.fromMap(Map<dynamic, dynamic> map) {
@@ -43,10 +46,14 @@ class ArRoomMeasure {
       mode: map['mode']?.toString() ?? 'quick',
       wallsFt: asDoubles(map['wallsFt']),
       wallsM: asDoubles(map['wallsM']),
+      cornersM: asDoubles(map['cornersM']),
     );
   }
 
   bool get isChain => mode == 'chain' && wallsFt.length >= 4;
+
+  /// +123 multi-dot 4-corner floor map.
+  bool get isPolygon => mode == 'polygon' || cornersM.length >= 12;
 
   /// Opposite-wall consistency: max relative difference (0–1).
   double get oppositeWallError {
@@ -63,6 +70,9 @@ class ArRoomMeasure {
   String get summaryLabel {
     final base =
         '${widthFt.toStringAsFixed(1)} × ${lengthFt.toStringAsFixed(1)} ft';
+    if (isPolygon) {
+      return '$base · AR 4-corner multi-dot';
+    }
     if (isChain) {
       return '$base · 4-wall AR chain';
     }
@@ -80,6 +90,7 @@ class ArRoomMeasure {
       mode: mode,
       wallsFt: wallsFt,
       wallsM: wallsM,
+      cornersM: cornersM,
     );
   }
 }
@@ -141,7 +152,7 @@ class ArMeasureService {
     }
   }
 
-  /// [mode]: `quick` (width+length) or `chain` (four walls A→D).
+  /// [mode]: `quick` | `chain` | `polygon` (4 floor-corner multi-dot map).
   static Future<ArRoomMeasure> measureRoom({String mode = 'quick'}) async {
     if (!isPlatformSupported) {
       throw PlatformException(

@@ -119,7 +119,7 @@ class ScanRefine {
     required double widthFt,
     required double lengthFt,
     String reason = 'Size locked from AR refine',
-    ScaleSource scaleSource = ScaleSource.arChain,
+    ScaleSource scaleSource = ScaleSource.arPolygon,
     double oppositeWallError = 0,
   }) {
     final ox = input.roomWidthFt <= 0 ? 1.0 : input.roomWidthFt;
@@ -180,12 +180,13 @@ class ScanRefine {
       source: scaleSource,
       oppositeWallError: oppositeWallError,
     );
-    // +119: AR chain / tape can certify 100% metric room size
-    final ceiling =
-        (scaleSource == ScaleSource.arChain && oppositeWallError <= 0.05) ||
-                scaleSource == ScaleSource.tape
-            ? 1.0
-            : 0.98;
+    // +119/+123: AR multi-dot / chain / tape can certify 100% metric room size
+    final ceiling = ((scaleSource == ScaleSource.arPolygon ||
+                    scaleSource == ScaleSource.arChain) &&
+                oppositeWallError <= 0.05) ||
+            scaleSource == ScaleSource.tape
+        ? 1.0
+        : 0.98;
     final locked = math.max(score, floor).clamp(floor, ceiling);
     return opened.copyWith(
       accuracyScore: locked,

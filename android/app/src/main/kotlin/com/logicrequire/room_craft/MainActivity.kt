@@ -321,6 +321,11 @@ class MainActivity : FlutterActivity() {
                 val wallsM =
                     data.getDoubleArrayExtra(ArMeasureActivity.EXTRA_WALLS_M)?.toList()
                         ?: emptyList()
+                // +123 multi-dot corners (flat x,y,z meters)
+                val cornersFlat =
+                    data.getFloatArrayExtra(ArMeasureActivity.EXTRA_CORNERS_M)?.map {
+                        it.toDouble()
+                    } ?: emptyList()
                 pending.success(
                     mapOf(
                         "widthFt" to widthFt,
@@ -330,6 +335,7 @@ class MainActivity : FlutterActivity() {
                         "mode" to mode,
                         "wallsFt" to wallsFt,
                         "wallsM" to wallsM,
+                        "cornersM" to cornersFlat,
                         "source" to "arcore",
                     ),
                 )

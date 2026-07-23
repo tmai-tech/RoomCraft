@@ -59,25 +59,30 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
       return;
     }
     try {
-      final m = await ArMeasureService.measureRoom(mode: 'chain');
+      // +123: default multi-dot 4-corner map (Planner5D-class metric lock)
+      final m = await ArMeasureService.measureRoom(mode: 'polygon');
       if (!mounted) return;
+      final src = m.isPolygon
+          ? ScaleSource.arPolygon
+          : m.isChain
+              ? ScaleSource.arChain
+              : ScaleSource.arQuick;
       setState(() {
         _result = ScanRefine.lockSize(
           _result,
           widthFt: m.widthFt,
           lengthFt: m.lengthFt,
           reason:
-              'Size re-locked from AR 4-wall measure (${m.widthFt.toStringAsFixed(1)}×${m.lengthFt.toStringAsFixed(1)} ft)',
-          scaleSource: m.isChain
-              ? ScaleSource.arChain
-              : ScaleSource.arQuick,
+              'Size re-locked from AR multi-dot map (${m.widthFt.toStringAsFixed(1)}×${m.lengthFt.toStringAsFixed(1)} ft)',
+          scaleSource: src,
           oppositeWallError: m.oppositeWallError,
         );
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Plan rescaled to AR ${m.widthFt.toStringAsFixed(1)} × ${m.lengthFt.toStringAsFixed(1)} ft',
+            'Plan rescaled to AR ${m.widthFt.toStringAsFixed(1)} × ${m.lengthFt.toStringAsFixed(1)} ft '
+            '(${m.summaryLabel})',
           ),
         ),
       );

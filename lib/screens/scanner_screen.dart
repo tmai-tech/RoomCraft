@@ -112,7 +112,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   ArAvailability? _arStatus;
   ArRoomMeasure? _arMeasure;
   /// AR mode: quick (W×L) or chain (4 walls).
-  bool _arChainMode = true;
+  /// +123: default multi-dot polygon (4 floor corners). Toggle for legacy chain.
+  bool _arChainMode = false;
+  bool _arPolygonMode = true;
 
   final Map<WallSide, File> _wallPhotos = {};
   final Map<WallSide, List<_OpeningDraft>> _wallOpenings = {
@@ -158,17 +160,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
 
+  String get _arMeasureMode {
+    if (_arPolygonMode) return 'polygon';
+    if (_arChainMode) return 'chain';
+    return 'quick';
+  }
+
   Future<void> _runArMeasure() async {
     setState(() {
       _isLoading = true;
-      _loadingDetail = _arChainMode
-          ? 'AR 4-wall chain… walk each wall'
-          : 'Starting AR quick measure…';
+      _loadingDetail = switch (_arMeasureMode) {
+        'polygon' => 'AR multi-dot map… mark 4 floor corners',
+        'chain' => 'AR 4-wall chain… walk each wall',
+        _ => 'Starting AR quick measure…',
+      };
     });
     try {
-      final m = await ArMeasureService.measureRoom(
-        mode: _arChainMode ? 'chain' : 'quick',
-      );
+      final m = await ArMeasureService.measureRoom(mode: _arMeasureMode);
       if (!mounted) return;
       setState(() {
         _arMeasure = m;
@@ -812,16 +820,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             autoScale: false,
             layoutType: RoomLayoutType.empty,
           );
+          final poly = _arMeasure?.isPolygon == true;
           final chain = _arMeasure?.isChain == true;
           final oppErr = _arMeasure?.oppositeWallError ?? 0;
-          final src =
-              chain ? ScaleSource.arChain : ScaleSource.arQuick;
+          final src = poly
+              ? ScaleSource.arPolygon
+              : chain
+                  ? ScaleSource.arChain
+                  : ScaleSource.arQuick;
           result = ScanRefine.refine(raw.copyWith(
             warnings: [
               ...raw.warnings,
-              'Room size from ARCore floor measure '
-                  '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
-              'Scale lock (+108): ${ScaleLockConfidence.sourceLabel(src)}',
+              poly
+                  ? 'Room size from AR 4-corner multi-dot map '
+                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)'
+                  : 'Room size from ARCore floor measure '
+                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
+              'Scale lock (+108/+123): ${ScaleLockConfidence.sourceLabel(src)}',
             ],
             accuracyScore: ScaleLockConfidence.blend(
               layoutScore: raw.accuracyScore ?? 0.72,
@@ -831,15 +846,19 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           ));
         } else {
           // AR size only — exact rectangle; add furniture from catalog or photos later
+          final poly = _arMeasure?.isPolygon == true;
           final chain = _arMeasure?.isChain == true;
           final oppErr = _arMeasure?.oppositeWallError ?? 0;
-          final src =
-              chain ? ScaleSource.arChain : ScaleSource.arQuick;
+          final src = poly
+              ? ScaleSource.arPolygon
+              : chain
+                  ? ScaleSource.arChain
+                  : ScaleSource.arQuick;
           final floor = ScaleLockConfidence.sourceFloor(
             src,
             oppositeWallError: oppErr,
           );
-          // +119: pure AR-measured empty room = 100% metric geometry when chain is tight
+          // +119/+123: pure AR-measured empty room = 100% metric geometry when tight
           final arScore = ScaleLockConfidence.blend(
             layoutScore: 1.0,
             source: src,
@@ -851,21 +870,29 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             openings: const [],
             furniture: const [],
             warnings: [
-              chain
-                  ? 'Room size from AR 4-wall chain '
-                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft, opposite walls averaged)'
-                  : 'Room size from ARCore floor measure '
-                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
+              if (poly)
+                'Room size from AR 4-corner multi-dot map '
+                    '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)'
+              else if (chain)
+                'Room size from AR 4-wall chain '
+                    '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft, opposite walls averaged)'
+              else
+                'Room size from ARCore floor measure '
+                    '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
               if (oppErr > 0.08)
-                'Opposite walls differ by ${(oppErr * 100).round()}% — edit in Review if needed',
+                'Opposite edges differ by ${(oppErr * 100).round()}% — edit in Review if needed',
               if (frames.isEmpty)
                 'No photos yet — add openings/furniture in Review or Place furniture in AR',
-              'Scale lock (+108/+119): ${ScaleLockConfidence.sourceLabel(src)} '
+              'Scale lock (+108/+119/+123): ${ScaleLockConfidence.sourceLabel(src)} '
                   'floor ${(floor * 100).round()}%',
               if (arScore >= 0.99)
-                '100% AR measured room geometry (+119)',
+                '100% AR measured room geometry (+123 multi-dot)',
             ],
-            sourceLabel: chain ? 'ARCore 4-wall chain' : 'ARCore guided measure',
+            sourceLabel: poly
+                ? 'ARCore 4-corner multi-dot map'
+                : chain
+                    ? 'ARCore 4-wall chain'
+                    : 'ARCore guided measure',
             inventDefaultOpenings: false,
             accuracyScore: arScore,
           );
@@ -1306,7 +1333,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       padding: const EdgeInsets.all(12),
                       child: Text(
                         'Gallery photos alone cannot measure real feet. '
-                        'AR 4-wall measure locks metric room size (100% geometry when walls agree). '
+                        'AR multi-dot map (4 floor corners) locks metric room size — '
+                        'Planner 5D-style geometry when dots form a clean rectangle. '
                         'Then Review plan or place furniture on camera.',
                         style: TextStyle(
                           fontSize: 13,
@@ -1323,19 +1351,35 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _arChainMode
-                        ? 'Walk clockwise A→D. Point the + reticle at each floor corner and tap Mark. '
-                            'Opposite walls are averaged for a stable rectangle.'
-                        : 'Point + at width corners (Mark twice), then length corners. No Sceneform — pure ARCore.',
+                    _arPolygonMode
+                        ? 'Mark 4 floor corners (multi-dot map). Walk around the room; '
+                            'point + at each corner → Mark. W×L is reconstructed from the polygon.'
+                        : _arChainMode
+                            ? 'Walk clockwise A→D. Point + at each wall end and Mark. '
+                                'Opposite walls are averaged.'
+                            : 'Point + at width corners (Mark twice), then length corners.',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('4-wall chain (recommended)'),
-                    subtitle: const Text('More accurate than width×length only'),
-                    value: _arChainMode,
-                    onChanged: (v) => setState(() => _arChainMode = v),
+                    title: const Text('4-corner multi-dot map (recommended)'),
+                    subtitle: const Text(
+                      'Planner5D-style: sparse floor corner cloud → room size',
+                    ),
+                    value: _arPolygonMode,
+                    onChanged: (v) => setState(() {
+                      _arPolygonMode = v;
+                      if (v) _arChainMode = false;
+                    }),
                   ),
+                  if (!_arPolygonMode)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('4-wall chain'),
+                      subtitle: const Text('Measure each wall segment A→D'),
+                      value: _arChainMode,
+                      onChanged: (v) => setState(() => _arChainMode = v),
+                    ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: (_arStatus?.supported == true && !_isLoading)
@@ -1344,9 +1388,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     icon: const Icon(Icons.view_in_ar),
                     label: Text(
                       _arMeasure == null
-                          ? (_arChainMode
-                              ? 'Measure 4 walls with AR'
-                              : 'Measure with AR')
+                          ? (_arPolygonMode
+                              ? 'Map 4 floor corners with AR'
+                              : _arChainMode
+                                  ? 'Measure 4 walls with AR'
+                                  : 'Measure with AR')
                           : 'Re-measure with AR',
                     ),
                     style: FilledButton.styleFrom(

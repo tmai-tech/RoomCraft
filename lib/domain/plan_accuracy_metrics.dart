@@ -279,10 +279,18 @@ class PlanAccuracyMetrics {
   static String _detectScaleSource(List<String> warnings) {
     final blob = warnings.join(' ').toLowerCase();
     if (blob.contains('tape') || blob.contains('field measure')) return 'tape';
+    if (blob.contains('multi-dot') ||
+        blob.contains('4-corner') ||
+        blob.contains('ar polygon')) {
+      return 'ar_polygon';
+    }
     if (blob.contains('4-wall') || blob.contains('ar chain')) return 'ar_chain';
     if (blob.contains('arcore') || blob.contains('ar ')) return 'ar_quick';
-    if (blob.contains('scale lock (+108)')) {
+    if (blob.contains('scale lock')) {
       if (blob.contains('tape')) return 'tape';
+      if (blob.contains('multi-dot') || blob.contains('polygon')) {
+        return 'ar_polygon';
+      }
       if (blob.contains('chain')) return 'ar_chain';
       if (blob.contains('user-typed')) return 'user_typed';
     }
@@ -511,8 +519,11 @@ class PlanAccuracyMetrics {
   }
 }
 
-/// How room scale was measured (+108).
+/// How room scale was measured (+108 / +123).
 enum ScaleSource {
+  /// ARCore 4-corner multi-dot floor map (+123) — Planner5D-class phone path.
+  arPolygon,
+
   /// ARCore 4-wall chain (highest phone-grade without LiDAR).
   arChain,
 
@@ -529,7 +540,7 @@ enum ScaleSource {
   photoEstimate,
 }
 
-/// Measured-scale lock confidence (Planner5D-class) (+108).
+/// Measured-scale lock confidence (Planner5D-class) (+108 / +123).
 ///
 /// Photos alone cannot certify meters. When the user locks W×L from AR or tape,
 /// confidence should rise to survey-assistive levels and stay there through refine.
@@ -542,6 +553,11 @@ class ScaleLockConfidence {
     double oppositeWallError = 0,
   }) {
     switch (source) {
+      case ScaleSource.arPolygon:
+        // Multi-dot corner map is as good or better than wall-chain.
+        if (oppositeWallError > 0.12) return 0.86;
+        if (oppositeWallError > 0.08) return 0.92;
+        return 0.96;
       case ScaleSource.arChain:
         if (oppositeWallError > 0.12) return 0.84;
         if (oppositeWallError > 0.08) return 0.90;
@@ -559,6 +575,8 @@ class ScaleLockConfidence {
 
   static String sourceLabel(ScaleSource source) {
     switch (source) {
+      case ScaleSource.arPolygon:
+        return 'AR 4-corner multi-dot map';
       case ScaleSource.arChain:
         return 'AR 4-wall chain';
       case ScaleSource.arQuick:
@@ -574,9 +592,9 @@ class ScaleLockConfidence {
 
   /// Blend layout confidence with measured-scale floor.
   ///
-  /// +119: AR 4-wall chain with tight opposite walls (≤5%) and clean layout
-  /// can reach **1.0** for measured room geometry — product 100% bar for
-  /// metric size (gallery photos still cannot).
+  /// +119/+123: AR multi-dot polygon or 4-wall chain with tight opposite walls
+  /// (≤5%) and clean layout can reach **1.0** for measured room geometry —
+  /// product 100% bar for metric size (gallery photos still cannot).
   static double blend({
     required double? layoutScore,
     required ScaleSource source,
@@ -587,9 +605,8 @@ class ScaleLockConfidence {
       final layout = (layoutScore ?? 0.55).clamp(0.2, 0.98);
       return layout.clamp(0.25, 0.90);
     }
-    // +119: AR 4-wall chain + tight opposite walls + high layout → 100%
-    // metric room size (empty AR plan or user-verified layout).
-    if (source == ScaleSource.arChain &&
+    // +119/+123: AR multi-dot / chain + tight opposite walls + high layout → 100%
+    if ((source == ScaleSource.arPolygon || source == ScaleSource.arChain) &&
         oppositeWallError <= 0.05 &&
         (layoutScore ?? 0) >= 0.90) {
       return 1.0;
@@ -601,10 +618,11 @@ class ScaleLockConfidence {
     final layout = (layoutScore ?? 0.55).clamp(0.2, 0.98);
     // Measured scale dominates: 65% floor + 35% layout quality
     final blended = floor * 0.65 + layout * 0.35;
-    final ceiling =
-        (source == ScaleSource.arChain || source == ScaleSource.tape)
-            ? 1.0
-            : 0.98;
+    final ceiling = (source == ScaleSource.arPolygon ||
+            source == ScaleSource.arChain ||
+            source == ScaleSource.tape)
+        ? 1.0
+        : 0.98;
     return blended.clamp(floor, ceiling);
   }
 }

@@ -50,20 +50,63 @@ From professional field-measure practice:
 
 ## Hard accuracy ceiling (honest)
 
-Without **ARCore depth / plane hit-testing** or **external laser**, RoomCraft **cannot** auto-measure walls from camera to professional tolerance. Phase roadmap: ARCore wall length tools + optional laser import (magicplan-class).
+Without **ARCore depth / plane hit-testing** or **external laser**, RoomCraft **cannot** auto-measure walls from camera to professional tolerance. Phase roadmap: ARCore multi-dot tools (+123) + optional laser import (magicplan-class).
+
+## Planner 5D room scan (research, +123)
+
+Planner 5D ships **two** scan products (not one monocular photo → plan):
+
+| Product | Platform | Input | How it works (public docs) |
+|---------|----------|-------|----------------------------|
+| **Scan Your Room** | iOS LiDAR Pro devices | Live AR walk | Point at bottom corner → move along floor & ceiling; Apple-class depth → layout / layout+furniture (cloud polish 3–10 min) |
+| **Home Scan** | iOS + Android | Continuous video walk (10s–12 min) | Walk room(s) 1.5–2 m from walls, camera slightly down; **cloud** turns video into Basic (walls/structure) or Pro (catalog furniture, sockets, textures) plan |
+
+Key UX truths from Planner 5D help (2026):
+
+1. Lighting + open doors + **side-to-side motion** (not spinning in place).
+2. Basic vs Pro share the same video input; Pro is denser reconstruction + catalog match.
+3. They **do not** claim a single gallery photo equals a measured plan.
+
+### Multi-dot / point-cloud mapping (what “good” looks like)
+
+Industry pipeline (magicplan, RoomPlan, Matterport, Pointorama):
+
+1. **Capture metric geometry** — LiDAR depth / ARCore hit-test / laser / multi-view SfM.
+2. **Sparse or dense point set** on floors/walls (corners, plane inliers).
+3. **Plane / wall segmentation** → polygon floor plan.
+4. **Openings + furniture** as secondary labeling (vision or catalog).
+5. **User verify** dimensions (tape/laser lock for pro accuracy).
+
+RoomCraft **+123** implements the phone-grade step (1–3) as an **AR multi-dot floor map**: user marks 4 floor corners (sparse point cloud), reconstruct W×L from ordered opposite edges (`ArPolygonMap` / native `resolvePolygonMeters`). Metric scale is **ARCore world meters**, not photo guesswork.
+
+### Python / open libraries for high-accuracy room mapping
+
+| Library / stack | Role | Notes |
+|-----------------|------|-------|
+| **Open3D** | Plane RANSAC, room segmentation from point clouds | Best offline post-process if we export AR hits / depth |
+| **RTAB-Map** | RGB-D SLAM + 2D occupancy | Android/ROS; heavier than in-app AR |
+| **ORB-SLAM3 / OpenVSLAM** | Visual SLAM trajectories | Needs careful mobile packaging |
+| **AliceVision Meshroom** | Photogrammetry dense cloud from video | Offline only; minutes–hours |
+| **scipy.spatial / shapely** | Convex hull, polygon simplify of floor points | Matches our multi-dot math |
+| **ARCore Depth API / Geospatial** | On-device depth frames | Optional denser dots without LiDAR |
+| **Apple RoomPlan** (iOS only) | Parametric walls+furniture | No Android equivalent |
+
+Practical RoomCraft path: **AR multi-dot primary** → optional photo inventory → Review edits. Full Meshroom/Open3D is colab/offline experiments (`experiments/colab`), not on-device MVP.
 
 ## Capture tips (best results today)
 
-1. Tape room W × L first — this is plan scale.
-2. Use **Field measure**; for each wall stand facing it; measure left→openings.
-3. Standard door ~2.5–3 ft; don’t accept AI whole-wall doors.
-4. Balcony = large glazed opening, not a small window.
+1. Prefer **AR Room Planner → 4-corner multi-dot** (or tape Field measure).
+2. Good lighting; walk corners slowly; wait for floor grid / Tracking before Mark.
+3. If AR camera stays black: update **Google Play Services for AR**, re-grant camera.
+4. Standard door ~2.5–3 ft; don’t accept AI whole-wall doors on photo path.
 5. Furniture: catalog sizes + depth from wall; center from left corner.
-6. In Review, fix any wrong opening before opening the editor.
+6. In Review, fix openings before opening the editor.
 
 ## Sources (industry)
 
+- Planner 5D Home Scan / Scan Your Room help (video walk + LiDAR iOS)
 - magicplan: AR room scan, laser for 100% wall lock, LiDAR assist on supported devices
 - Apple RoomPlan: LiDAR parametric walls/furniture; ~few % wall error in studies
 - Designer field measure guides: clockwise wall chains, openings not trim, overall then detail
-- ARCore Depth API: depth maps / hit tests for future Android measure (no RoomPlan equivalent yet)
+- ARCore Instant Placement + horizontal planes: multi-dot floor hits without dense mesh
+- Open3D / RTAB-Map / Meshroom: open pipelines for denser reconstruction offline
