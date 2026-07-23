@@ -180,11 +180,18 @@ class ScanRefine {
       source: scaleSource,
       oppositeWallError: oppositeWallError,
     );
+    // +119: AR chain / tape can certify 100% metric room size
+    final ceiling =
+        (scaleSource == ScaleSource.arChain && oppositeWallError <= 0.05) ||
+                scaleSource == ScaleSource.tape
+            ? 1.0
+            : 0.98;
+    final locked = math.max(score, floor).clamp(floor, ceiling);
     return opened.copyWith(
-      accuracyScore: math.max(score, floor).clamp(floor, 0.98),
+      accuracyScore: locked,
       warnings: [
         ...opened.warnings,
-        'Scale lock confidence (+108): ${(math.max(score, floor) * 100).round()}% '
+        'Scale lock confidence (+108/+119): ${(locked * 100).round()}% '
             '($sourceName floor ${(floor * 100).round()}%)',
       ],
     );

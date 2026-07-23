@@ -2,6 +2,18 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+119 (2026-07-22)
+
+### Accuracy — AR flow 100% metric path (gallery ceiling honest)
+- **Honest product bar:** gallery/photo AI cannot certify real-world feet (no LiDAR). Structural 100% on photo path remains study-gold identity only.
+- **AR guided no longer discards the plan** after measure — opens Review with AR-locked size (choice: Review plan / Place furniture).
+- **`hasMeasuredScaleLock`**: AR/tape plans never wiped by study-gold force on Review.
+- Empty **AR 4-wall chain** plan scores **100% measured room geometry** when opposite walls agree.
+- **ArPlaceActivity**: mark origin + **+X width axis**, then place; plan feet from axis projection (fixes abs() orientation flip).
+- Review: **Place furniture at this size (AR)**. Scanner AR mode explains metric path.
+- Tests: `test/ar_accuracy_100_test.dart`. See `docs/ACCURACY_TURN_LOG.md` Turn 68.
+- Version **+119**.
+
 ## 1.0.0-beta.1+113 (2026-07-20)
 
 ### Fix — manual blueprint red error + table in front of door (feedback 9bbf5b05)

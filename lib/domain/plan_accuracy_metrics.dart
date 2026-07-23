@@ -573,18 +573,38 @@ class ScaleLockConfidence {
   }
 
   /// Blend layout confidence with measured-scale floor.
+  ///
+  /// +119: AR 4-wall chain with tight opposite walls (≤5%) and clean layout
+  /// can reach **1.0** for measured room geometry — product 100% bar for
+  /// metric size (gallery photos still cannot).
   static double blend({
     required double? layoutScore,
     required ScaleSource source,
     double oppositeWallError = 0,
   }) {
     final floor = sourceFloor(source, oppositeWallError: oppositeWallError);
-    final layout = (layoutScore ?? 0.55).clamp(0.2, 0.98);
     if (source == ScaleSource.photoEstimate) {
+      final layout = (layoutScore ?? 0.55).clamp(0.2, 0.98);
       return layout.clamp(0.25, 0.90);
     }
+    // +119: AR 4-wall chain + tight opposite walls + high layout → 100%
+    // metric room size (empty AR plan or user-verified layout).
+    if (source == ScaleSource.arChain &&
+        oppositeWallError <= 0.05 &&
+        (layoutScore ?? 0) >= 0.90) {
+      return 1.0;
+    }
+    // Tape field measure with clean layout → 100%
+    if (source == ScaleSource.tape && (layoutScore ?? 0) >= 0.90) {
+      return 1.0;
+    }
+    final layout = (layoutScore ?? 0.55).clamp(0.2, 0.98);
     // Measured scale dominates: 65% floor + 35% layout quality
     final blended = floor * 0.65 + layout * 0.35;
-    return blended.clamp(floor, 0.98);
+    final ceiling =
+        (source == ScaleSource.arChain || source == ScaleSource.tape)
+            ? 1.0
+            : 0.98;
+    return blended.clamp(floor, ceiling);
   }
 }

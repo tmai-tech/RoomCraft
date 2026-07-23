@@ -839,7 +839,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             src,
             oppositeWallError: oppErr,
           );
-          result = ScanRefine.refine(AccurateScan.enforce(
+          // +119: pure AR-measured empty room = 100% metric geometry when chain is tight
+          final arScore = ScaleLockConfidence.blend(
+            layoutScore: 1.0,
+            source: src,
+            oppositeWallError: oppErr,
+          );
+          result = AccurateScan.enforce(
             widthFt: w,
             lengthFt: l,
             openings: const [],
@@ -853,14 +859,16 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               if (oppErr > 0.08)
                 'Opposite walls differ by ${(oppErr * 100).round()}% — edit in Review if needed',
               if (frames.isEmpty)
-                'No photos yet — add openings/furniture in Review or re-scan with photos',
-              'Scale lock (+108): ${ScaleLockConfidence.sourceLabel(src)} '
+                'No photos yet — add openings/furniture in Review or Place furniture in AR',
+              'Scale lock (+108/+119): ${ScaleLockConfidence.sourceLabel(src)} '
                   'floor ${(floor * 100).round()}%',
+              if (arScore >= 0.99)
+                '100% AR measured room geometry (+119)',
             ],
             sourceLabel: chain ? 'ARCore 4-wall chain' : 'ARCore guided measure',
             inventDefaultOpenings: false,
-            accuracyScore: floor,
-          ));
+            accuracyScore: arScore,
+          );
         }
       } else if (mode == 'field_measure') {
         result = ScanRefine.refine(
@@ -927,16 +935,53 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         emptyFurniture: included == 0,
       );
       if (!mounted) return;
-      // AR Room Planner product path: real dimensions → place layout → 3D
+      // +119: AR path MUST keep the measured plan. Previously we discarded
+      // ScanResult and only opened empty ArPlaceLayoutScreen — that broke
+      // metric accuracy (openings/furniture/AR scale notes never reached Review).
+      // Primary: Review with AR-locked plan. Secondary button already offers
+      // "Place furniture at AR size" after measure.
       if (mode == 'ar_guided' && _arMeasure != null) {
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ArPlaceLayoutScreen(
-              measure: _arMeasure!,
-              roomName: 'AR Room',
+        final arPlan = PhotoTrueLayout.resolveForReview(result);
+        final choice = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('AR room ready'),
+            content: Text(
+              'Room locked at ${_arMeasure!.widthFt.toStringAsFixed(1)} × '
+              '${_arMeasure!.lengthFt.toStringAsFixed(1)} ft from AR.\n\n'
+              '• Review plan — edit doors/windows, then open 2D/3D editor\n'
+              '• Place furniture — catalogue / live AR camera at real size',
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'place'),
+                child: const Text('Place furniture'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, 'review'),
+                child: const Text('Review plan'),
+              ),
+            ],
           ),
         );
+        if (!mounted) return;
+        if (choice == 'place') {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ArPlaceLayoutScreen(
+                measure: _arMeasure!,
+                roomName: 'AR Room',
+              ),
+            ),
+          );
+        } else {
+          // Default / review — preserve AR-measured plan
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ScanReviewScreen(initial: arPlan),
+            ),
+          );
+        }
       } else {
         await Navigator.of(context).push(
           // +116: resolve before Review so first paint is door-clear / gold
@@ -1255,6 +1300,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 ],
                 const SizedBox(height: 16),
                 if (_scanMode == 'ar_guided') ...[
+                  Card(
+                    color: Colors.teal.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        'Gallery photos alone cannot measure real feet. '
+                        'AR 4-wall measure locks metric room size (100% geometry when walls agree). '
+                        'Then Review plan or place furniture on camera.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.teal.shade900,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     '1. Measure the room with AR',
                     style: Theme.of(context).textTheme.titleMedium,

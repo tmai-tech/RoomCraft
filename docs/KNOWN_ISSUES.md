@@ -1,17 +1,17 @@
 # Known issues — RoomCraft closed beta
 
-Last updated: 2026-07-14 · Version **1.0.0-beta.1+12**
+Last updated: 2026-07-22 · Version **1.0.0-beta.1+119**
 
 ## Expected limitations
 
 | Issue | Impact | Workaround |
 |-------|--------|------------|
-| **Not LiDAR / mm CAD** | Camera photos cannot measure walls like magicplan LiDAR | Use **Field measure** (tape from left corner); ARCore later |
-| Photo/AI wall scan is **assistive only** | Doors/furniture often wrong without tape | Prefer Field measure; multi-gallery every wall; edit on Review |
-| Furniture list empty after scan | Model returned [] or filter dropped items | +24: lower conf floor + HF Qwen fallback; still not LiDAR |
-| Scan confidence is **heuristic** | Score is not survey-grade | Tape path ≈ high; photo path needs Review edits |
+| **Gallery photos ≠ metric 100%** | Monocular AI cannot measure real feet like LiDAR | Use **Home → AR Room Planner** (4-wall AR chain) for locked room size (+119) |
+| Photo/AI wall scan is **assistive only** | Doors/furniture often wrong without tape | Prefer AR measure or Field measure; edit openings on Review |
+| Furniture list empty after scan | Model returned [] or filter dropped items | AR Place / catalogue after measure; HF Qwen fallback on photo path |
+| Scan confidence is **heuristic** on photos | Photo score is not survey-grade | AR chain empty plan can show **100% measured geometry**; tape/AR floors |
 | Video keyframes depend on device codecs | Some videos yield few frames | Prefer mid-length 10–30s, good light; or still photos |
-| Vision may miss small/occluded items | Incomplete furniture/openings | Add from catalog / draw doors |
+| Vision may miss small/occluded items | Incomplete furniture/openings | Add from catalog / draw doors / live AR place |
 | Cloud Sign-In needs Firebase setup | Backup may fail until console steps done | See [PLAY_AND_SIGNING.md](PLAY_AND_SIGNING.md): add CI SHA-1, enable Google provider, refresh `google-services.json`, set web client id |
 
 ## How to report

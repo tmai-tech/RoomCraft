@@ -18,6 +18,7 @@ import '../services/analytics_service.dart';
 import '../services/ar_measure_service.dart';
 import '../services/storage_service.dart';
 import '../services/training_export_service.dart';
+import 'ar_place_layout_screen.dart';
 import 'blueprint_screen.dart';
 
 /// Review plan: edit openings by tape distances, toggle furniture, open editor.
@@ -852,12 +853,40 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  if (ArMeasureService.isPlatformSupported)
+                  if (ArMeasureService.isPlatformSupported) ...[
                     OutlinedButton.icon(
                       onPressed: _refineWithAr,
                       icon: const Icon(Icons.view_in_ar),
                       label: const Text('Refine size with AR (higher accuracy)'),
                     ),
+                    const SizedBox(height: 8),
+                    // +119: from Review, place at measured size via AR place loop
+                    OutlinedButton.icon(
+                      key: const Key('review_ar_place_furniture'),
+                      onPressed: () {
+                        final m = ArRoomMeasure(
+                          widthFt: _result.roomWidthFt,
+                          lengthFt: _result.roomLengthFt,
+                          widthM: _result.roomWidthFt / 3.28084,
+                          lengthM: _result.roomLengthFt / 3.28084,
+                          source: 'arcore',
+                          mode: PhotoTrueLayout.hasMeasuredScaleLock(_result)
+                              ? 'chain'
+                              : 'quick',
+                        );
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => ArPlaceLayoutScreen(
+                              measure: m,
+                              roomName: 'AR Room',
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.weekend_outlined),
+                      label: const Text('Place furniture at this size (AR)'),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: _openEditor,

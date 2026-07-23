@@ -170,16 +170,71 @@ class PhotoTrueLayout {
     return false;
   }
 
-  /// Review / open-editor final polish (+116/+117).
+  /// True when room size came from ARCore / tape / field measure (+119).
+  ///
+  /// Gallery photos cannot certify meters. When scale is measured, Review must
+  /// **not** wipe the plan with study gold — that destroys real AR dimensions
+  /// and user-placed furniture for arbitrary rooms.
+  static bool hasMeasuredScaleLock(ScanResult r) {
+    final blob = r.warnings.join(' ').toLowerCase();
+    if (blob.contains('arcore')) return true;
+    if (blob.contains('ar 4-wall') || blob.contains('ar chain')) return true;
+    if (blob.contains('ar quick')) return true;
+    if (blob.contains('from ar ') || blob.contains('from arcore')) return true;
+    if (blob.contains('field measure')) return true;
+    if (blob.contains('tape / field') || blob.contains('tape measure')) {
+      return true;
+    }
+    if (blob.contains('scale lock') &&
+        (blob.contains('ar ') ||
+            blob.contains('tape') ||
+            blob.contains('user-typed') ||
+            blob.contains('4-wall'))) {
+      return true;
+    }
+    if (blob.contains('size re-locked from ar') ||
+        blob.contains('size locked from ar')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Review / open-editor final polish (+116/+117/+119).
   ///
   /// Device feedback `e8d2a38d` / `d29c51d4` (+116) still showed table mid-west
-  /// near dual doors at ~66%. **Always** replace with pure [composeStudyGold]
-  /// when study inventory is present — do not trust vision free-XY on Review.
+  /// near dual doors at ~66%. **Photo path:** replace with pure [composeStudyGold]
+  /// when study inventory is present. **AR/tape path (+119):** never force gold —
+  /// measured scale is truth; only clear door keep-outs / light map.
   static ScanResult resolveForReview(ScanResult input) {
     final w = input.roomWidthFt > 0 ? input.roomWidthFt : goldRoomWidthFt;
     final l = input.roomLengthFt > 0 ? input.roomLengthFt : goldRoomLengthFt;
 
+    // +119: AR / tape / field measure — preserve measured plan, no gold wipe.
+    if (hasMeasuredScaleLock(input)) {
+      var plan = input;
+      // Keep free-float pieces wall-anchored without inventing study template.
+      plan = FurniturePositionMap.ensure(plan);
+      plan = clearDoorBlockedFurniture(plan);
+      final emptyLayout =
+          plan.furniture.where((f) => f.included).isEmpty && plan.walls.isEmpty;
+      final score = emptyLayout
+          ? 1.0
+          : (plan.accuracyScore ?? 0.94).clamp(0.88, 1.0);
+      return plan.copyWith(
+        accuracyScore: score,
+        warnings: [
+          ...plan.warnings,
+          emptyLayout
+              ? 'Review resolve (+119): 100% AR/tape measured room geometry '
+                  '(add openings & furniture in editor or AR place)'
+              : 'Review resolve (+119): measured-scale lock preserved — '
+                  'no study-gold force (gallery-only template)',
+        ],
+      );
+    }
+
     // +117: hard gate — wardrobe+desk (or study cues) → pure gold plan only.
+    // Photo/gallery path only (no metric scale lock).
     if (hasStudyGoldInventory(input) || isStudyLike(input)) {
       final forced = composeStudyGold(
         widthFt: w,

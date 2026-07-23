@@ -32,6 +32,7 @@
 | **65** | **+115** | Multi-photo still leaves table in front of door after resolve (9bbf5b05 class) | (1) **`clearDoorBlockedFurniture` / `furnitureBlocksDoorKeepOut`**: door mid-point keep-out (~2.5 ft) — moves free-XY table in door swing (not only same-wall span clearances). (2) Finalize + early gold exits call clear; study table-in-door → `cleanStudyDeskAndDoors` first. (3) **`preferVisionFurniture`** drops vision desk in keep-out. (4) **Review** always re-`ensureGoldQuality` + clear + clean. Tests +115 green. | **Should have done:** plan-space door keep-out with first clearance work (+57). **Ship as hardening** of +114 100% gold identity. Install +115 for multi-gallery re-test. |
 | **66** | **+116–+117** | Device still wrong on +115/+116 (`e8d2`, `d29c` “still same” 66%) | (1) **`resolveForReview`**: hard force `composeStudyGold` for study inventory; AppConfig buildNumber sync. (2) +117 pure gold last-win + 100% score + furniture labels + Build line on Review. | Device still *looked* wrong: Y not north-up. |
 | **67** | **+118** | d29c desk still “bottom-left” after gold force | **Review painter north-up flip**: model y=0 is south; Flutter y-down was drawing NW desk at screen bottom (looked like table-in-door). Now `screenY = (L−y)·scale` so desk top-left / wardrobe bottom matches manual gold. “N ↑” badge. | Install +118 — must show **Build +118 · N↑ · 100% identity**. |
+| **68** | **+119** | **100% if not gallery → AR flow must be correct**; last feedback still “wrong scan” / “still same” | **Honest ceiling:** gallery monocular photos cannot certify metric feet (industry: AR/LiDAR/tape). **AR flow rewrite:** (1) After AR guided measure, **keep ScanResult** → Review (was discarded for empty ArPlace only). (2) **`hasMeasuredScaleLock`** — never force study gold on AR/tape plans. (3) Empty AR chain plan → **100% measured geometry**. (4) **ArPlaceActivity** origin + **+X axis** projection (no abs flip). (5) Review → Place furniture at this size. Tests `ar_accuracy_100_test`. | Gallery remains structural gold for known study photos only. True any-room 100% = **AR 4-wall chain** (+ optional tape openings). Install +119 and use Home → **AR Room Planner**. |
 
 ---
 
@@ -42,7 +43,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–65 / +105–**+115** | Geometry → openings → AR scale → Phase B → user gold → position map → desk/doors → 100% gold identity → **door swing keep-out** |
+| D Accuracy resume | 55–68 / +105–**+119** | Geometry → openings → AR scale → Phase B → user gold → position map → desk/doors → 100% gold identity → door keep-out → **AR metric path 100%** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
