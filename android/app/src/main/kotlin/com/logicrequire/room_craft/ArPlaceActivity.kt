@@ -107,20 +107,20 @@ class ArPlaceActivity : AppCompatActivity() {
             }
             arSceneView.onSessionUpdated = { session, frame ->
                 uiTick++
-                if (uiTick % 15 != 0) return@onSessionUpdated
-                if (origin != null && xAxis != null) return@onSessionUpdated
-                var planes = 0
-                for (p in session.getAllTrackables(Plane::class.java)) {
-                    if (p.trackingState == TrackingState.TRACKING) planes++
-                }
-                val cam = frame.camera.trackingState
-                runOnUiThread {
-                    liveInfo.text = when (cam) {
-                        TrackingState.TRACKING ->
-                            if (planes > 0) "Tracking · $planes plane(s)"
-                            else "Tracking · point at floor…"
-                        TrackingState.PAUSED -> "Tracking paused"
-                        TrackingState.STOPPED -> "Tracking stopped"
+                if (uiTick % 15 == 0 && (origin == null || xAxis == null)) {
+                    var planes = 0
+                    for (p in session.getAllTrackables(Plane::class.java)) {
+                        if (p.trackingState == TrackingState.TRACKING) planes++
+                    }
+                    val cam = frame.camera.trackingState
+                    runOnUiThread {
+                        liveInfo.text = when (cam) {
+                            TrackingState.TRACKING ->
+                                if (planes > 0) "Tracking · $planes plane(s)"
+                                else "Tracking · point at floor…"
+                            TrackingState.PAUSED -> "Tracking paused"
+                            TrackingState.STOPPED -> "Tracking stopped"
+                        }
                     }
                 }
             }

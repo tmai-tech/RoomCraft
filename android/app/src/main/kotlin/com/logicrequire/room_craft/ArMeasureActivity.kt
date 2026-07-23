@@ -125,36 +125,36 @@ class ArMeasureActivity : AppCompatActivity() {
 
             arSceneView.onSessionUpdated = { session, frame ->
                 uiTick++
-                if (uiTick % 15 != 0) return@onSessionUpdated
-                if (wallMeters.size >= totalWalls && !measuringDiagonal) return@onSessionUpdated
-                if (pendingStartPose != null) return@onSessionUpdated
-
-                val cam = frame.camera.trackingState
-                var planes = 0
-                for (p in session.getAllTrackables(Plane::class.java)) {
-                    if (p.trackingState == TrackingState.TRACKING) planes++
-                }
-                // frame.timestamp != 0 means camera image is flowing
-                if (frame.timestamp != 0L && !cameraReady) {
-                    cameraReady = true
-                }
-                runOnUiThread {
-                    when (cam) {
-                        TrackingState.TRACKING -> {
-                            liveDistance.text = if (planes > 0) {
-                                "Tracking · $planes floor plane(s) — Mark ready"
-                            } else {
-                                "Tracking · point at floor…"
+                val shouldUi = uiTick % 15 == 0 &&
+                    !(wallMeters.size >= totalWalls && !measuringDiagonal) &&
+                    pendingStartPose == null
+                if (shouldUi) {
+                    val cam = frame.camera.trackingState
+                    var planes = 0
+                    for (p in session.getAllTrackables(Plane::class.java)) {
+                        if (p.trackingState == TrackingState.TRACKING) planes++
+                    }
+                    if (frame.timestamp != 0L && !cameraReady) {
+                        cameraReady = true
+                    }
+                    runOnUiThread {
+                        when (cam) {
+                            TrackingState.TRACKING -> {
+                                liveDistance.text = if (planes > 0) {
+                                    "Tracking · $planes floor plane(s) — Mark ready"
+                                } else {
+                                    "Tracking · point at floor…"
+                                }
+                                liveDistance.setTextColor(0xFF80CBC4.toInt())
                             }
-                            liveDistance.setTextColor(0xFF80CBC4.toInt())
-                        }
-                        TrackingState.PAUSED -> {
-                            liveDistance.text = "Tracking paused — move slowly"
-                            liveDistance.setTextColor(0xFFFFAB91.toInt())
-                        }
-                        TrackingState.STOPPED -> {
-                            liveDistance.text = "Tracking stopped"
-                            liveDistance.setTextColor(0xFFEF9A9A.toInt())
+                            TrackingState.PAUSED -> {
+                                liveDistance.text = "Tracking paused — move slowly"
+                                liveDistance.setTextColor(0xFFFFAB91.toInt())
+                            }
+                            TrackingState.STOPPED -> {
+                                liveDistance.text = "Tracking stopped"
+                                liveDistance.setTextColor(0xFFEF9A9A.toInt())
+                            }
                         }
                     }
                 }
