@@ -7,18 +7,16 @@ import android.view.WindowManager
 import com.google.ar.core.Session
 
 /**
- * Tracks display rotation for ARCore viewport.
- *
- * +120: only call [Session.setDisplayGeometry] when rotation or size actually
- * changes — thrashing setDisplayGeometry every frame flips the camera feed
- * (feedback e43505bf "ar camera just keep fliping nothing happens").
+ * Tracks display rotation for ARCore viewport (+120/+121).
+ * Only applies setDisplayGeometry when rotation or size actually change.
  */
 class DisplayRotationHelper(context: Context) : DisplayManager.DisplayListener {
     private val displayManager =
         context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+    @Suppress("DEPRECATION")
     private val display: Display =
         (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
-    private var viewportChanged = false
+    private var viewportChanged = true
     private var viewportWidth = 0
     private var viewportHeight = 0
     private var lastRotation = -1
@@ -27,7 +25,6 @@ class DisplayRotationHelper(context: Context) : DisplayManager.DisplayListener {
 
     fun onResume() {
         displayManager.registerDisplayListener(this, null)
-        // Force geometry apply after resume (display may have changed while paused)
         viewportChanged = true
     }
 
@@ -42,14 +39,11 @@ class DisplayRotationHelper(context: Context) : DisplayManager.DisplayListener {
     }
 
     fun updateSessionIfNeeded(session: Session) {
-        if (!viewportChanged) return
         val w = viewportWidth
         val h = viewportHeight
         if (w <= 0 || h <= 0) return
         val rotation = display.rotation
-        // Skip no-op updates that re-flip camera every frame
-        if (rotation == lastRotation && w == lastWidth && h == lastHeight) {
-            viewportChanged = false
+        if (!viewportChanged && rotation == lastRotation && w == lastWidth && h == lastHeight) {
             return
         }
         session.setDisplayGeometry(rotation, w, h)

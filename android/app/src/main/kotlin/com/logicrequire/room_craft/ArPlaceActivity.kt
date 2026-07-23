@@ -1,16 +1,21 @@
 package com.logicrequire.room_craft
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.ar.core.Anchor
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
@@ -29,10 +34,7 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.sqrt
 
 /**
- * AR place furniture on the live camera floor plane.
- *
- * +119: oriented axes (origin + +X) for correct plan feet.
- * +120: session.update only on GL thread (fixes camera flip / stuck feed).
+ * AR place furniture — same +121 black-camera pipeline as [ArMeasureActivity].
  */
 class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
@@ -42,6 +44,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         const val EXTRA_LENGTH_FT = "length_ft"
         const val EXTRA_PLACEMENTS = "placements"
         private const val TAG = "ArPlace"
+        private const val REQ_CAMERA = 7146
         private const val M_TO_FT = 3.280839895
         private val FURN_TYPES = listOf(
             "sofa", "bed", "table", "chair", "wardrobe",
@@ -62,7 +65,9 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private lateinit var displayRotationHelper: DisplayRotationHelper
     private val backgroundRenderer = BackgroundRenderer()
     private val installRequested = AtomicBoolean(false)
-    private var surfaceCreated = false
+    @Volatile private var surfaceCreated = false
+    @Volatile private var sessionResumed = false
+    @Volatile private var textureBound = false
 
     private var origin: FloatArray? = null
     private var xAxis: FloatArray? = null
@@ -74,6 +79,9 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private val placeRequested = AtomicBoolean(false)
     private val trackingUiCounter = AtomicInteger(0)
+    private var firstFrameAtMs = 0L
+    private var cameraOk = false
+    private var blackScreenWarned = false
 
     private data class Placed(
         val type: String,
@@ -103,10 +111,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 setResult(Activity.RESULT_CANCELED)
                 finish()
             }
-            btnPlace.setOnClickListener {
-                placeRequested.set(true)
-                Toast.makeText(this, "Placing… hold steady", Toast.LENGTH_SHORT).show()
-            }
+            btnPlace.setOnClickListener { placeRequested.set(true) }
             btnNextType.setOnClickListener {
                 typeIndex = (typeIndex + 1) % FURN_TYPES.size
                 updateUi()
@@ -121,6 +126,7 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
             updateUi()
+            liveInfo.text = "Starting camera…"
         } catch (e: Exception) {
             Log.e(TAG, "onCreate", e)
             Toast.makeText(this, "AR place failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -136,28 +142,25 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             origin == null -> {
                 stepTitle.text = "AR place · Step 1/3 — SW origin"
                 stepHint.text =
-                    "Wait for Tracking · floor plane(s). Point + at SW corner on the floor, then Mark. " +
-                        "This is plan (0,0)."
+                    "Wait until you SEE the live camera (not black). " +
+                        "Then Tracking · floor planes → Mark SW corner."
                 btnPlace.text = "Mark origin (SW)"
-                liveInfo.text = "No origin yet"
             }
             xAxis == null || zAxis == null -> {
                 stepTitle.text = "AR place · Step 2/3 — width axis (+X)"
-                stepHint.text =
-                    "Point + at the SE corner (along the WIDTH wall from SW), then Mark. " +
-                        "This orients plan feet correctly."
+                stepHint.text = "Mark SE corner along the WIDTH wall from SW."
                 btnPlace.text = "Mark +X (SE / width end)"
-                liveInfo.text = "Origin set · need +X axis"
             }
             else -> {
                 stepTitle.text = "AR place · Step 3/3 · ${currentType()} (${placed.size})"
                 stepHint.text =
-                    "Point + where the ${currentType()} sits on the floor, then Place. " +
-                        "Room ${"%.0f".format(roomWidthFt)}×${"%.0f".format(roomLengthFt)} ft · " +
-                        "Next type cycles. Done returns layout."
+                    "Place ${currentType()} on floor. Room " +
+                        "${"%.0f".format(roomWidthFt)}×${"%.0f".format(roomLengthFt)} ft."
                 btnPlace.text = "Place ${currentType()}"
-                liveInfo.text = placed.joinToString(" · ") { it.type }.ifEmpty { "Axes set · place furniture" }
             }
+        }
+        if (origin != null && xAxis != null) {
+            liveInfo.text = placed.joinToString(" · ") { it.type }.ifEmpty { "Axes set" }
         }
     }
 
@@ -179,23 +182,17 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun setAxesFromXPoint(xPoint: FloatArray): Boolean {
         val o = origin ?: return false
         var vx = (xPoint[0] - o[0]).toDouble()
-        var vy = 0.0
         var vz = (xPoint[2] - o[2]).toDouble()
-        val len = sqrt(vx * vx + vy * vy + vz * vz)
+        val len = sqrt(vx * vx + vz * vz)
         if (len < 0.25) {
-            Toast.makeText(
-                this,
-                "Too close to origin — mark the far end of the width wall",
-                Toast.LENGTH_SHORT,
-            ).show()
+            Toast.makeText(this, "Too close to origin — mark far end of width wall", Toast.LENGTH_SHORT).show()
             return false
         }
         vx /= len
         vz /= len
         var zx = -vz
-        var zy = 0.0
         var zz = vx
-        val zLen = sqrt(zx * zx + zy * zy + zz * zz)
+        val zLen = sqrt(zx * zx + zz * zz)
         if (zLen < 1e-6) {
             zx = 0.0
             zz = 1.0
@@ -205,12 +202,191 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
         xAxis = floatArrayOf(vx.toFloat(), 0f, vz.toFloat())
         zAxis = floatArrayOf(zx.toFloat(), 0f, zz.toFloat())
-        Toast.makeText(this, "Axes set — place furniture on floor", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Axes set — place furniture", Toast.LENGTH_SHORT).show()
         return true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQ_CAMERA)
+            return
+        }
+        try {
+            if (session == null) {
+                when (ArCoreApk.getInstance().requestInstall(this, !installRequested.get())) {
+                    ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
+                        installRequested.set(true)
+                        return
+                    }
+                    else -> {}
+                }
+                session = Session(this).also { s ->
+                    val config = Config(s)
+                    config.updateMode = Config.UpdateMode.BLOCKING
+                    config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
+                    config.focusMode = Config.FocusMode.AUTO
+                    // +121: depth OFF — black camera on many devices
+                    config.depthMode = Config.DepthMode.DISABLED
+                    config.lightEstimationMode = Config.LightEstimationMode.DISABLED
+                    s.configure(config)
+                }
+            }
+            try {
+                session?.resume()
+                sessionResumed = true
+            } catch (e: CameraNotAvailableException) {
+                sessionResumed = false
+                liveInfo.text = "Camera busy — close other camera apps"
+            }
+            surfaceView.onResume()
+            displayRotationHelper.onResume()
+        } catch (e: Exception) {
+            Log.e(TAG, "onResume", e)
+            Toast.makeText(this, "AR resume failed: ${e.message}", Toast.LENGTH_LONG).show()
+            setResult(Activity.RESULT_CANCELED)
+            finish()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CAMERA) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                onResume()
+            } else {
+                Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+                setResult(Activity.RESULT_CANCELED)
+                finish()
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try {
+            surfaceView.onPause()
+            displayRotationHelper.onPause()
+            sessionResumed = false
+            textureBound = false
+            session?.pause()
+        } catch (e: Exception) {
+            Log.w(TAG, "onPause", e)
+        }
+    }
+
+    override fun onDestroy() {
+        try {
+            placed.forEach {
+                try {
+                    it.anchor.detach()
+                } catch (_: Exception) {
+                }
+            }
+            session?.close()
+            session = null
+        } catch (_: Exception) {
+        }
+        super.onDestroy()
+    }
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        GLES20.glClearColor(0.05f, 0.05f, 0.08f, 1f)
+        try {
+            backgroundRenderer.createOnGlThread(this)
+            surfaceCreated = true
+            firstFrameAtMs = SystemClock.elapsedRealtime()
+        } catch (e: Exception) {
+            Log.e(TAG, "GL create", e)
+        }
+    }
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        displayRotationHelper.onSurfaceChanged(width, height)
+        GLES20.glViewport(0, 0, width, height)
+    }
+
+    override fun onDrawFrame(gl: GL10?) {
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        val session = session ?: return
+        if (!surfaceCreated || backgroundRenderer.textureId < 0) return
+        try {
+            displayRotationHelper.updateSessionIfNeeded(session)
+            session.setCameraTextureName(backgroundRenderer.textureId)
+            textureBound = true
+            if (!sessionResumed) {
+                runOnUiThread {
+                    try {
+                        session.resume()
+                        sessionResumed = true
+                    } catch (e: CameraNotAvailableException) {
+                        liveInfo.text = "Camera busy — close other apps"
+                    }
+                }
+                return
+            }
+            val frame = session.update()
+            val drew = backgroundRenderer.draw(frame)
+            if (drew && !cameraOk) {
+                cameraOk = true
+                runOnUiThread { liveInfo.text = "Camera OK · find floor" }
+            }
+            if (!cameraOk && !blackScreenWarned && firstFrameAtMs > 0 &&
+                SystemClock.elapsedRealtime() - firstFrameAtMs > 3500
+            ) {
+                blackScreenWarned = true
+                runOnUiThread {
+                    liveInfo.text = "No camera image — retry AR"
+                    Toast.makeText(
+                        this,
+                        "AR camera failed (black). Update Play Services for AR and retry.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+
+            val n = trackingUiCounter.incrementAndGet()
+            if (n % 12 == 0 && cameraOk && (origin == null || xAxis == null)) {
+                var planes = 0
+                for (p in session.getAllTrackables(Plane::class.java)) {
+                    if (p.trackingState == TrackingState.TRACKING) planes++
+                }
+                val cam = frame.camera.trackingState
+                runOnUiThread {
+                    liveInfo.text = when (cam) {
+                        TrackingState.TRACKING ->
+                            if (planes > 0) "Tracking · $planes floor plane(s)"
+                            else "Tracking · point at floor…"
+                        TrackingState.PAUSED -> "Tracking paused"
+                        TrackingState.STOPPED -> "Tracking stopped"
+                    }
+                }
+            }
+
+            if (placeRequested.compareAndSet(true, false)) {
+                processPlaceOnGlThread(session, frame)
+            }
+        } catch (e: CameraNotAvailableException) {
+            sessionResumed = false
+        } catch (e: Exception) {
+            Log.w(TAG, "draw", e)
+        }
     }
 
     private fun processPlaceOnGlThread(session: Session, frame: Frame) {
         try {
+            if (!cameraOk) {
+                runOnUiThread {
+                    Toast.makeText(this, "Wait for camera image first", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
             if (frame.camera.trackingState != TrackingState.TRACKING) {
                 runOnUiThread {
                     Toast.makeText(this, "Move phone slowly until tracking locks", Toast.LENGTH_SHORT).show()
@@ -220,31 +396,27 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             val w = surfaceView.width
             val h = surfaceView.height
             if (w <= 0 || h <= 0) return
-            val cx = w / 2f
-            val cy = h / 2f
-            val hits = frame.hitTest(cx, cy)
+            val hits = frame.hitTest(w / 2f, h / 2f)
             val hit = hits.firstOrNull {
                 it.trackable is Plane &&
                     (it.trackable as Plane).type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
                     (it.trackable as Plane).trackingState == TrackingState.TRACKING
-            } ?: hits.firstOrNull { it.trackable is Plane }
-                ?: hits.firstOrNull()
+            } ?: hits.firstOrNull { it.trackable is Plane } ?: hits.firstOrNull()
 
             if (hit == null) {
                 runOnUiThread {
-                    Toast.makeText(this, "No floor at center — point at floor, wait for planes", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "No floor at center — point at floor", Toast.LENGTH_SHORT).show()
                 }
                 return
             }
             val pose = hit.hitPose
             val xyz = floatArrayOf(pose.tx(), pose.ty(), pose.tz())
             val anchor = hit.createAnchor()
-
             runOnUiThread {
                 when {
                     origin == null -> {
                         origin = xyz
-                        Toast.makeText(this, "Origin set — mark +X along width wall", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Origin set — mark +X along width", Toast.LENGTH_SHORT).show()
                         updateUi()
                     }
                     xAxis == null || zAxis == null -> {
@@ -306,13 +478,12 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private fun finishWithResult() {
         placeRequested.set(false)
-        val o = origin
-        if (o == null) {
+        if (origin == null) {
             Toast.makeText(this, "Mark origin first", Toast.LENGTH_SHORT).show()
             return
         }
         if (xAxis == null || zAxis == null) {
-            Toast.makeText(this, "Mark +X (width end) before Done", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Mark +X before Done", Toast.LENGTH_SHORT).show()
             return
         }
         val list = ArrayList<HashMap<String, Any>>()
@@ -323,10 +494,6 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     "type" to p.type,
                     "fromLeftFt" to left.coerceIn(0.0, roomWidthFt),
                     "fromBottomFt" to bottom.coerceIn(0.0, roomLengthFt),
-                    "fromLeftRawFt" to left,
-                    "fromBottomRawFt" to bottom,
-                    "roomWidthFt" to roomWidthFt,
-                    "roomLengthFt" to roomLengthFt,
                     "oriented" to true,
                 ),
             )
@@ -335,120 +502,5 @@ class ArPlaceActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         data.putExtra(EXTRA_PLACEMENTS, list)
         setResult(Activity.RESULT_OK, data)
         finish()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        try {
-            if (session == null) {
-                when (ArCoreApk.getInstance().requestInstall(this, !installRequested.get())) {
-                    ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
-                        installRequested.set(true)
-                        return
-                    }
-                    else -> {}
-                }
-                session = Session(this).also { s ->
-                    val config = Config(s)
-                    config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-                    config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
-                    config.focusMode = Config.FocusMode.AUTO
-                    if (s.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                        config.depthMode = Config.DepthMode.AUTOMATIC
-                    }
-                    s.configure(config)
-                }
-            }
-            session?.resume()
-            surfaceView.onResume()
-            displayRotationHelper.onResume()
-        } catch (e: Exception) {
-            Log.e(TAG, "onResume", e)
-            Toast.makeText(this, "AR resume failed: ${e.message}", Toast.LENGTH_LONG).show()
-            setResult(Activity.RESULT_CANCELED)
-            finish()
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        try {
-            surfaceView.onPause()
-            displayRotationHelper.onPause()
-            session?.pause()
-        } catch (e: Exception) {
-            Log.w(TAG, "onPause", e)
-        }
-    }
-
-    override fun onDestroy() {
-        try {
-            placed.forEach {
-                try {
-                    it.anchor.detach()
-                } catch (_: Exception) {
-                }
-            }
-            session?.close()
-            session = null
-        } catch (_: Exception) {
-        }
-        super.onDestroy()
-    }
-
-    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        surfaceCreated = true
-        GLES20.glClearColor(0.05f, 0.05f, 0.05f, 1f)
-        try {
-            backgroundRenderer.createOnGlThread(this)
-            session?.setCameraTextureName(backgroundRenderer.textureId)
-        } catch (e: Exception) {
-            Log.e(TAG, "GL create", e)
-        }
-    }
-
-    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-        displayRotationHelper.onSurfaceChanged(width, height)
-        GLES20.glViewport(0, 0, width, height)
-    }
-
-    override fun onDrawFrame(gl: GL10?) {
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-        val session = session ?: return
-        if (!surfaceCreated || backgroundRenderer.textureId < 0) return
-        try {
-            displayRotationHelper.updateSessionIfNeeded(session)
-            session.setCameraTextureName(backgroundRenderer.textureId)
-            val frame = session.update()
-            backgroundRenderer.draw(frame)
-
-            val n = trackingUiCounter.incrementAndGet()
-            if (n % 15 == 0) {
-                val cam = frame.camera.trackingState
-                var planes = 0
-                for (p in session.getAllTrackables(Plane::class.java)) {
-                    if (p.trackingState == TrackingState.TRACKING) planes++
-                }
-                runOnUiThread {
-                    if (origin == null || xAxis == null) {
-                        liveInfo.text = when (cam) {
-                            TrackingState.TRACKING ->
-                                if (planes > 0) "Tracking · $planes floor plane(s) — ready"
-                                else "Tracking · point at floor…"
-                            TrackingState.PAUSED -> "Tracking paused — move slowly"
-                            TrackingState.STOPPED -> "Tracking stopped"
-                        }
-                    }
-                }
-            }
-
-            if (placeRequested.compareAndSet(true, false)) {
-                processPlaceOnGlThread(session, frame)
-            }
-        } catch (e: CameraNotAvailableException) {
-            Log.w(TAG, "camera", e)
-        } catch (e: Exception) {
-            Log.w(TAG, "draw", e)
-        }
     }
 }

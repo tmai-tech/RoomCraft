@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+121 (2026-07-23)
+
+### Fix — AR black screen / no camera (device report after +119/+120)
+- **DepthMode DISABLED** — `AUTOMATIC` depth is a common black-camera cause on mid-range Android (e.g. Motorola).
+- Resume session on **UI thread** (ARCore API); bind camera texture every frame on GL before `update()`.
+- **UpdateMode.BLOCKING** for stable camera rate; light estimation off.
+- BackgroundRenderer: shader link checks, seeded UVs, disable blend/cull for OES quad.
+- 3.5s watchdog toast if no camera frames; self-request camera permission.
+- Version **+121**. Install over +119/+120 for AR measure.
+
 ## 1.0.0-beta.1+120 (2026-07-23)
 
 ### Fix — AR camera flip / blank feed (feedback e43505bf on +119)
