@@ -59,10 +59,10 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
       return;
     }
     try {
-      // +123: default multi-dot 4-corner map (Planner5D-class metric lock)
-      final m = await ArMeasureService.measureRoom(mode: 'polygon');
+      // +125: default easy walk-to-map
+      final m = await ArMeasureService.measureRoom(mode: 'auto');
       if (!mounted) return;
-      final src = m.isPolygon
+      final src = (m.isAuto || m.isPolygon)
           ? ScaleSource.arPolygon
           : m.isChain
               ? ScaleSource.arChain
@@ -73,9 +73,9 @@ class _ScanReviewScreenState extends ConsumerState<ScanReviewScreen> {
           widthFt: m.widthFt,
           lengthFt: m.lengthFt,
           reason:
-              'Size re-locked from AR multi-dot map (${m.widthFt.toStringAsFixed(1)}×${m.lengthFt.toStringAsFixed(1)} ft)',
+              'Size re-locked from AR easy walk (${m.widthFt.toStringAsFixed(1)}×${m.lengthFt.toStringAsFixed(1)} ft)',
           scaleSource: src,
-          oppositeWallError: m.oppositeWallError,
+          oppositeWallError: m.consistencyError,
         );
       });
       ScaffoldMessenger.of(context).showSnackBar(

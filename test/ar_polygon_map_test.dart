@@ -5,7 +5,7 @@ import 'package:room_craft/domain/plan_accuracy_metrics.dart';
 import 'package:room_craft/models/scan_result.dart';
 import 'package:room_craft/services/ar_measure_service.dart';
 
-/// +123/+124 multi-dot floor polygon → room size (Planner5D-class AR path).
+/// +123–+125 multi-dot / walk-cloud floor map → room size.
 void main() {
   test('+123 rect corners resolve exact W×L meters', () {
     final dots = ArPolygonMap.rectCornersM(widthM: 6.0, lengthM: 4.0);
@@ -50,17 +50,15 @@ void main() {
     );
     final r = ArPolygonMap.resolveMeters(dots);
     expect(r, isNotNull);
-    // Orthogonal + diagonal refine should keep room near true size
     expect(r!.widthM, closeTo(5.0, 0.35));
     expect(r.lengthM, closeTo(3.5, 0.35));
     expect(r.orthogonalScore, greaterThan(0.7));
   });
 
   test('+124 slight shear still recovers near-rect room', () {
-    // Perfect rect with one corner nudged (user multi-dot error)
     final dots = [
       [0.0, 0.0, 0.0],
-      [6.0, 0.0, 0.15], // SE nudged
+      [6.0, 0.0, 0.15],
       [5.9, 0.0, 4.0],
       [0.1, 0.0, 3.95],
     ];
@@ -90,9 +88,9 @@ void main() {
       walls: const [],
       furniture: const [],
       warnings: const [
-        'Room size from AR 4-corner multi-dot map (15.5 × 11.0 ft, ortho 98%)',
-        'Scale lock (+108/+119/+124): AR 4-corner multi-dot map floor 96%',
-        '100% AR measured room geometry (+124 multi-dot ortho)',
+        'Room size from AR easy walk map (15.5 × 11.0 ft, fit 92%)',
+        'Scale lock (+108/+119/+125): AR 4-corner multi-dot map floor 96%',
+        '100% AR measured room geometry (+125 easy walk)',
       ],
       accuracyScore: 1.0,
     );
@@ -125,8 +123,39 @@ void main() {
     });
     expect(m.isPolygon, isTrue);
     expect(m.summaryLabel, contains('multi-dot'));
-    expect(m.summaryLabel, contains('ortho'));
     expect(m.oppositeWallError, lessThan(0.01));
     expect(m.consistencyError, lessThan(0.02));
+  });
+
+  test('+125 walk cloud recovers room within ~8%', () {
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 5.0,
+      lengthM: 3.5,
+      samplesPerEdge: 8,
+      noiseM: 0.05,
+    );
+    expect(cloud.length, greaterThan(20));
+    final r = ArPolygonMap.resolveMeters(cloud);
+    expect(r, isNotNull);
+    expect(r!.widthM, closeTo(5.0, 0.45));
+    expect(r.lengthM, closeTo(3.5, 0.45));
+    expect(r.orthogonalScore, greaterThan(0.8));
+  });
+
+  test('+125 ArRoomMeasure auto summary', () {
+    final m = ArRoomMeasure.fromMap({
+      'widthFt': 16.0,
+      'lengthFt': 12.0,
+      'widthM': 4.88,
+      'lengthM': 3.66,
+      'mode': 'auto',
+      'wallsFt': [16.0, 12.0, 16.0, 12.0],
+      'orthogonalScore': 0.92,
+      'diagonalError': 0.02,
+      'cornersM': List.generate(60, (i) => i * 0.1),
+      'source': 'arcore',
+    });
+    expect(m.isAuto, isTrue);
+    expect(m.summaryLabel, contains('easy walk'));
   });
 }

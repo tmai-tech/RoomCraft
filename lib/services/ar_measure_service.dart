@@ -11,7 +11,7 @@ class ArRoomMeasure {
   final double widthM;
   final double lengthM;
   final String source;
-  /// `quick` | `chain` | `polygon` (4-corner multi-dot map, +123).
+  /// `auto` | `quick` | `chain` | `polygon` / `corners` (+125 walk-to-map).
   final String mode;
   /// Per-wall lengths in feet (A,B[,C,D]).
   final List<double> wallsFt;
@@ -61,7 +61,11 @@ class ArRoomMeasure {
   bool get isChain => mode == 'chain' && wallsFt.length >= 4;
 
   /// +123 multi-dot 4-corner floor map.
-  bool get isPolygon => mode == 'polygon' || cornersM.length >= 12;
+  bool get isPolygon =>
+      mode == 'polygon' || mode == 'corners' || cornersM.length >= 12;
+
+  /// +125 easy walk-to-map (default for common users).
+  bool get isAuto => mode == 'auto' || (mode == 'polygon' && cornersM.length > 12);
 
   /// Opposite-wall consistency: max relative difference (0–1).
   double get oppositeWallError {
@@ -78,6 +82,12 @@ class ArRoomMeasure {
   String get summaryLabel {
     final base =
         '${widthFt.toStringAsFixed(1)} × ${lengthFt.toStringAsFixed(1)} ft';
+    if (isAuto) {
+      final o = orthogonalScore > 0
+          ? ' · fit ${(orthogonalScore * 100).round()}%'
+          : '';
+      return '$base · AR easy walk$o';
+    }
     if (isPolygon) {
       final o = orthogonalScore > 0
           ? ' · ortho ${(orthogonalScore * 100).round()}%'
@@ -172,8 +182,8 @@ class ArMeasureService {
     }
   }
 
-  /// [mode]: `quick` | `chain` | `polygon` (4 floor-corner multi-dot map).
-  static Future<ArRoomMeasure> measureRoom({String mode = 'quick'}) async {
+  /// [mode]: `auto` (easy walk, default) | `corners` | `chain` | `quick`.
+  static Future<ArRoomMeasure> measureRoom({String mode = 'auto'}) async {
     if (!isPlatformSupported) {
       throw PlatformException(
         code: 'UNSUPPORTED',

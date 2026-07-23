@@ -180,6 +180,7 @@ class PhotoTrueLayout {
     if (blob.contains('arcore')) return true;
     if (blob.contains('ar 4-wall') || blob.contains('ar chain')) return true;
     if (blob.contains('multi-dot') || blob.contains('4-corner')) return true;
+    if (blob.contains('easy walk') || blob.contains('walk map')) return true;
     if (blob.contains('ar polygon') || blob.contains('corner map')) return true;
     if (blob.contains('ar quick')) return true;
     if (blob.contains('from ar ') || blob.contains('from arcore')) return true;

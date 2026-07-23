@@ -281,6 +281,8 @@ class PlanAccuracyMetrics {
     if (blob.contains('tape') || blob.contains('field measure')) return 'tape';
     if (blob.contains('multi-dot') ||
         blob.contains('4-corner') ||
+        blob.contains('easy walk') ||
+        blob.contains('walk map') ||
         blob.contains('ar polygon')) {
       return 'ar_polygon';
     }

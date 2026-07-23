@@ -359,7 +359,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             FilledButton.icon(
               onPressed: _createNewAR,
               icon: const Icon(Icons.view_in_ar),
-              label: const Text('AR Room Planner'),
+              label: const Text('Easy AR walk scan'),
             ),
             const SizedBox(height: 12),
             FilledButton.tonalIcon(
