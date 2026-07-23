@@ -59,6 +59,8 @@ class ArMeasureActivity : AppCompatActivity() {
     private var firstFrameSeen = false
     private var uiTick = 0
     private var destroyed = false
+    private var lastOrthoScore = 0.0
+    private var lastDiagError = 0.0
 
     private val handler = Handler(Looper.getMainLooper())
     private val cameraWatchdog = Runnable {
@@ -141,7 +143,7 @@ class ArMeasureActivity : AppCompatActivity() {
             arSceneView.planeRenderer.isVisible = true
 
             arSceneView.onSessionCreated = {
-                Log.i(TAG, "AR session created (SceneView +123)")
+                Log.i(TAG, "AR session created (SceneView +124)")
                 runOnUiThread {
                     liveDistance.text = "Camera starting…"
                     liveDistance.setTextColor(0xFFFFCC80.toInt())
@@ -151,7 +153,7 @@ class ArMeasureActivity : AppCompatActivity() {
             arSceneView.onSessionResumed = {
                 Log.i(TAG, "AR session resumed")
                 runOnUiThread {
-                    liveDistance.text = "Camera live · move phone to find floor"
+                    liveDistance.text = "Camera live · move phone slowly over floor"
                     liveDistance.setTextColor(0xFF80CBC4.toInt())
                     cameraReady = true
                 }
@@ -182,29 +184,58 @@ class ArMeasureActivity : AppCompatActivity() {
                 val busyMarking = if (polygonMode) {
                     cornerDots.size < totalCorners
                 } else {
-                    !(wallMeters.size >= totalWalls && !measuringDiagonal) &&
-                        pendingStartPose == null
+                    wallMeters.size < totalWalls || measuringDiagonal || pendingStartPose != null
                 }
-                val shouldUi = uiTick % 12 == 0 && busyMarking
+                // +124: more frequent HUD (live distance while aiming)
+                val shouldUi = uiTick % 6 == 0 && busyMarking
                 if (shouldUi) {
                     val cam = frame.camera.trackingState
                     var planes = 0
                     for (p in session.getAllTrackables(Plane::class.java)) {
                         if (p.trackingState == TrackingState.TRACKING) planes++
                     }
+                    // Live reticle distance from last corner / segment start
+                    val aimFrom: FloatArray? = when {
+                        polygonMode && cornerDots.isNotEmpty() && cornerDots.size < totalCorners ->
+                            cornerDots.last()
+                        pendingStartPose != null -> pendingStartPose
+                        else -> null
+                    }
+                    var liveAimText: String? = null
+                    if (aimFrom != null && cam == TrackingState.TRACKING) {
+                        val hit = peekCenterHit()
+                        if (hit != null) {
+                            val pose = hit.hitPose
+                            val d = distance(
+                                aimFrom,
+                                floatArrayOf(pose.tx(), pose.ty(), pose.tz()),
+                            )
+                            liveAimText = String.format(
+                                "Aim: %.2f m (%.1f ft) from last mark",
+                                d,
+                                d * M_TO_FT,
+                            )
+                        }
+                    }
+                    val aimFinal = liveAimText
                     runOnUiThread {
                         when (cam) {
                             TrackingState.TRACKING -> {
-                                liveDistance.text = if (planes > 0) {
-                                    if (polygonMode) {
-                                        "Tracking · ${cornerDots.size}/$totalCorners dots · $planes plane(s)"
-                                    } else {
-                                        "Tracking · $planes floor plane(s) — Mark ready"
-                                    }
+                                if (aimFinal != null) {
+                                    liveDistance.text = aimFinal
+                                    liveDistance.setTextColor(0xFFAED581.toInt())
                                 } else {
-                                    "Tracking · point at floor (instant mark OK)…"
+                                    liveDistance.text = if (planes > 0) {
+                                        if (polygonMode) {
+                                            "Tracking · ${cornerDots.size}/$totalCorners dots · $planes plane(s)"
+                                        } else {
+                                            "Tracking · $planes floor plane(s) — Mark ready"
+                                        }
+                                    } else {
+                                        "Tracking · circle phone over floor to map plane…"
+                                    }
+                                    liveDistance.setTextColor(0xFF80CBC4.toInt())
                                 }
-                                liveDistance.setTextColor(0xFF80CBC4.toInt())
                             }
                             TrackingState.PAUSED -> {
                                 liveDistance.text = "Tracking paused — move slowly"
@@ -227,8 +258,12 @@ class ArMeasureActivity : AppCompatActivity() {
                     REQ_CAMERA,
                 )
             } else {
-                // Wire lifecycle only when camera is allowed
-                arSceneView.lifecycle = lifecycle
+                // +124: bind lifecycle after layout attach (SceneView session race)
+                arSceneView.post {
+                    if (!destroyed && arSceneView.lifecycle == null) {
+                        arSceneView.lifecycle = lifecycle
+                    }
+                }
             }
 
             handler.postDelayed(cameraWatchdog, 6_000L)
@@ -266,8 +301,12 @@ class ArMeasureActivity : AppCompatActivity() {
         if (requestCode == REQ_CAMERA) {
             if (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
                 failAndFinish("Camera permission is required for AR measure")
-            } else if (::arSceneView.isInitialized && arSceneView.lifecycle == null) {
-                arSceneView.lifecycle = lifecycle
+            } else if (::arSceneView.isInitialized) {
+                arSceneView.post {
+                    if (!destroyed && arSceneView.lifecycle == null) {
+                        arSceneView.lifecycle = lifecycle
+                    }
+                }
             }
         }
     }
@@ -283,6 +322,43 @@ class ArMeasureActivity : AppCompatActivity() {
         }
         setResult(Activity.RESULT_CANCELED, Intent().putExtra(EXTRA_ERROR, message))
         finish()
+    }
+
+    /** Peek center hit for live aim HUD (no mark). */
+    private fun peekCenterHit(): HitResult? {
+        return try {
+            resolveCenterHit()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun resolveCenterHit(): HitResult? {
+        val frame = arSceneView.frame ?: return null
+        if (frame.timestamp == 0L) return null
+        return arSceneView.hitTestAR(
+            planeTypes = setOf(Plane.Type.HORIZONTAL_UPWARD_FACING),
+            planePoseInPolygon = true,
+            instantPlacementPoint = false,
+        ) ?: arSceneView.hitTestAR(
+            planeTypes = setOf(Plane.Type.HORIZONTAL_UPWARD_FACING),
+            planePoseInPolygon = false,
+            instantPlacementPoint = true,
+        ) ?: arSceneView.hitTestAR(
+            planeTypes = setOf(
+                Plane.Type.HORIZONTAL_UPWARD_FACING,
+                Plane.Type.HORIZONTAL_DOWNWARD_FACING,
+                Plane.Type.VERTICAL,
+            ),
+            planePoseInPolygon = false,
+            point = true,
+            instantPlacementPoint = true,
+        ) ?: run {
+            val cx = arSceneView.width / 2f
+            val cy = arSceneView.height / 2f
+            frame.hitTest(cx, cy).firstOrNull()
+                ?: frame.hitTestInstantPlacement(cx, cy, 1.5f).firstOrNull()
+        }
     }
 
     private fun markCenterHit() {
@@ -301,35 +377,11 @@ class ArMeasureActivity : AppCompatActivity() {
                 return
             }
 
-            // Prefer horizontal plane in polygon; fall back to any plane / instant placement
-            val hit: HitResult? = arSceneView.hitTestAR(
-                planeTypes = setOf(Plane.Type.HORIZONTAL_UPWARD_FACING),
-                planePoseInPolygon = true,
-                instantPlacementPoint = false,
-            ) ?: arSceneView.hitTestAR(
-                planeTypes = setOf(Plane.Type.HORIZONTAL_UPWARD_FACING),
-                planePoseInPolygon = false,
-                instantPlacementPoint = true,
-            ) ?: arSceneView.hitTestAR(
-                planeTypes = setOf(
-                    Plane.Type.HORIZONTAL_UPWARD_FACING,
-                    Plane.Type.HORIZONTAL_DOWNWARD_FACING,
-                    Plane.Type.VERTICAL,
-                ),
-                planePoseInPolygon = false,
-                point = true,
-                instantPlacementPoint = true,
-            ) ?: run {
-                val cx = arSceneView.width / 2f
-                val cy = arSceneView.height / 2f
-                frame.hitTest(cx, cy).firstOrNull()
-                    ?: frame.hitTestInstantPlacement(cx, cy, 1.5f).firstOrNull()
-            }
-
+            val hit = resolveCenterHit()
             if (hit == null) {
                 Toast.makeText(
                     this,
-                    "No floor at + — pan slowly, wait for grid, then Mark",
+                    "No floor at + — circle phone over floor, wait for grid, then Mark",
                     Toast.LENGTH_LONG,
                 ).show()
                 return
@@ -377,16 +429,19 @@ class ArMeasureActivity : AppCompatActivity() {
             } else {
                 // Fill wallMeters as opposite-pair averages for chain-compatible export
                 wallMeters.clear()
-                wallMeters.add(dims.first)  // W
-                wallMeters.add(dims.second) // L
-                wallMeters.add(dims.first)  // opposite W
-                wallMeters.add(dims.second) // opposite L
+                wallMeters.add(dims.widthM)
+                wallMeters.add(dims.lengthM)
+                wallMeters.add(dims.widthM)
+                wallMeters.add(dims.lengthM)
+                lastOrthoScore = dims.orthogonalScore
+                lastDiagError = dims.diagonalError
                 Toast.makeText(
                     this,
                     String.format(
-                        "Room ≈ %.1f × %.1f ft from 4-corner map",
-                        dims.first * M_TO_FT,
-                        dims.second * M_TO_FT,
+                        "Room ≈ %.1f × %.1f ft · ortho %.0f%% · multi-dot map",
+                        dims.widthM * M_TO_FT,
+                        dims.lengthM * M_TO_FT,
+                        dims.orthogonalScore * 100,
                     ),
                     Toast.LENGTH_LONG,
                 ).show()
@@ -510,7 +565,7 @@ class ArMeasureActivity : AppCompatActivity() {
 
     private fun resolvedWidthM(): Double? {
         if (polygonMode && cornerDots.size >= 4) {
-            return resolvePolygonMeters(cornerDots)?.first
+            return resolvePolygonMeters(cornerDots)?.widthM
         }
         if (wallMeters.isEmpty()) return null
         return if ((chainMode || polygonMode) && wallMeters.size >= 3) {
@@ -520,7 +575,7 @@ class ArMeasureActivity : AppCompatActivity() {
 
     private fun resolvedLengthM(): Double? {
         if (polygonMode && cornerDots.size >= 4) {
-            return resolvePolygonMeters(cornerDots)?.second
+            return resolvePolygonMeters(cornerDots)?.lengthM
         }
         if (wallMeters.size < 2) return null
         return if ((chainMode || polygonMode) && wallMeters.size >= 4) {
@@ -652,11 +707,21 @@ class ArMeasureActivity : AppCompatActivity() {
                     flat[i * 3 + 2] = p[2]
                 }
                 putExtra(EXTRA_CORNERS_M, flat)
+                putExtra(EXTRA_ORTHO_SCORE, lastOrthoScore)
+                putExtra(EXTRA_DIAG_ERROR, lastDiagError)
             }
         }
         setResult(Activity.RESULT_OK, data)
         finish()
     }
+
+    data class PolygonDims(
+        val widthM: Double,
+        val lengthM: Double,
+        val oppositeEdgeError: Double,
+        val diagonalError: Double,
+        val orthogonalScore: Double,
+    )
 
     companion object {
         private const val TAG = "ArMeasure"
@@ -669,6 +734,8 @@ class ArMeasureActivity : AppCompatActivity() {
         const val EXTRA_WALLS_M = "walls_m"
         const val EXTRA_WALLS_FT = "walls_ft"
         const val EXTRA_CORNERS_M = "corners_m"
+        const val EXTRA_ORTHO_SCORE = "ortho_score"
+        const val EXTRA_DIAG_ERROR = "diag_error"
         const val EXTRA_ERROR = "error"
         const val MODE_QUICK = "quick"
         const val MODE_CHAIN = "chain"
@@ -678,10 +745,10 @@ class ArMeasureActivity : AppCompatActivity() {
         private const val M_TO_FT = 3.28084
 
         /**
-         * Resolve W×L (meters) from 4+ floor dots.
-         * Order by angle around centroid on XZ plane; average opposite edges.
+         * Resolve W×L (meters) from 4+ floor dots (+124).
+         * Opposite-edge average + orthogonal Gram-Schmidt fit + auto diagonal refine.
          */
-        fun resolvePolygonMeters(dots: List<FloatArray>): Pair<Double, Double>? {
+        fun resolvePolygonMeters(dots: List<FloatArray>): PolygonDims? {
             if (dots.size < 4) return null
             val pts = dots.take(4)
             var cx = 0.0
@@ -703,21 +770,121 @@ class ArMeasureActivity : AppCompatActivity() {
                 val dz = (a[2] - b[2]).toDouble()
                 edges[i] = sqrt(dx * dx + dz * dz)
             }
-            // Opposite edges: 0↔2 and 1↔3
             val sideA = (edges[0] + edges[2]) / 2.0
             val sideB = (edges[1] + edges[3]) / 2.0
             if (sideA < 0.5 || sideB < 0.5) return null
-            // Width = larger side (convention matches prior AR path)
-            val width = maxOf(sideA, sideB)
-            val length = minOf(sideA, sideB)
-            // Consistency: opposite edges shouldn't diverge wildly
             val errA = if (edges[0] <= 0) 0.0 else abs(edges[0] - edges[2]) / edges[0]
             val errB = if (edges[1] <= 0) 0.0 else abs(edges[1] - edges[3]) / edges[1]
-            if (errA > 0.45 || errB > 0.45) {
-                // Still return OBB-ish average — room may be irregular
-                Log.w(TAG, "Polygon opposite-edge error high: $errA / $errB")
+            val oppErr = maxOf(errA, errB)
+
+            // Orthogonal fit (Gram-Schmidt axes)
+            val (orthoW, orthoL, orthoScore) = orthogonalFit(ordered)
+            val useOrtho = orthoScore >= 0.85 && orthoW >= 0.5 && orthoL >= 0.5
+            var width = if (useOrtho) maxOf(orthoW, orthoL) else maxOf(sideA, sideB)
+            var length = if (useOrtho) minOf(orthoW, orthoL) else minOf(sideA, sideB)
+
+            // Auto diagonal check from corner cloud (no extra taps)
+            val d02 = edgeLen(ordered[0], ordered[2])
+            val d13 = edgeLen(ordered[1], ordered[3])
+            val measuredDiag = (d02 + d13) / 2.0
+            val expectedDiag = sqrt(width * width + length * length)
+            var diagErr = 0.0
+            if (expectedDiag >= 0.5 && measuredDiag >= 0.5) {
+                val ratio = measuredDiag / expectedDiag
+                diagErr = abs(ratio - 1.0)
+                if (diagErr >= 0.04 && ratio in 0.70..1.35) {
+                    val scale = 1.0 + (ratio - 1.0) * 0.65
+                    width *= scale
+                    length *= scale
+                }
             }
-            return width to length
+
+            return PolygonDims(
+                widthM = maxOf(width, length),
+                lengthM = minOf(width, length),
+                oppositeEdgeError = oppErr,
+                diagonalError = diagErr,
+                orthogonalScore = orthoScore,
+            )
+        }
+
+        private fun edgeLen(a: FloatArray, b: FloatArray): Double {
+            val dx = (a[0] - b[0]).toDouble()
+            val dz = (a[2] - b[2]).toDouble()
+            return sqrt(dx * dx + dz * dz)
+        }
+
+        private fun orthogonalFit(ordered: List<FloatArray>): Triple<Double, Double, Double> {
+            val u = mutableListOf<Pair<Double, Double>>()
+            val v = mutableListOf<Pair<Double, Double>>()
+            for (i in 0 until 4) {
+                val a = ordered[i]
+                val b = ordered[(i + 1) % 4]
+                var dx = (b[0] - a[0]).toDouble()
+                var dz = (b[2] - a[2]).toDouble()
+                val len = sqrt(dx * dx + dz * dz)
+                if (len < 1e-6) continue
+                dx /= len
+                dz /= len
+                if (i % 2 == 0) u.add(dx to dz) else v.add(dx to dz)
+            }
+            if (u.isEmpty() || v.isEmpty()) return Triple(0.0, 0.0, 0.0)
+
+            var ux = 0.0
+            var uz = 0.0
+            for ((dx, dz) in u) {
+                val s = if (dx * u[0].first + dz * u[0].second < 0) -1.0 else 1.0
+                ux += s * dx
+                uz += s * dz
+            }
+            var un = sqrt(ux * ux + uz * uz)
+            if (un < 1e-6) return Triple(0.0, 0.0, 0.0)
+            ux /= un
+            uz /= un
+
+            var vx = 0.0
+            var vz = 0.0
+            for ((dx, dz) in v) {
+                val s = if (dx * v[0].first + dz * v[0].second < 0) -1.0 else 1.0
+                vx += s * dx
+                vz += s * dz
+            }
+            var vn = sqrt(vx * vx + vz * vz)
+            if (vn < 1e-6) return Triple(0.0, 0.0, 0.0)
+            vx /= vn
+            vz /= vn
+
+            val rawDot = abs(u[0].first * v[0].first + u[0].second * v[0].second)
+            val orthoScore = (1.0 - rawDot).coerceIn(0.0, 1.0)
+
+            // Gram-Schmidt
+            val dot = ux * vx + uz * vz
+            vx -= dot * ux
+            vz -= dot * uz
+            vn = sqrt(vx * vx + vz * vz)
+            if (vn < 1e-6) {
+                vx = -uz
+                vz = ux
+            } else {
+                vx /= vn
+                vz /= vn
+            }
+
+            var minU = Double.POSITIVE_INFINITY
+            var maxU = Double.NEGATIVE_INFINITY
+            var minV = Double.POSITIVE_INFINITY
+            var maxV = Double.NEGATIVE_INFINITY
+            for (p in ordered) {
+                val pu = p[0] * ux + p[2] * uz
+                val pv = p[0] * vx + p[2] * vz
+                if (pu < minU) minU = pu
+                if (pu > maxU) maxU = pu
+                if (pv < minV) minV = pv
+                if (pv > maxV) maxV = pv
+            }
+            val sideA = abs(maxU - minU)
+            val sideB = abs(maxV - minV)
+            return Triple(maxOf(sideA, sideB), minOf(sideA, sideB), orthoScore)
         }
     }
 }

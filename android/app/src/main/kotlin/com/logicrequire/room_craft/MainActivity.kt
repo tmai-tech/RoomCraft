@@ -321,11 +321,15 @@ class MainActivity : FlutterActivity() {
                 val wallsM =
                     data.getDoubleArrayExtra(ArMeasureActivity.EXTRA_WALLS_M)?.toList()
                         ?: emptyList()
-                // +123 multi-dot corners (flat x,y,z meters)
+                // +123/+124 multi-dot corners (flat x,y,z meters)
                 val cornersFlat =
                     data.getFloatArrayExtra(ArMeasureActivity.EXTRA_CORNERS_M)?.map {
                         it.toDouble()
                     } ?: emptyList()
+                val orthoScore =
+                    data.getDoubleExtra(ArMeasureActivity.EXTRA_ORTHO_SCORE, 0.0)
+                val diagError =
+                    data.getDoubleExtra(ArMeasureActivity.EXTRA_DIAG_ERROR, 0.0)
                 pending.success(
                     mapOf(
                         "widthFt" to widthFt,
@@ -336,6 +340,8 @@ class MainActivity : FlutterActivity() {
                         "wallsFt" to wallsFt,
                         "wallsM" to wallsM,
                         "cornersM" to cornersFlat,
+                        "orthogonalScore" to orthoScore,
+                        "diagonalError" to diagError,
                         "source" to "arcore",
                     ),
                 )

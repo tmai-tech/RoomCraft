@@ -5,7 +5,7 @@ import 'package:room_craft/domain/plan_accuracy_metrics.dart';
 import 'package:room_craft/models/scan_result.dart';
 import 'package:room_craft/services/ar_measure_service.dart';
 
-/// +123 multi-dot floor polygon → room size (Planner5D-class AR path).
+/// +123/+124 multi-dot floor polygon → room size (Planner5D-class AR path).
 void main() {
   test('+123 rect corners resolve exact W×L meters', () {
     final dots = ArPolygonMap.rectCornersM(widthM: 6.0, lengthM: 4.0);
@@ -14,13 +14,19 @@ void main() {
     expect(r!.widthM, closeTo(6.0, 0.02));
     expect(r.lengthM, closeTo(4.0, 0.02));
     expect(r.oppositeEdgeError, lessThan(0.02));
+    expect(r.orthogonalScore, greaterThan(0.95));
+    expect(r.diagonalError, lessThan(0.05));
   });
 
   test('+123 feet conversion for typical study-size room', () {
-    // 20.3 × 17.0 ft ≈ 6.187 × 5.182 m
     final wM = 20.3 / 3.28084;
     final lM = 17.0 / 3.28084;
-    final dots = ArPolygonMap.rectCornersM(widthM: wM, lengthM: lM, originX: 1.2, originZ: -0.5);
+    final dots = ArPolygonMap.rectCornersM(
+      widthM: wM,
+      lengthM: lM,
+      originX: 1.2,
+      originZ: -0.5,
+    );
     final r = ArPolygonMap.resolveFeet(dots);
     expect(r, isNotNull);
     expect(r!.widthFt, closeTo(20.3, 0.08));
@@ -34,6 +40,34 @@ void main() {
     expect(r, isNotNull);
     expect(r!.widthM, closeTo(5.0, 0.05));
     expect(r.lengthM, closeTo(3.5, 0.05));
+  });
+
+  test('+124 noisy corners orthogonal fit stays within ~5%', () {
+    final dots = ArPolygonMap.noisyRectCornersM(
+      widthM: 5.0,
+      lengthM: 3.5,
+      noiseM: 0.06,
+    );
+    final r = ArPolygonMap.resolveMeters(dots);
+    expect(r, isNotNull);
+    // Orthogonal + diagonal refine should keep room near true size
+    expect(r!.widthM, closeTo(5.0, 0.35));
+    expect(r.lengthM, closeTo(3.5, 0.35));
+    expect(r.orthogonalScore, greaterThan(0.7));
+  });
+
+  test('+124 slight shear still recovers near-rect room', () {
+    // Perfect rect with one corner nudged (user multi-dot error)
+    final dots = [
+      [0.0, 0.0, 0.0],
+      [6.0, 0.0, 0.15], // SE nudged
+      [5.9, 0.0, 4.0],
+      [0.1, 0.0, 3.95],
+    ];
+    final r = ArPolygonMap.resolveMeters(dots);
+    expect(r, isNotNull);
+    expect(r!.widthM, closeTo(6.0, 0.4));
+    expect(r.lengthM, closeTo(4.0, 0.4));
   });
 
   test('+123 ScaleSource.arPolygon reaches 100% when edges tight', () {
@@ -56,9 +90,9 @@ void main() {
       walls: const [],
       furniture: const [],
       warnings: const [
-        'Room size from AR 4-corner multi-dot map (15.5 × 11.0 ft)',
-        'Scale lock (+108/+119/+123): AR 4-corner multi-dot map floor 96%',
-        '100% AR measured room geometry (+123 multi-dot)',
+        'Room size from AR 4-corner multi-dot map (15.5 × 11.0 ft, ortho 98%)',
+        'Scale lock (+108/+119/+124): AR 4-corner multi-dot map floor 96%',
+        '100% AR measured room geometry (+124 multi-dot ortho)',
       ],
       accuracyScore: 1.0,
     );
@@ -67,13 +101,10 @@ void main() {
     expect(out.roomWidthFt, closeTo(15.5, 0.01));
     expect(out.roomLengthFt, closeTo(11.0, 0.01));
     expect(out.accuracyScore, closeTo(1.0, 0.001));
-    expect(
-      out.furniture.where((f) => f.included),
-      isEmpty,
-    );
+    expect(out.furniture.where((f) => f.included), isEmpty);
   });
 
-  test('+123 ArRoomMeasure polygon summary + isPolygon', () {
+  test('+124 ArRoomMeasure polygon summary + consistency', () {
     final m = ArRoomMeasure.fromMap({
       'widthFt': 14.0,
       'lengthFt': 10.0,
@@ -88,10 +119,14 @@ void main() {
         4.27, 0.0, 3.05,
         0.0, 0.0, 3.05,
       ],
+      'orthogonalScore': 0.97,
+      'diagonalError': 0.01,
       'source': 'arcore',
     });
     expect(m.isPolygon, isTrue);
     expect(m.summaryLabel, contains('multi-dot'));
+    expect(m.summaryLabel, contains('ortho'));
     expect(m.oppositeWallError, lessThan(0.01));
+    expect(m.consistencyError, lessThan(0.02));
   });
 }

@@ -186,9 +186,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         _isLoading = false;
         _loadingDetail = '';
       });
-      final warn = m.oppositeWallError > 0.08
-          ? ' Opposite walls differ — room may not be rectangular.'
-          : '';
+      final warn = m.consistencyError > 0.08
+          ? ' Edges/diagonals differ — room may not be rectangular.'
+          : (m.isPolygon && m.orthogonalScore >= 0.9
+              ? ' Orthogonal multi-dot fit looks strong.'
+              : '');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${m.summaryLabel}.$warn Add photos for furniture (optional)'),
@@ -822,21 +824,25 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           );
           final poly = _arMeasure?.isPolygon == true;
           final chain = _arMeasure?.isChain == true;
-          final oppErr = _arMeasure?.oppositeWallError ?? 0;
+          final oppErr = _arMeasure?.consistencyError ??
+              _arMeasure?.oppositeWallError ??
+              0;
           final src = poly
               ? ScaleSource.arPolygon
               : chain
                   ? ScaleSource.arChain
                   : ScaleSource.arQuick;
+          final ortho = _arMeasure?.orthogonalScore ?? 0;
           result = ScanRefine.refine(raw.copyWith(
             warnings: [
               ...raw.warnings,
               poly
                   ? 'Room size from AR 4-corner multi-dot map '
-                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)'
+                      '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
+                      '${ortho > 0 ? ', ortho ${(ortho * 100).round()}%' : ''})'
                   : 'Room size from ARCore floor measure '
                       '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
-              'Scale lock (+108/+123): ${ScaleLockConfidence.sourceLabel(src)}',
+              'Scale lock (+108/+123/+124): ${ScaleLockConfidence.sourceLabel(src)}',
             ],
             accuracyScore: ScaleLockConfidence.blend(
               layoutScore: raw.accuracyScore ?? 0.72,
@@ -848,17 +854,20 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           // AR size only — exact rectangle; add furniture from catalog or photos later
           final poly = _arMeasure?.isPolygon == true;
           final chain = _arMeasure?.isChain == true;
-          final oppErr = _arMeasure?.oppositeWallError ?? 0;
+          final oppErr = _arMeasure?.consistencyError ??
+              _arMeasure?.oppositeWallError ??
+              0;
           final src = poly
               ? ScaleSource.arPolygon
               : chain
                   ? ScaleSource.arChain
                   : ScaleSource.arQuick;
+          final ortho = _arMeasure?.orthogonalScore ?? 0;
           final floor = ScaleLockConfidence.sourceFloor(
             src,
             oppositeWallError: oppErr,
           );
-          // +119/+123: pure AR-measured empty room = 100% metric geometry when tight
+          // +119/+123/+124: pure AR multi-dot = 100% metric geometry when tight
           final arScore = ScaleLockConfidence.blend(
             layoutScore: 1.0,
             source: src,
@@ -872,7 +881,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
             warnings: [
               if (poly)
                 'Room size from AR 4-corner multi-dot map '
-                    '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)'
+                    '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
+                    '${ortho > 0 ? ', ortho ${(ortho * 100).round()}%' : ''})'
               else if (chain)
                 'Room size from AR 4-wall chain '
                     '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft, opposite walls averaged)'
@@ -880,13 +890,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                 'Room size from ARCore floor measure '
                     '(${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft)',
               if (oppErr > 0.08)
-                'Opposite edges differ by ${(oppErr * 100).round()}% — edit in Review if needed',
+                'Edges/diagonals differ by ${(oppErr * 100).round()}% — edit in Review if needed',
               if (frames.isEmpty)
                 'No photos yet — add openings/furniture in Review or Place furniture in AR',
-              'Scale lock (+108/+119/+123): ${ScaleLockConfidence.sourceLabel(src)} '
+              'Scale lock (+108/+119/+124): ${ScaleLockConfidence.sourceLabel(src)} '
                   'floor ${(floor * 100).round()}%',
               if (arScore >= 0.99)
-                '100% AR measured room geometry (+123 multi-dot)',
+                '100% AR measured room geometry (+124 multi-dot ortho)',
             ],
             sourceLabel: poly
                 ? 'ARCore 4-corner multi-dot map'

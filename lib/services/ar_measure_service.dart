@@ -18,6 +18,10 @@ class ArRoomMeasure {
   final List<double> wallsM;
   /// Flat world corners meters: [x0,y0,z0, x1,y1,z1, ...] for polygon mode.
   final List<double> cornersM;
+  /// +124 how rectangular the multi-dot map is (0..1).
+  final double orthogonalScore;
+  /// +124 |measuredDiag/expected − 1| after auto refine.
+  final double diagonalError;
 
   const ArRoomMeasure({
     required this.widthFt,
@@ -29,6 +33,8 @@ class ArRoomMeasure {
     this.wallsFt = const [],
     this.wallsM = const [],
     this.cornersM = const [],
+    this.orthogonalScore = 0,
+    this.diagonalError = 0,
   });
 
   factory ArRoomMeasure.fromMap(Map<dynamic, dynamic> map) {
@@ -47,6 +53,8 @@ class ArRoomMeasure {
       wallsFt: asDoubles(map['wallsFt']),
       wallsM: asDoubles(map['wallsM']),
       cornersM: asDoubles(map['cornersM']),
+      orthogonalScore: (map['orthogonalScore'] as num?)?.toDouble() ?? 0,
+      diagonalError: (map['diagonalError'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -71,12 +79,22 @@ class ArRoomMeasure {
     final base =
         '${widthFt.toStringAsFixed(1)} × ${lengthFt.toStringAsFixed(1)} ft';
     if (isPolygon) {
-      return '$base · AR 4-corner multi-dot';
+      final o = orthogonalScore > 0
+          ? ' · ortho ${(orthogonalScore * 100).round()}%'
+          : '';
+      return '$base · AR multi-dot$o';
     }
     if (isChain) {
       return '$base · 4-wall AR chain';
     }
     return '$base · AR quick';
+  }
+
+  /// Combined consistency error for scale-lock blend (+124).
+  double get consistencyError {
+    final wall = oppositeWallError;
+    // Prefer the worse of wall/diag when both present
+    return wall > diagonalError ? wall : diagonalError;
   }
 
   ArRoomMeasure get normalized {
@@ -91,6 +109,8 @@ class ArRoomMeasure {
       wallsFt: wallsFt,
       wallsM: wallsM,
       cornersM: cornersM,
+      orthogonalScore: orthogonalScore,
+      diagonalError: diagonalError,
     );
   }
 }

@@ -37,6 +37,7 @@
 | **70** | **+121** | Still **black AR screen / no camera** | DepthMode **DISABLED** (AUTOMATIC black-camera on many OEMs). UI-thread `session.resume()`; GL texture bind every frame; BLOCKING update; shader checks; 3.5s no-frame watchdog. | Install **+121**; open AR measure — must show live camera within ~2s. Update Play Services for AR if watchdog fires. |
 | **71** | **+122** | Feedback `a41da384` on +121: **“still blank no nothing in ar”** (screenshot: pure black + Starting camera…) | Abandon custom GL camera. **SceneView ARSceneView** for Filament+ARCore camera stream; plane grid; hitTestAR for Mark. | Install **+122** — AR measure must show **live video**, not black. |
 | **72** | **+123** | Continuous AR accuracy: latest feedback still AR blank on +121; Planner5D multi-dot research; ship working scan + APK | (1) **Config-before-lifecycle** fix (late `configureSession` never applied after session create). (2) **Instant Placement** fallback when floor mesh slow. (3) **4-corner multi-dot polygon mode** (default) — sparse point map → W×L via ordered opposite edges (`ArPolygonMap` + native `resolvePolygonMeters`). (4) Camera **watchdog** 6s + permission-before-lifecycle. (5) `ScaleSource.arPolygon` → 100% metric when edges tight. (6) Research notes: Planner5D Home Scan video/cloud + iOS LiDAR; Open3D/RTAB-Map/Meshroom for offline dense. Tests `ar_polygon_map_test`. | **Should have done:** never assign SceneView lifecycle before session config (+122). **Field:** install **+123** → Home → AR Room Planner → Map 4 floor corners. Gallery photos still estimate-only. **Next:** device QA of SceneView camera; optional denser AR hits along walls; Open3D offline training path. |
+| **73** | **+124** | No new feedback after +123; next accuracy: multi-dot robustness + AR UX (Planner5D/magicplan-class) | (1) **Orthogonal Gram-Schmidt rectangle fit** from 4 corners (prefers ortho when score ≥0.85). (2) **Auto diagonal refine** from corner cloud (no extra taps). (3) **Live aim HUD** distance from last mark while tracking. (4) Lifecycle bind **after view attach** (`post{}`) to cut SceneView session races. (5) Export `orthogonalScore` / `diagonalError` / `consistencyError`. Tests noisy/shear multi-dot. | **Still no device report on +122/+123 SceneView.** **Field:** install **+124**, confirm live camera + aim meters, map 4 corners. **Next:** denser wall-edge dots OR depth-API samples if still off. |
 
 ---
 
@@ -47,7 +48,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–72 / +105–**+123** | Geometry → openings → AR scale → Phase B → gold identity → **AR SceneView camera** → **multi-dot polygon metric map** |
+| D Accuracy resume | 55–73 / +105–**+124** | Geometry → openings → AR scale → Phase B → gold → **SceneView AR** → multi-dot → **orthogonal fit + live aim** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

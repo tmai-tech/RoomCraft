@@ -77,7 +77,7 @@ Industry pipeline (magicplan, RoomPlan, Matterport, Pointorama):
 4. **Openings + furniture** as secondary labeling (vision or catalog).
 5. **User verify** dimensions (tape/laser lock for pro accuracy).
 
-RoomCraft **+123** implements the phone-grade step (1–3) as an **AR multi-dot floor map**: user marks 4 floor corners (sparse point cloud), reconstruct W×L from ordered opposite edges (`ArPolygonMap` / native `resolvePolygonMeters`). Metric scale is **ARCore world meters**, not photo guesswork.
+RoomCraft **+123/+124** implements the phone-grade step (1–3) as an **AR multi-dot floor map**: user marks 4 floor corners (sparse point cloud), reconstruct W×L from ordered opposite edges, then **orthogonal Gram-Schmidt rectangle fit** + **auto diagonal refine** from the same corner cloud (`ArPolygonMap` / native `resolvePolygonMeters`). Live aim HUD shows meters from last mark (AR Plan-class UX). Metric scale is **ARCore world meters**, not photo guesswork.
 
 ### Python / open libraries for high-accuracy room mapping
 
