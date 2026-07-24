@@ -259,8 +259,8 @@ class ArMeasureActivity : AppCompatActivity() {
                     if (depthEnabled && uiTick % 12 == 0) {
                         sampleDepthAssistRays(frame)
                     }
-                    // +135: wall-distance samples (vertical planes / mid hits)
-                    if (uiTick % 8 == 0) {
+                    // +135/+136: denser wall-distance samples while walking
+                    if (uiTick % 5 == 0) {
                         sampleWallRanges(frame)
                     }
                 }
@@ -642,9 +642,12 @@ class ArMeasureActivity : AppCompatActivity() {
             hz /= hLen
 
             val rays = arrayOf(
-                0.50f to 0.42f, // slightly above center (walls, not floor)
-                0.35f to 0.45f,
-                0.65f to 0.45f,
+                0.50f to 0.40f, // slightly above center (walls, not floor)
+                0.30f to 0.42f,
+                0.70f to 0.42f,
+                0.50f to 0.48f,
+                0.20f to 0.45f,
+                0.80f to 0.45f,
             )
             for ((nx, ny) in rays) {
                 val cx = arSceneView.width * nx

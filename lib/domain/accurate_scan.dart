@@ -106,18 +106,36 @@ class AccurateScan {
   }
 
   static List<ScanWallSegment> _defaultOpenings(double w, double l) {
-    final doorLen = math.min(3.0, w * 0.25).clamp(2.0, 3.5);
-    final winLen = math.min(4.0, w * 0.35).clamp(2.0, 5.0);
+    // +136: door on long wall (typical entry), window opposite / short side
+    final longIsW = w >= l;
+    final doorLen = math.min(3.0, math.min(w, l) * 0.28).clamp(2.4, 3.2);
+    final winLen = math.min(4.5, math.max(w, l) * 0.28).clamp(2.5, 5.0);
+    if (longIsW) {
+      // Door on south (y=l), window on north (y=0)
+      return [
+        ScanWallSegment(
+          type: StrokeType.door,
+          startFt: Offset((w - doorLen) / 2, l),
+          endFt: Offset((w + doorLen) / 2, l),
+        ),
+        ScanWallSegment(
+          type: StrokeType.window,
+          startFt: Offset((w - winLen) / 2, 0),
+          endFt: Offset((w + winLen) / 2, 0),
+        ),
+      ];
+    }
+    // Tall room: door on east, window on west
     return [
       ScanWallSegment(
         type: StrokeType.door,
-        startFt: Offset((w - doorLen) / 2, 0),
-        endFt: Offset((w + doorLen) / 2, 0),
+        startFt: Offset(w, (l - doorLen) / 2),
+        endFt: Offset(w, (l + doorLen) / 2),
       ),
       ScanWallSegment(
         type: StrokeType.window,
-        startFt: Offset((w - winLen) / 2, l),
-        endFt: Offset((w + winLen) / 2, l),
+        startFt: Offset(0, (l - winLen) / 2),
+        endFt: Offset(0, (l + winLen) / 2),
       ),
     ];
   }

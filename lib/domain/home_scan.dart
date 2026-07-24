@@ -45,8 +45,7 @@ class HomeScanPackage {
   int get sampleCount => floorHitsM.length;
   int get poseCount => posesM.length;
 
-  /// +134 quality gate — reject incomplete walks that produce fake 10×10 plans
-  /// (feedback 225fb5de).
+  /// +134/+136 quality gate — reject incomplete walks (fake 10×10, feedback 225fb5de).
   ///
   /// Returns null when OK, else a user-facing error string.
   String? qualityRejectReason() {
@@ -59,6 +58,10 @@ class HomeScanPackage {
     final weakSamples = sampleCount < 20 && poseCount < 24;
     final weakCover = size.coverage > 0 && size.coverage < 0.50;
     final weakAgree = size.agreement > 0 && size.agreement < 0.50;
+    final pathM = HomeScanGeometry.posePathLengthM(posesM);
+    // Expected full-loop path ≈ perimeter at 0.75 m standoff (m)
+    final periM = 2 * (w + l) / 3.28084;
+    final shortPath = pathM > 0 && periM > 4 && pathM < periM * 0.35;
 
     if (w < 9 || l < 8) {
       return 'Room size looks too small (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
@@ -69,9 +72,21 @@ class HomeScanPackage {
       return 'Map looks incomplete (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft, '
           '${sampleCount} pts). Walk all four walls slowly, then Done.';
     }
+    // +136: square-ish mid room without wall lock + short walk path
+    if (area < 150 &&
+        squareish &&
+        !measure.hasWallLock &&
+        (weakCover || shortPath || size.coverage < 0.60)) {
+      return 'Map incomplete (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
+          'Walk all walls looking at them, then Done.';
+    }
     if (weakSamples && area < 150) {
       return 'Not enough map points ($sampleCount). '
           'Walk slowly around the whole room, then Done.';
+    }
+    if (shortPath && !measure.hasWallLock && size.coverage < 0.65) {
+      return 'Walk path too short for this room. '
+          'Complete a full loop near the walls, then Done.';
     }
     return null;
   }
@@ -165,6 +180,30 @@ class HomeScanPackage {
       }
     }
 
+    // +136: long walk path but tiny map → under-size; expand toward path envelope
+    final pathM = HomeScanGeometry.posePathLengthM(posesM);
+    if (pathM >= 6.0 && w >= 3 && l >= 3) {
+      final wM = w / mToFt;
+      final lM = l / mToFt;
+      final periM = 2 * (wM + lM);
+      // Full-loop walks are typically ≥55% of perimeter at ~0.75 m standoff
+      if (pathM >= periM * 0.55 && periM > 0) {
+        // Path proves room is large enough; mild expand if cloud still tight
+        final scale = (pathM / (periM * 0.70)).clamp(1.0, 1.18);
+        if (scale > 1.02 && !src.contains('wallLock')) {
+          w *= scale;
+          l *= scale;
+          src = '$src+pathExpand';
+          agree = math.max(agree, 0.72);
+        }
+      } else if (pathM > 10 && (w * l) < 140 && !measure.hasWallLock) {
+        // Long walk, small area — expand ~12% (half-room map class)
+        w *= 1.12;
+        l *= 1.12;
+        src = '$src+pathExpand';
+      }
+    }
+
     return (
       widthFt: w >= l ? w : l,
       lengthFt: w >= l ? l : w,
@@ -201,9 +240,8 @@ class HomeScanPackage {
       sourceLabel: 'Home Scan (AR walk → metric plan)',
       accuracyScore: score,
       warnings: [
-        'Home Scan (+135): floor + pose + wall-distance lock'
-            '${measure.depthEnabled ? ' + depth' : ''}'
-            '${measure.hasWallLock ? ' + wall-lock' : ''} → room size',
+        'Home Scan (+136): floor + pose + wall-lock + path expand'
+            '${measure.depthEnabled ? ' + depth' : ''} → room size',
         'Room ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
             ' · samples $sampleCount · poses $poseCount'
             '${ortho > 0 ? ' · fit ${(ortho * 100).round()}%' : ''}'
@@ -220,16 +258,18 @@ class HomeScanPackage {
           'Few samples — walk slower; aim at floor near walls (Planner5D tip)',
         if (size.fuseSource.contains('wallLock'))
           'Wall-distance lock applied (opposite vertical planes)',
-        'Placeholder door/window — edit or delete in Review',
+        if (size.fuseSource.contains('pathExpand'))
+          'Size expanded from walk path length (under-size guard)',
+        'Placeholder door/window — edit or delete in blueprint',
         if (score >= 0.99) '100% AR walk measured room geometry (metric size)',
       ],
     );
   }
 
-  /// Metric room + on-device AI starter furniture (+128/+130/+133).
+  /// Metric room + on-device AI starter furniture (+128–+136).
   ///
   /// Walk locks **size**; furniture is a catalog layout seed (not photo-true).
-  /// +133: denser default style (not sparse modern-minimal on 10×10).
+  /// +136: denser defaults (family/cozy) so plan is always usable after Done.
   ScanResult toPlanWithAiFurniture({
     DesignStyle? style,
     double pixelsPerFoot = 20,
@@ -241,12 +281,17 @@ class HomeScanPackage {
       widthInFeet: base.roomWidthFt,
       lengthInFeet: base.roomLengthFt,
     );
-    // +133/+134: denser living/family fill so plan is not empty-looking after scan
+    // +133–+136: denser living/family fill so plan is not empty after scan
     final area = base.roomWidthFt * base.roomLengthFt;
+    final minPieces = area >= 180
+        ? 6
+        : area >= 120
+            ? 5
+            : 4;
     var picked = style ??
-        (area >= 160
+        (area >= 140
             ? DesignStyle.family
-            : area >= 110
+            : area >= 100
                 ? DesignStyle.cozy
                 : DesignStyle.homeOffice);
     var items = AiDesigner.furnish(
@@ -254,14 +299,25 @@ class HomeScanPackage {
       pixelsPerFoot: pixelsPerFoot,
       style: picked,
     );
-    // +134: if layout is still sparse, force denser family recipe
-    if (items.length < 4 && style == null) {
-      picked = DesignStyle.family;
-      items = AiDesigner.furnish(
-        room: room,
-        pixelsPerFoot: pixelsPerFoot,
-        style: picked,
-      );
+    // Force denser recipes until min piece count
+    if (items.length < minPieces && style == null) {
+      for (final retry in [
+        DesignStyle.family,
+        DesignStyle.cozy,
+        DesignStyle.studio,
+      ]) {
+        if (retry == picked) continue;
+        final next = AiDesigner.furnish(
+          room: room,
+          pixelsPerFoot: pixelsPerFoot,
+          style: retry,
+        );
+        if (next.length > items.length) {
+          items = next;
+          picked = retry;
+        }
+        if (items.length >= minPieces) break;
+      }
     }
     final furniture = <ScanFurnitureHint>[
       for (final f in items)
@@ -282,7 +338,7 @@ class HomeScanPackage {
       warnings: [
         ...base.warnings.where((w) => !w.contains('Placeholder door')),
         'AI starter furniture (${picked.label}) — edit freely; not from photos',
-        'Walk map locked size; closed walls + wall-anchored pieces (+135)',
+        'Walk map locked size; closed walls + wall-anchored pieces (+136)',
       ],
     );
     // +130/+134/+135 accuracy: openings chain + wall positions + door clearances

@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+136 (2026-07-24)
+
+### Accuracy — path expand + denser plan (+136)
+- **Walk path length** expands under-sized maps when user completed a long loop.
+- Stricter quality gate: short path / no wall-lock incomplete squares rejected.
+- Denser AI furniture (min 4–6 pieces by area); door on long wall.
+- More frequent wall-range sampling while walking. See Turn 83.
+
 ## 1.0.0-beta.1+135 (2026-07-24)
 
 ### Accuracy — wall-distance lock (+135)

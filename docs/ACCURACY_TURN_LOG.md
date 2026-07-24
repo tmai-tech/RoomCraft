@@ -49,6 +49,7 @@
 | **80** | **+133** | Feedback `225fb5de` on +132: check (screenshot open walls, sparse 10×10) | Always **4 closed walls** in `toEditor`; denser AI furniture by area; reject tiny/sparse walks. | Needed stronger 10×10 reject + sanitize perimeter. |
 | **81** | **+134** | Harden 225fb5de (10×10 incomplete + open outline) | (1) `qualityRejectReason` rejects weak ~10×10 maps. (2) `BlueprintSafety.sanitizeRoom` seals 4 walls if count < 4. (3) Force denser family furniture if seed < 4. Tests. | Install **+134** re-scan full loop. **Next:** depth wall-distance lock. |
 | **82** | **+135** | No new FB after +134; final wall-distance lock + quality auto-Done | (1) Dart **`wallDistanceLockMeters`** (pose centroid → p90 opposite walls on PCA axes) fused into `resolveWalkMeters`. (2) Native: vertical plane **anti-parallel pairs** + heading-bin wall ranges → expand under-size. (3) Auto-finish only when cover/samples/wall-lock quality OK (no more half-walk freeze). Tests +135. | **Field:** install **+135**, full wall loop (look at walls). Report if size still off. **Next:** user accuracy feedback or depth range API polish. |
+| **83** | **+136** | No new FB after +135; path-expand size + denser usable plan | (1) **pathExpand** when walk path ≫ under-sized map. (2) Quality reject short path / no wall-lock incomplete squares. (3) Min 4–6 furniture by area; door on long wall. (4) Denser wall-range rays. Tests +136. | Install **+136** full loop. **Next:** user accuracy OK signal or fix next FB. |
 
 ---
 
@@ -59,7 +60,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–82 / +105–**+135** | AR walk → **wall-distance lock + quality auto-Done** |
+| D Accuracy resume | 55–83 / +105–**+136** | AR walk → **path-expand + dense plan** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

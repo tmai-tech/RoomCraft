@@ -170,4 +170,53 @@ void main() {
     final ed = ScanParser.toEditor(plan, 20);
     expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
   });
+
+  test('+136 pathExpand grows under-sized map after long walk', () {
+    // Small cloud (~3×2.5 m) but long interior pose loop (~full perimeter)
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 3.0,
+      lengthM: 2.5,
+      samplesPerEdge: 6,
+    );
+    final flat = <double>[for (final p in cloud) ...p];
+    // Loop path around interior (~0.6 m inset) — long walk
+    final poses = <double>[];
+    for (var i = 0; i < 20; i++) {
+      final t = i / 20.0;
+      poses.addAll([0.5 + t * 2.0, 1.5, 0.5]); // bottom
+    }
+    for (var i = 0; i < 16; i++) {
+      final t = i / 16.0;
+      poses.addAll([2.5, 1.5, 0.5 + t * 1.5]); // right
+    }
+    for (var i = 0; i < 20; i++) {
+      final t = i / 20.0;
+      poses.addAll([2.5 - t * 2.0, 1.5, 2.0]); // top
+    }
+    for (var i = 0; i < 16; i++) {
+      final t = i / 16.0;
+      poses.addAll([0.5, 1.5, 2.0 - t * 1.5]); // left
+    }
+    final measure = ArRoomMeasure(
+      widthFt: 9.8,
+      lengthFt: 8.2,
+      widthM: 3.0,
+      lengthM: 2.5,
+      mode: 'auto',
+      cornersM: flat,
+      posesM: poses,
+      sampleCount: cloud.length,
+      poseCount: poses.length ~/ 3,
+      coverageScore: 0.55,
+      orthogonalScore: 0.88,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final size = pack.resolvedSize;
+    // Path expand should enlarge beyond raw ~9.8×8.2 when path is long
+    expect(size.fuseSource.contains('pathExpand') || size.widthFt > 9.8, isTrue);
+    final plan = pack.toPlanWithAiFurniture();
+    expect(plan.furniture.where((f) => f.included).length, greaterThanOrEqualTo(4));
+    final ed = ScanParser.toEditor(plan, 20);
+    expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
+  });
 }
