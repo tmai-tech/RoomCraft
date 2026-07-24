@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+132 (2026-07-24)
+
+### Fix — scan stuck at ~90% / furniture confusion
+- Done enables as soon as room size is known (no 100% cover wait).
+- Auto-finish when size is stable ~3s so scan never hangs.
+- UI: no fake wall-cover % progress; "tap Done — open plan".
+- Clear: floor walk measures **room size**; furniture is placed on the plan after Done.
+
 ## 1.0.0-beta.1+131 (2026-07-24)
 
 ### Accuracy — conditional depth + Open3D export (+131)

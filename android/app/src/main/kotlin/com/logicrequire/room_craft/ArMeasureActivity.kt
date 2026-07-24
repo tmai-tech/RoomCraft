@@ -646,30 +646,36 @@ class ArMeasureActivity : AppCompatActivity() {
         when (cam) {
             TrackingState.TRACKING -> {
                 if (autoWidthM >= 1.5 && autoLengthM >= 1.5) {
-                    val covPct = (lastCoverageScore * 100).toInt()
-                    val coach = when {
-                        lastCoverageScore < 0.50 -> " · walk more walls"
-                        lastCoverageScore < 0.75 -> " · cover remaining sides"
-                        autoStableTicks >= 8 -> " · ready"
-                        else -> " · slow pass near walls"
+                    // +132: never show a fake "90% stuck" progress. Size ready = Done ready.
+                    val readyNow = walkSamples.size >= 8 || poseSamples.size >= 12
+                    liveDistance.text = if (readyNow) {
+                        String.format(
+                            "%.1f × %.1f ft — tap Done",
+                            autoWidthM * M_TO_FT,
+                            autoLengthM * M_TO_FT,
+                        )
+                    } else {
+                        String.format(
+                            "%.1f × %.1f ft — keep walking…",
+                            autoWidthM * M_TO_FT,
+                            autoLengthM * M_TO_FT,
+                        )
                     }
-                    liveDistance.text = String.format(
-                        "%.1f × %.1f ft · cover %d%%%s",
-                        autoWidthM * M_TO_FT,
-                        autoLengthM * M_TO_FT,
-                        covPct,
-                        coach,
-                    )
                     liveDistance.setTextColor(
-                        if (lastCoverageScore >= 0.75) 0xFFAED581.toInt()
-                        else 0xFFFFCC80.toInt(),
+                        if (readyNow) 0xFFAED581.toInt() else 0xFFFFCC80.toInt(),
                     )
+                    // Auto-finish when size stable so user is never stuck waiting for 100%
+                    if (readyNow && autoStableTicks >= 10 && !destroyed) {
+                        handler.post {
+                            if (!destroyed && autoMode) finishWithResult()
+                        }
+                    }
                 } else if (planes > 0 || walkSamples.isNotEmpty()) {
                     liveDistance.text =
-                        "Mapping… ${walkSamples.size} pts · walk along walls"
+                        "Mapping room… walk around"
                     liveDistance.setTextColor(0xFF80CBC4.toInt())
                 } else {
-                    liveDistance.text = "Point at floor and walk slowly"
+                    liveDistance.text = "Walk around the room slowly"
                     liveDistance.setTextColor(0xFF80CBC4.toInt())
                 }
             }
@@ -940,60 +946,36 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun updateUi() {
         if (!::stepTitle.isInitialized) return
         if (autoMode) {
-            stepTitle.text = "Home Scan — walk your room"
-            val coverHint = when {
-                lastCoverageScore < 0.50 && walkSamples.size >= 8 ->
-                    " Tip: walk a full loop near all four walls (Planner5D-style)."
-                lastCoverageScore in 0.50..0.74 ->
-                    " Almost there — pass the sides you haven't walked."
-                else ->
-                    " Live camera + motion maps the floor (Home Scan class)."
-            }
+            stepTitle.text = "Scan the room"
             stepHint.text =
-                "Walk slowly along the walls while pointing at the floor.$coverHint " +
-                    "Optional: Add floor pin at hard corners. Then Use this size."
-            btnMark.text = "Add floor pin (optional)"
-            btnDone.text = "Done"
+                "Walk around the room with the camera on the floor. " +
+                    "This measures room size only. Furniture is added on the plan after you tap Done."
+            btnMark.visibility = android.view.View.GONE
+            btnDone.text = "Done — open plan"
             measuredSummary.text = buildString {
-                append("Floor samples: ${walkSamples.size}")
-                if (poseSamples.isNotEmpty()) {
-                    append(" · poses ${poseSamples.size}")
-                }
-                if (lastCoverageScore > 0) {
-                    append(String.format(" · wall cover %.0f%%", lastCoverageScore * 100))
-                }
-                if (depthEnabled) append(" · depth on")
-                append('\n')
                 if (autoWidthM >= 0.5 && autoLengthM >= 0.5) {
                     append(
                         String.format(
-                            "Estimated room: %.1f × %.1f ft",
+                            "Room ~%.0f × %.0f ft",
                             autoWidthM * M_TO_FT,
                             autoLengthM * M_TO_FT,
                         ),
                     )
-                    if (lastOrthoScore > 0) {
-                        append(String.format(" · fit %.0f%%", lastOrthoScore * 100))
-                    }
-                    if (autoStableTicks >= 8) append(" · stable")
-                    if (lastCoverageScore < 0.75 && autoWidthM >= 1.5) {
-                        append("\n→ Keep walking edges for better accuracy")
-                    }
+                    append(" · ${walkSamples.size} map points")
+                    append("\nTap Done to open your plan with furniture.")
                 } else {
-                    append("Keep walking until size appears…")
+                    append("Walk around until room size appears…")
                 }
             }
-            // +131 quality gate: prefer cover ≥55% or dense stable cloud
+            // +132: Done as soon as we have a usable size — never wait for 100% cover
             val ready = autoWidthM >= 1.5 && autoLengthM >= 1.5 &&
-                walkSamples.size >= 12 &&
-                (lastCoverageScore >= 0.55 ||
-                    (walkSamples.size >= 48 && autoStableTicks >= 6) ||
-                    (lastCoverageScore >= 0.45 && walkSamples.size >= 28))
+                (walkSamples.size >= 8 || poseSamples.size >= 12)
             btnDone.isEnabled = ready
             return
         }
 
         if (polygonMode) {
+            btnMark.visibility = android.view.View.VISIBLE
             val n = cornerDots.size
             if (n >= totalCorners && resolvedWidthM() != null) {
                 stepTitle.text = "Done — 4-corner map ready"

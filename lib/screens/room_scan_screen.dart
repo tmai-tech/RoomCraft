@@ -57,11 +57,11 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         return;
       }
 
-      setState(() => _status = 'Walk the room, then tap Done');
+      setState(() => _status = 'Walk around the room, then tap Done');
       final measure = await ArMeasureService.measureRoom(mode: 'auto');
       if (!mounted) return;
 
-      setState(() => _status = 'Creating your plan…');
+      setState(() => _status = 'Creating plan with furniture…');
       final pack = HomeScanPackage.fromMeasure(
         measure,
         appVersion: AppConfig.versionLabel,
@@ -70,6 +70,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         await HomeScanService().save(pack);
       } catch (_) {}
 
+      // Walk = room size. Furniture = auto layout on that size (not from floor video).
       final plan = PhotoTrueLayout.resolveForReview(
         pack.toPlanWithAiFurniture(),
       );
@@ -129,7 +130,8 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Point at the floor and walk around the room. Tap Done when finished.',
+                  'Walk around the room once. Tap Done when the size shows. '
+                  'You get a plan with furniture automatically.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),
