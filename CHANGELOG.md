@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+127 (2026-07-23)
+
+### Feature — Home Scan package (walk → metric plan → Review)
+- **Home Scan class** product path on top of AR walk-to-map:
+  - Native records **floor hits + camera pose trail** while you walk
+  - `HomeScanPackage` re-fits size via `ArPolygonMap`, composes empty metric plan
+  - Package saved on device (`home_scans/*.json`) for training / future cloud
+- UI: Home **Home Scan (walk room)**; AR screen **Build plan from walk**
+- Review dialog: Home Scan ready; no study-gold wipe (measured scale lock)
+- Tests: `test/home_scan_test.dart`. Version **+127**.
+
 ## 1.0.0-beta.1+126 (2026-07-24)
 
 ### Accuracy — robust AR easy walk (+126)

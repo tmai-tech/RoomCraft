@@ -332,6 +332,14 @@ class MainActivity : FlutterActivity() {
                     data.getDoubleExtra(ArMeasureActivity.EXTRA_DIAG_ERROR, 0.0)
                 val coverageScore =
                     data.getDoubleExtra(ArMeasureActivity.EXTRA_COVERAGE_SCORE, 0.0)
+                val posesFlat =
+                    data.getFloatArrayExtra(ArMeasureActivity.EXTRA_POSES_M)?.map {
+                        it.toDouble()
+                    } ?: emptyList()
+                val sampleCount =
+                    data.getIntExtra(ArMeasureActivity.EXTRA_SAMPLE_COUNT, cornersFlat.size / 3)
+                val poseCount =
+                    data.getIntExtra(ArMeasureActivity.EXTRA_POSE_COUNT, posesFlat.size / 3)
                 pending.success(
                     mapOf(
                         "widthFt" to widthFt,
@@ -342,6 +350,9 @@ class MainActivity : FlutterActivity() {
                         "wallsFt" to wallsFt,
                         "wallsM" to wallsM,
                         "cornersM" to cornersFlat,
+                        "posesM" to posesFlat,
+                        "sampleCount" to sampleCount,
+                        "poseCount" to poseCount,
                         "orthogonalScore" to orthoScore,
                         "diagonalError" to diagError,
                         "coverageScore" to coverageScore,

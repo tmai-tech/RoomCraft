@@ -51,7 +51,10 @@ class ArMeasureActivity : AppCompatActivity() {
     private val cornerDots = mutableListOf<FloatArray>()
     /** +125 walk-cloud samples (world XYZ). */
     private val walkSamples = mutableListOf<FloatArray>()
+    /** +127 Home Scan: camera pose trail while walking (world XYZ meters). */
+    private val poseSamples = mutableListOf<FloatArray>()
     private var lastSamplePose: FloatArray? = null
+    private var lastPoseSample: FloatArray? = null
     private var pendingStartPose: FloatArray? = null
     private var chainMode = false
     private var polygonMode = false
@@ -205,10 +208,11 @@ class ArMeasureActivity : AppCompatActivity() {
                     handler.removeCallbacks(cameraWatchdog)
                 }
 
-                // +125: auto-sample floor while user walks
+                // +125/+127: auto-sample floor + camera pose while user walks
                 if (autoMode && frame.camera.trackingState == TrackingState.TRACKING) {
                     if (uiTick % 4 == 0) {
                         sampleAutoFloor(session, frame)
+                        sampleCameraPose(frame)
                     }
                 }
 
@@ -308,6 +312,31 @@ class ArMeasureActivity : AppCompatActivity() {
         }
         setResult(Activity.RESULT_CANCELED, Intent().putExtra(EXTRA_ERROR, message))
         finish()
+    }
+
+    /** +127: record camera motion trail for Home Scan package / future cloud. */
+    private fun sampleCameraPose(frame: com.google.ar.core.Frame) {
+        try {
+            val pose = frame.camera.pose
+            val xyz = floatArrayOf(pose.tx(), pose.ty(), pose.tz())
+            val last = lastPoseSample
+            if (last != null) {
+                val dx = xyz[0] - last[0]
+                val dy = xyz[1] - last[1]
+                val dz = xyz[2] - last[2]
+                // ~12 cm motion threshold
+                if (dx * dx + dy * dy + dz * dz < 0.014f) return
+            }
+            lastPoseSample = xyz
+            if (poseSamples.size > 400) {
+                val kept = poseSamples.filterIndexed { i, _ -> i % 2 == 1 }.toMutableList()
+                poseSamples.clear()
+                poseSamples.addAll(kept)
+            }
+            poseSamples.add(xyz)
+        } catch (e: Exception) {
+            Log.w(TAG, "pose sample", e)
+        }
     }
 
     /** Continuous walk sampling + plane polygon vertices. */
@@ -740,28 +769,31 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun updateUi() {
         if (!::stepTitle.isInitialized) return
         if (autoMode) {
-            stepTitle.text = "Easy AR walk — map your room"
+            stepTitle.text = "Home Scan — walk your room"
             val coverHint = when {
                 lastCoverageScore < 0.50 && walkSamples.size >= 8 ->
                     " Tip: walk a full loop near all four walls (Planner5D-style)."
                 lastCoverageScore in 0.50..0.74 ->
                     " Almost there — pass the sides you haven't walked."
                 else ->
-                    " Size fills in automatically (no corner math)."
+                    " Live camera + motion maps the floor (Home Scan class)."
             }
             stepHint.text =
                 "Walk slowly along the walls while pointing at the floor.$coverHint " +
                     "Optional: Add floor pin at hard corners. Then Use this size."
             btnMark.text = "Add floor pin (optional)"
             btnDone.text = if (lastCoverageScore >= 0.75) {
-                "Use this size"
+                "Build plan from walk"
             } else if (autoWidthM >= 1.5) {
-                "Use size (walk more for accuracy)"
+                "Build plan (walk more for accuracy)"
             } else {
-                "Use this size"
+                "Build plan from walk"
             }
             measuredSummary.text = buildString {
                 append("Floor samples: ${walkSamples.size}")
+                if (poseSamples.isNotEmpty()) {
+                    append(" · poses ${poseSamples.size}")
+                }
                 if (lastCoverageScore > 0) {
                     append(String.format(" · wall cover %.0f%%", lastCoverageScore * 100))
                 }
@@ -902,6 +934,18 @@ class ArMeasureActivity : AppCompatActivity() {
                 }
                 putExtra(EXTRA_CORNERS_M, flat)
             }
+            // +127 Home Scan pose trail
+            if (poseSamples.isNotEmpty()) {
+                val flatP = FloatArray(poseSamples.size * 3)
+                poseSamples.forEachIndexed { i, p ->
+                    flatP[i * 3] = p[0]
+                    flatP[i * 3 + 1] = p[1]
+                    flatP[i * 3 + 2] = p[2]
+                }
+                putExtra(EXTRA_POSES_M, flatP)
+            }
+            putExtra(EXTRA_SAMPLE_COUNT, if (autoMode) walkSamples.size else cornerDots.size)
+            putExtra(EXTRA_POSE_COUNT, poseSamples.size)
         }
         setResult(Activity.RESULT_OK, data)
         finish()
@@ -927,6 +971,10 @@ class ArMeasureActivity : AppCompatActivity() {
         const val EXTRA_WALLS_M = "walls_m"
         const val EXTRA_WALLS_FT = "walls_ft"
         const val EXTRA_CORNERS_M = "corners_m"
+        /** +127 camera pose trail flat x,y,z meters. */
+        const val EXTRA_POSES_M = "poses_m"
+        const val EXTRA_SAMPLE_COUNT = "sample_count"
+        const val EXTRA_POSE_COUNT = "pose_count"
         const val EXTRA_ORTHO_SCORE = "ortho_score"
         const val EXTRA_DIAG_ERROR = "diag_error"
         /** +126 walk angular coverage 0..1. */

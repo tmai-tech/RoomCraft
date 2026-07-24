@@ -359,7 +359,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             FilledButton.icon(
               onPressed: _createNewAR,
               icon: const Icon(Icons.view_in_ar),
-              label: const Text('Easy AR walk scan'),
+              label: const Text('Home Scan (walk room)'),
             ),
             const SizedBox(height: 12),
             FilledButton.tonalIcon(
@@ -700,7 +700,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.view_in_ar, color: Colors.teal),
-                title: const Text('AR Room Planner'),
+                title: const Text('Home Scan / AR'),
                 subtitle: Text(
                   ArMeasureService.isPlatformSupported
                       ? 'ARCore real dimensions → plan → furnish'

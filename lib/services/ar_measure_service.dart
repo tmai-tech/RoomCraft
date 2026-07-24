@@ -18,6 +18,10 @@ class ArRoomMeasure {
   final List<double> wallsM;
   /// Flat world corners meters: [x0,y0,z0, x1,y1,z1, ...] for polygon mode.
   final List<double> cornersM;
+  /// +127 Home Scan camera pose trail: [x0,y0,z0, ...] meters.
+  final List<double> posesM;
+  final int sampleCount;
+  final int poseCount;
   /// +124 how rectangular the multi-dot map is (0..1).
   final double orthogonalScore;
   /// +124 |measuredDiag/expected − 1| after auto refine.
@@ -35,6 +39,9 @@ class ArRoomMeasure {
     this.wallsFt = const [],
     this.wallsM = const [],
     this.cornersM = const [],
+    this.posesM = const [],
+    this.sampleCount = 0,
+    this.poseCount = 0,
     this.orthogonalScore = 0,
     this.diagonalError = 0,
     this.coverageScore = 0,
@@ -46,6 +53,8 @@ class ArRoomMeasure {
       return v.map((e) => (e as num).toDouble()).toList();
     }
 
+    final corners = asDoubles(map['cornersM']);
+    final poses = asDoubles(map['posesM']);
     return ArRoomMeasure(
       widthFt: (map['widthFt'] as num).toDouble(),
       lengthFt: (map['lengthFt'] as num).toDouble(),
@@ -55,7 +64,10 @@ class ArRoomMeasure {
       mode: map['mode']?.toString() ?? 'quick',
       wallsFt: asDoubles(map['wallsFt']),
       wallsM: asDoubles(map['wallsM']),
-      cornersM: asDoubles(map['cornersM']),
+      cornersM: corners,
+      posesM: poses,
+      sampleCount: (map['sampleCount'] as num?)?.toInt() ?? (corners.length ~/ 3),
+      poseCount: (map['poseCount'] as num?)?.toInt() ?? (poses.length ~/ 3),
       orthogonalScore: (map['orthogonalScore'] as num?)?.toDouble() ?? 0,
       diagonalError: (map['diagonalError'] as num?)?.toDouble() ?? 0,
       coverageScore: (map['coverageScore'] as num?)?.toDouble() ?? 0,
@@ -131,6 +143,9 @@ class ArRoomMeasure {
       wallsFt: wallsFt,
       wallsM: wallsM,
       cornersM: cornersM,
+      posesM: posesM,
+      sampleCount: sampleCount,
+      poseCount: poseCount,
       orthogonalScore: orthogonalScore,
       diagonalError: diagonalError,
       coverageScore: coverageScore,

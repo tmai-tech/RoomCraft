@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../catalog/furniture_catalog.dart';
 import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
+import '../domain/home_scan.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/photo_true_layout.dart';
 import '../domain/plan_accuracy_metrics.dart';
@@ -22,6 +23,7 @@ import '../services/ai_scanner_service.dart';
 import '../services/analytics_service.dart';
 import '../services/ar_measure_service.dart';
 import '../services/free_vision_scanner.dart';
+import '../services/home_scan_service.dart';
 import '../services/wall_relative_vision.dart';
 import 'ar_place_layout_screen.dart';
 import 'blueprint_screen.dart';
@@ -171,7 +173,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     setState(() {
       _isLoading = true;
       _loadingDetail = switch (_arMeasureMode) {
-        'auto' => 'Easy AR walk… point at floor and walk the room',
+        'auto' => 'Home Scan… walk the room with camera on the floor',
         'corners' => 'AR multi-dot map… mark 4 floor corners',
         'chain' => 'AR 4-wall chain… walk each wall',
         _ => 'Starting AR quick measure…',
@@ -180,6 +182,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     try {
       final m = await ArMeasureService.measureRoom(mode: _arMeasureMode);
       if (!mounted) return;
+      // +127: build Home Scan package (poses + floor hits) and persist on device
+      final pack = HomeScanPackage.fromMeasure(
+        m,
+        appVersion: AppConfig.versionLabel,
+      );
+      try {
+        await HomeScanService().save(pack);
+      } catch (_) {}
       setState(() {
         _arMeasure = m;
         _widthController.text = m.widthFt.toStringAsFixed(1);
@@ -197,12 +207,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       final coverNote = m.isAuto && cov > 0 && cov < 0.75
           ? ' Wall cover only ${(cov * 100).round()}% — re-walk edges for accuracy.'
           : '';
+      final samples = m.sampleCount > 0 ? m.sampleCount : pack.sampleCount;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 6),
           content: Text(
             '${m.summaryLabel}.$warn$coverNote '
-            'Next: add 2–3 room photos for furniture, or open empty plan.',
+            'Home Scan saved ($samples floor pts). '
+            'Tap Build plan for Review, or add photos for furniture.',
           ),
           action: SnackBarAction(
             label: 'Add photos',
@@ -875,6 +887,17 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               oppositeWallError: oppErr,
             ),
           ));
+        } else if (_arMeasure != null &&
+            (_arMeasure!.isAuto || _arMeasure!.isPolygon)) {
+          // +127 Home Scan: package → metric plan (re-fit from walk cloud)
+          final pack = HomeScanPackage.fromMeasure(
+            _arMeasure!,
+            appVersion: AppConfig.versionLabel,
+          );
+          try {
+            await HomeScanService().save(pack);
+          } catch (_) {}
+          result = pack.toPlan();
         } else {
           // AR size only — exact rectangle; add furniture from catalog or photos later
           final easy = _arMeasure?.isAuto == true;
@@ -1014,15 +1037,17 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       // "Place furniture at AR size" after measure.
       if (mode == 'ar_guided' && _arMeasure != null) {
         final arPlan = PhotoTrueLayout.resolveForReview(result);
+        final isHome = _arMeasure!.isAuto || _arMeasure!.isPolygon;
         final choice = await showDialog<String>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('AR room ready'),
+            title: Text(isHome ? 'Home Scan ready' : 'AR room ready'),
             content: Text(
               'Room locked at ${_arMeasure!.widthFt.toStringAsFixed(1)} × '
-              '${_arMeasure!.lengthFt.toStringAsFixed(1)} ft from AR.\n\n'
+              '${_arMeasure!.lengthFt.toStringAsFixed(1)} ft from AR walk/measure.\n\n'
               '• Review plan — edit doors/windows, then open 2D/3D editor\n'
-              '• Place furniture — catalogue / live AR camera at real size',
+              '• Place furniture — catalogue / live AR camera at real size\n\n'
+              '${isHome ? 'Walk package saved on device (floor hits + poses) for future cloud refine.' : ''}',
             ),
             actions: [
               TextButton(
@@ -1377,10 +1402,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Text(
-                        'Easiest accurate scan: open AR, walk slowly along the walls '
-                        'while pointing at the floor. Room size fills in automatically '
-                        '(Planner 5D / magicplan-style). No corner math. '
-                        'Then Review or place furniture.',
+                        'Home Scan (Planner 5D / magicplan class): continuous camera + '
+                        'motion while you walk. Floor hits + poses map room size on device '
+                        '(package saved for future cloud refine). No gallery guesswork. '
+                        'Then Review plan or place furniture at real size.',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.teal.shade900,
@@ -1391,14 +1416,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '1. Measure the room with AR',
+                    '1. Home Scan — walk the room',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     _arEasyWalk
-                        ? 'Just walk the room looking at the floor. Size appears live. '
-                            'Tap “Use this size” when it looks right. Optional floor pins at corners.'
+                        ? 'Point at the floor and walk a full loop near all walls. '
+                            'Size updates live. Tap “Build plan from walk” when ready.'
                         : _arPolygonMode
                             ? 'Mark 4 floor corners. Point + at each corner → Mark.'
                             : _arChainMode
@@ -1408,9 +1433,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Easy walk map (recommended)'),
+                    title: const Text('Home Scan walk (recommended)'),
                     subtitle: const Text(
-                      'Walk + floor tracking → automatic room size',
+                      'Walk + floor hits + poses → metric room size',
                     ),
                     value: _arEasyWalk,
                     onChanged: (v) => setState(() {
@@ -1450,13 +1475,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     label: Text(
                       _arMeasure == null
                           ? (_arEasyWalk
-                              ? 'Start easy AR walk'
+                              ? 'Start Home Scan walk'
                               : _arPolygonMode
                                   ? 'Map 4 floor corners with AR'
                                   : _arChainMode
                                       ? 'Measure 4 walls with AR'
                                       : 'Measure with AR')
-                          : 'Re-measure with AR',
+                          : 'Re-run Home Scan / AR',
                     ),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
