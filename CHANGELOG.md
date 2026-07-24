@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+128 (2026-07-24)
+
+### Accuracy — pose+floor fuse + assist openings (+128)
+- Fuse **camera pose trail** with floor hits (0.75 m standoff) so incomplete floor mesh no longer under-sizes (Planner5D walk-inside-room).
+- Home Scan seeds **placeholder door/window** (editable) — not a bare rectangle.
+- AR: vertical wall plane bases + live pose envelope; `HORIZONTAL_AND_VERTICAL` plane finding.
+- See `docs/ACCURACY_TURN_LOG.md` Turn 76.
+
 ## 1.0.0-beta.1+127 (2026-07-23)
 
 ### Feature — Home Scan package (walk → metric plan → Review)

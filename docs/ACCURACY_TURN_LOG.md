@@ -42,6 +42,7 @@
 | **75** | **+126** | Continuous AR accuracy: no new FB after +125; harden walk accuracy + easy path (Planner5D multi-dot / Open3D research) | (1) **Robust cloud fit**: statistical outlier trim + **p2–p98 percentile hull** (Dart + Kotlin) so Instant Placement glitches cannot inflate room to 30 m. (2) **Angular coverage score** (8-sector) + live coach “walk more walls / cover remaining sides”. (3) Plane-extent soft fuse when coverage incomplete. (4) Multi-ray floor sampling while walking. (5) Incomplete cover raises `consistencyError` → honest score. (6) Post-AR snackbar: add photos for furniture (fixes “just empty floor plan”). Research: Planner5D Home Scan = continuous walk 1.5–2 m from walls; Open3D SOR + RANSAC offline. Tests +126. | **Should have done:** percentile hull with first walk cloud (+125). **Field:** install **+126** → full wall loop until cover ≥75%. **Next:** optional depth API densify; auto photo inventory after walk; Open3D colab export of cornersM. |
 
 | **74** | **+127** | Implement Home Scan class (walk → plan) | On-device package: floor hits + pose trail; `HomeScanPackage`/`HomeScanService`; re-fit + Review; UI Home Scan branding. Cloud worker later. | Install **+127**, walk full loop, Review empty metric plan. |
+| **76** | **+128** | No new FB; next after +126/+127: pose-trail accuracy + non-empty plan | (1) **`ArPolygonMap.resolveWalkMeters`**: fuse floor hits + camera pose trail + 0.75 m standoff (Planner5D walk-inside-room). (2) Home Scan `resolvedSize` uses fuse; package JSON logs `fuse_source`. (3) Assist **placeholder door/window** so Review is not bare box (e7b247fd). (4) Native: **vertical plane bases** + pose envelope in live size; `HORIZONTAL_AND_VERTICAL` finding. Tests fuse expand + openings. | **Field:** install **+128**, walk walls looking at floor *and* walls; expect size not short when floor mesh incomplete. **Next:** photo inventory auto after walk; optional depth densify. |
 
 ---
 
@@ -52,7 +53,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–75 / +105–**+126** | Geometry → AR SceneView → multi-dot → walk → **robust coverage** |
+| D Accuracy resume | 55–76 / +105–**+128** | Geometry → walk → robust → Home Scan → **pose+floor fuse** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

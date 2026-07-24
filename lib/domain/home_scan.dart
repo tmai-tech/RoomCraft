@@ -1,21 +1,26 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui';
 
+import '../models/furniture_item.dart';
+import '../models/room_model.dart';
 import '../models/scan_result.dart';
 import '../services/ar_measure_service.dart';
 import 'accurate_scan.dart';
 import 'ar_polygon_map.dart';
+import 'layout/ai_designer.dart';
 import 'plan_accuracy_metrics.dart';
 
-/// Home Scan (Planner 5D / magicplan class) — walk + AR → metric plan (+127).
+/// Home Scan (Planner 5D / magicplan class) — walk + AR → metric plan (+127/+128).
 ///
 /// Capture happens natively (poses + floor hits while walking). This module:
-/// 1) re-fits room size from the walk cloud when possible
-/// 2) composes an empty metric [ScanResult] for Review
+/// 1) re-fits room size from **floor hits + pose trail** (+128 fuse)
+/// 2) composes a metric [ScanResult] with assist openings for Review
 /// 3) serializes a package for training / future cloud reconstruction
 ///
-/// Furniture/openings are **not** invented here — user adds in Review/editor
-/// or optional photos after scale is locked.
+/// Furniture is not invented — user places from catalog / AR Place / photos.
+/// Placeholder door+window keep the plan from looking like a bare rectangle
+/// (feedback e7b247fd “just asks floor plan”).
 class HomeScanPackage {
   final String id;
   final DateTime createdAt;
@@ -38,8 +43,27 @@ class HomeScanPackage {
   int get sampleCount => floorHitsM.length;
   int get poseCount => posesM.length;
 
-  /// Prefer re-fit from cloud if we have enough hits; else trust measure.
-  ({double widthFt, double lengthFt, double coverage, double ortho}) get resolvedSize {
+  /// Prefer fused walk re-fit (+128); else floor-only; else native measure.
+  ({
+    double widthFt,
+    double lengthFt,
+    double coverage,
+    double ortho,
+    String fuseSource,
+  }) get resolvedSize {
+    final fused = ArPolygonMap.resolveWalkFeet(
+      floorHits: floorHitsM,
+      poses: posesM,
+    );
+    if (fused != null && fused.widthFt >= 3 && fused.lengthFt >= 3) {
+      return (
+        widthFt: fused.widthFt,
+        lengthFt: fused.lengthFt,
+        coverage: fused.coverageScore,
+        ortho: fused.orthogonalScore,
+        fuseSource: fused.fuseSource,
+      );
+    }
     if (floorHitsM.length >= 4) {
       final fit = ArPolygonMap.resolveFeet(floorHitsM);
       if (fit != null && fit.widthFt >= 3 && fit.lengthFt >= 3) {
@@ -48,6 +72,7 @@ class HomeScanPackage {
           lengthFt: fit.lengthFt,
           coverage: fit.coverageScore,
           ortho: fit.orthogonalScore,
+          fuseSource: 'floor',
         );
       }
     }
@@ -56,10 +81,11 @@ class HomeScanPackage {
       lengthFt: measure.lengthFt,
       coverage: measure.coverageScore,
       ortho: measure.orthogonalScore,
+      fuseSource: 'native',
     );
   }
 
-  /// Empty metric rectangle plan — Home Scan stage 1 output.
+  /// Metric plan — Home Scan stage 1 output (+128 fuse + assist openings).
   ScanResult toPlan() {
     final size = resolvedSize;
     final w = size.widthFt;
@@ -77,22 +103,68 @@ class HomeScanPackage {
       lengthFt: l,
       openings: const [],
       furniture: const [],
-      inventDefaultOpenings: false,
+      // Assist openings so Review is not a bare box (user edits/deletes).
+      inventDefaultOpenings: true,
       sourceLabel: 'Home Scan (AR walk → metric plan)',
       accuracyScore: score,
       warnings: [
-        'Home Scan (+127): continuous walk + floor hits → room size',
+        'Home Scan (+128): floor hits + pose trail fuse → room size',
         'Room ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
             ' · samples $sampleCount · poses $poseCount'
             '${ortho > 0 ? ' · fit ${(ortho * 100).round()}%' : ''}'
-            '${cov > 0 ? ' · wall cover ${(cov * 100).round()}%' : ''}',
+            '${cov > 0 ? ' · wall cover ${(cov * 100).round()}%' : ''}'
+            ' · ${size.fuseSource}',
         'Scale lock: ${ScaleLockConfidence.sourceLabel(ScaleSource.arPolygon)}',
         if (cov > 0 && cov < 0.75)
           'Incomplete walk loop — re-scan walking all four walls for better size',
-        if (sampleCount < 12)
-          'Few floor samples — walk slower and keep the phone aimed at the floor',
-        'No furniture yet — add doors in Review or place from catalog / AR Place',
+        if (sampleCount < 12 && poseCount < 16)
+          'Few samples — walk slower; aim at floor near walls (Planner5D tip)',
+        'Placeholder door/window — edit or delete in Review',
         if (score >= 0.99) '100% AR walk measured room geometry (metric size)',
+      ],
+    );
+  }
+
+  /// Metric room + on-device AI starter furniture (+128).
+  ///
+  /// Walk locks **size**; furniture is a catalog layout seed (not photo-true).
+  /// No forced photo upload — user edits in Review/editor.
+  ScanResult toPlanWithAiFurniture({
+    DesignStyle style = DesignStyle.modernMinimal,
+    double pixelsPerFoot = 20,
+  }) {
+    final base = toPlan();
+    final room = RoomModel(
+      id: id,
+      name: 'Home Scan',
+      widthInFeet: base.roomWidthFt,
+      lengthInFeet: base.roomLengthFt,
+    );
+    final items = AiDesigner.furnish(
+      room: room,
+      pixelsPerFoot: pixelsPerFoot,
+      style: style,
+    );
+    final furniture = <ScanFurnitureHint>[
+      for (final f in items)
+        ScanFurnitureHint(
+          type: f.type,
+          posFt: Offset(
+            f.position.dx / pixelsPerFoot,
+            f.position.dy / pixelsPerFoot,
+          ),
+          widthFt: f.widthInFeet,
+          lengthFt: f.lengthInFeet,
+          rotationRad: f.rotationAngle,
+          included: true,
+        ),
+    ];
+    return base.copyWith(
+      furniture: furniture,
+      warnings: [
+        ...base.warnings.where((w) => !w.contains('Placeholder door')),
+        'AI starter furniture (${style.label}) — edit freely; not from photos',
+        'Walk map locked size; move/delete pieces in Review or editor',
       ],
     );
   }
@@ -120,6 +192,7 @@ class HomeScanPackage {
         'length_ft': size.lengthFt,
         'coverage': size.coverage,
         'ortho': size.ortho,
+        'fuse_source': size.fuseSource,
       },
       'floor_hits_m': floorHitsM,
       'poses_m': posesM,

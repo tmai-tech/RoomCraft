@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:room_craft/domain/ar_polygon_map.dart';
 import 'package:room_craft/domain/home_scan.dart';
 import 'package:room_craft/domain/photo_true_layout.dart';
+import 'package:room_craft/models/stroke_model.dart';
 import 'package:room_craft/services/ar_measure_service.dart';
 
 void main() {
@@ -77,5 +78,73 @@ void main() {
     expect(m.poseCount, 2);
     expect(m.posesM.length, 6);
     expect(m.summaryLabel, contains('walk'));
+  });
+
+  test('+128 pose+floor fuse expands incomplete floor toward true size', () {
+    // Floor hits only cover a 3×2 patch; poses walk a 4×3 interior path
+    final floor = ArPolygonMap.walkCloudRectM(
+      widthM: 3.0,
+      lengthM: 2.0,
+      samplesPerEdge: 5,
+      noiseM: 0.03,
+    );
+    // Interior path ~0.75m inset from 5×3.5 walls → path ~3.5×2.0
+    final poses = ArPolygonMap.walkCloudRectM(
+      widthM: 3.5,
+      lengthM: 2.0,
+      samplesPerEdge: 8,
+      noiseM: 0.02,
+      seed: 11,
+    );
+    final fused = ArPolygonMap.resolveWalkMeters(
+      floorHits: floor,
+      poses: poses,
+      standoffM: 0.75,
+    );
+    expect(fused, isNotNull);
+    // Should be larger than bare incomplete floor
+    final floorOnly = ArPolygonMap.resolveMeters(floor)!;
+    expect(fused!.widthM, greaterThan(floorOnly.widthM - 0.01));
+    // Pose+standoff pushes toward ~5m class room
+    expect(fused.widthM, greaterThan(3.2));
+    expect(fused.fuseSource, isNot(equals('')));
+  });
+
+  test('+128 HomeScanPackage toPlan has assist openings + fuse note', () {
+    final floor = ArPolygonMap.walkCloudRectM(widthM: 5.0, lengthM: 3.5);
+    final poses = ArPolygonMap.walkCloudRectM(
+      widthM: 3.5,
+      lengthM: 2.0,
+      samplesPerEdge: 6,
+      seed: 2,
+    );
+    final flatF = <double>[];
+    for (final p in floor) {
+      flatF.addAll(p);
+    }
+    final flatP = <double>[];
+    for (final p in poses) {
+      flatP.addAll(p);
+    }
+    final measure = ArRoomMeasure(
+      widthFt: 16.4,
+      lengthFt: 11.5,
+      widthM: 5.0,
+      lengthM: 3.5,
+      mode: 'auto',
+      cornersM: flatF,
+      posesM: flatP,
+      sampleCount: floor.length,
+      poseCount: poses.length,
+      coverageScore: 0.6,
+      orthogonalScore: 0.9,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure, appVersion: 'test+128');
+    final plan = pack.toPlan();
+    expect(plan.warnings.any((w) => w.contains('+128') || w.contains('fuse')), isTrue);
+    // Assist door/window so plan is not bare box
+    expect(plan.walls.any((s) => s.type == StrokeType.door), isTrue);
+    expect(plan.furniture, isEmpty);
+    expect(pack.resolvedSize.fuseSource, isNotEmpty);
   });
 }

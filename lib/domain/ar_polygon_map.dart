@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-/// Multi-dot / walk-cloud floor map → room W×L (+123–+126).
+/// Multi-dot / walk-cloud floor map → room W×L (+123–+128).
 ///
 /// Planner 5D / magicplan-class accuracy uses **metric geometry** from the
 /// device (AR/LiDAR), not monocular photos.
@@ -10,14 +10,20 @@ import 'dart:math' as math;
 /// - **+125**: dense walk cloud (N samples / plane extents) for easy scan
 /// - **+126**: robust cloud — outlier trim, percentile hull (Open3D-style),
 ///   angular coverage score (Planner5D walk completeness)
+/// - **+128**: fuse **floor hits + camera pose trail** (walk path is interior;
+///   expand by standoff like Planner5D 1.5–2 m from walls)
 ///
 /// Python research analogues (server / offline experiments):
 /// - Open3D plane segmentation + RANSAC / statistical outlier removal
-/// - RTAB-Map / ORB-SLAM3 sparse maps
+/// - RTAB-Map / ORB-SLAM3 sparse maps + trajectory envelope
 /// - AliceVision Meshroom photogrammetry (offline video)
 /// - scipy.spatial ConvexHull + percentile AABB on floor-projected points
 class ArPolygonMap {
   ArPolygonMap._();
+
+  /// Typical half-standoff (m) from walk path to wall when user follows
+  /// Planner5D guidance (~1.5–2 m from walls while holding phone).
+  static const double defaultWalkStandoffM = 0.75;
 
   /// Result of fitting a rectangular room to floor dots / walk samples.
   static ({
@@ -100,6 +106,133 @@ class ArPolygonMap {
       diagonalError: m.diagonalError,
       orthogonalScore: m.orthogonalScore,
       coverageScore: m.coverageScore,
+    );
+  }
+
+  /// +128: fuse floor hits with camera pose trail for Home Scan accuracy.
+  ///
+  /// Floor hits map the plane mesh; poses map where the user walked (usually
+  /// **inside** the room). Incomplete floor coverage under-sizes — expand
+  /// toward pose envelope + standoff (magicplan / Planner5D walk class).
+  static ({
+    double widthM,
+    double lengthM,
+    double oppositeEdgeError,
+    double diagonalError,
+    double orthogonalScore,
+    double coverageScore,
+    String fuseSource,
+  })? resolveWalkMeters({
+    List<List<double>> floorHits = const [],
+    List<List<double>> poses = const [],
+    double standoffM = defaultWalkStandoffM,
+  }) {
+    final floor = floorHits.length >= 4 ? resolveMeters(floorHits) : null;
+    final pose = poses.length >= 8 ? resolveMeters(poses) : null;
+
+    if (floor == null && pose == null) return null;
+
+    if (pose == null) {
+      return (
+        widthM: floor!.widthM,
+        lengthM: floor.lengthM,
+        oppositeEdgeError: floor.oppositeEdgeError,
+        diagonalError: floor.diagonalError,
+        orthogonalScore: floor.orthogonalScore,
+        coverageScore: floor.coverageScore,
+        fuseSource: 'floor',
+      );
+    }
+
+    // Expand interior path by standoff on both sides → wall-to-wall estimate
+    final stand = standoffM.clamp(0.35, 1.25);
+    final poseW = pose.widthM + 2 * stand;
+    final poseL = pose.lengthM + 2 * stand;
+    final poseWNrm = math.max(poseW, poseL);
+    final poseLNrm = math.min(poseW, poseL);
+
+    if (floor == null) {
+      return (
+        widthM: poseWNrm,
+        lengthM: poseLNrm,
+        oppositeEdgeError: 0.0,
+        diagonalError: 0.0,
+        orthogonalScore: (pose.orthogonalScore * 0.95).clamp(0.7, 0.97),
+        coverageScore: (pose.coverageScore * 0.95).clamp(0.0, 1.0),
+        fuseSource: 'pose+standoff',
+      );
+    }
+
+    // When floor cover is strong, prefer floor but allow soft growth if pose
+    // envelope implies a larger room (mesh didn't reach far walls).
+    double w;
+    double l;
+    String src;
+    if (floor.coverageScore >= 0.75) {
+      w = math.max(floor.widthM, math.min(poseWNrm, floor.widthM * 1.12));
+      l = math.max(floor.lengthM, math.min(poseLNrm, floor.lengthM * 1.12));
+      src = 'floor+poseSoft';
+    } else if (floor.coverageScore >= 0.45) {
+      // Incomplete loop: blend toward pose envelope
+      w = math.max(floor.widthM, floor.widthM * 0.45 + poseWNrm * 0.55);
+      l = math.max(floor.lengthM, floor.lengthM * 0.45 + poseLNrm * 0.55);
+      src = 'floor+poseBlend';
+    } else {
+      // Sparse floor — trust expanded pose more
+      w = math.max(floor.widthM, poseWNrm);
+      l = math.max(floor.lengthM, poseLNrm);
+      src = 'poseDominant';
+    }
+
+    // Sanity: never shrink below either raw fit; cap runaway growth
+    final rawMaxW = math.max(floor.widthM, pose.widthM);
+    final rawMaxL = math.max(floor.lengthM, pose.lengthM);
+    w = w.clamp(rawMaxW * 0.95, rawMaxW * 1.55 + 2 * stand);
+    l = l.clamp(rawMaxL * 0.95, rawMaxL * 1.55 + 2 * stand);
+
+    final cov = math.max(floor.coverageScore, pose.coverageScore * 0.9);
+    final ortho = math.max(floor.orthogonalScore, pose.orthogonalScore * 0.95);
+
+    return (
+      widthM: math.max(w, l),
+      lengthM: math.min(w, l),
+      oppositeEdgeError: floor.oppositeEdgeError,
+      diagonalError: floor.diagonalError,
+      orthogonalScore: ortho.clamp(0.7, 0.98),
+      coverageScore: cov.clamp(0.0, 1.0),
+      fuseSource: src,
+    );
+  }
+
+  /// Feet wrapper for [resolveWalkMeters].
+  static ({
+    double widthFt,
+    double lengthFt,
+    double oppositeEdgeError,
+    double diagonalError,
+    double orthogonalScore,
+    double coverageScore,
+    String fuseSource,
+  })? resolveWalkFeet({
+    List<List<double>> floorHits = const [],
+    List<List<double>> poses = const [],
+    double standoffM = defaultWalkStandoffM,
+  }) {
+    final m = resolveWalkMeters(
+      floorHits: floorHits,
+      poses: poses,
+      standoffM: standoffM,
+    );
+    if (m == null) return null;
+    const mToFt = 3.28084;
+    return (
+      widthFt: m.widthM * mToFt,
+      lengthFt: m.lengthM * mToFt,
+      oppositeEdgeError: m.oppositeEdgeError,
+      diagonalError: m.diagonalError,
+      orthogonalScore: m.orthogonalScore,
+      coverageScore: m.coverageScore,
+      fuseSource: m.fuseSource,
     );
   }
 

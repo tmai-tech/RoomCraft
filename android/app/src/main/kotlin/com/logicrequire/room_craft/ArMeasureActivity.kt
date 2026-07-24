@@ -19,6 +19,7 @@ import com.google.ar.core.Config
 import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
 import com.google.ar.core.TrackingState
+import com.logicrequire.room_craft.ar.WalkMapView
 import io.github.sceneview.ar.ARSceneView
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -39,6 +40,7 @@ import kotlin.math.sqrt
 class ArMeasureActivity : AppCompatActivity() {
 
     private lateinit var arSceneView: ARSceneView
+    private lateinit var walkMap: WalkMapView
     private lateinit var stepTitle: TextView
     private lateinit var stepHint: TextView
     private lateinit var liveDistance: TextView
@@ -131,6 +133,7 @@ class ArMeasureActivity : AppCompatActivity() {
             }
 
             arSceneView = findViewById(R.id.ar_scene_view)
+            walkMap = findViewById(R.id.walk_map)
             stepTitle = findViewById(R.id.step_title)
             stepHint = findViewById(R.id.step_hint)
             liveDistance = findViewById(R.id.live_distance)
@@ -149,7 +152,8 @@ class ArMeasureActivity : AppCompatActivity() {
 
             arSceneView.sessionConfiguration = { _, config ->
                 config.depthMode = Config.DepthMode.DISABLED
-                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
+                // +128: horizontal + vertical so wall planes densify the floor map
+                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
                 config.lightEstimationMode = Config.LightEstimationMode.DISABLED
                 config.focusMode = Config.FocusMode.AUTO
                 config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
@@ -157,7 +161,7 @@ class ArMeasureActivity : AppCompatActivity() {
             }
             arSceneView.configureSession { _, config ->
                 config.depthMode = Config.DepthMode.DISABLED
-                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
+                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
                 config.lightEstimationMode = Config.LightEstimationMode.DISABLED
                 config.focusMode = Config.FocusMode.AUTO
                 config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
@@ -314,6 +318,19 @@ class ArMeasureActivity : AppCompatActivity() {
         finish()
     }
 
+    /** +128: live top-down dots + room box (OpenCV-style understanding). */
+    private fun refreshWalkMap() {
+        if (!::walkMap.isInitialized) return
+        val floor = walkSamples.map { it[0] to it[2] }
+        val poses = poseSamples.map { it[0] to it[2] }
+        walkMap.setData(
+            floorXz = floor,
+            poseXz = poses,
+            widthM = autoWidthM.toFloat(),
+            lengthM = autoLengthM.toFloat(),
+        )
+    }
+
     /** +127: record camera motion trail for Home Scan package / future cloud. */
     private fun sampleCameraPose(frame: com.google.ar.core.Frame) {
         try {
@@ -343,9 +360,17 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun sampleAutoFloor(session: com.google.ar.core.Session, frame: com.google.ar.core.Frame) {
         var maxEx = 0f
         var maxEz = 0f
-        // 1) Plane extents / polygon vertices (Planner5D-style growth)
+        // 1) Horizontal + vertical plane samples (Planner5D-style growth)
         for (plane in session.getAllTrackables(Plane::class.java)) {
             if (plane.trackingState != TrackingState.TRACKING) continue
+            if (plane.type == Plane.Type.VERTICAL) {
+                try {
+                    sampleVerticalPlaneBase(plane)
+                } catch (e: Exception) {
+                    Log.w(TAG, "vertical plane sample", e)
+                }
+                continue
+            }
             if (plane.type != Plane.Type.HORIZONTAL_UPWARD_FACING) continue
             try {
                 val poly = plane.polygon
@@ -401,6 +426,25 @@ class ArMeasureActivity : AppCompatActivity() {
         recomputeAutoSize()
     }
 
+    /**
+     * +128: project vertical wall plane base into floor cloud so looking at
+     * walls grows the map (Planner5D walk captures walls + floor).
+     */
+    private fun sampleVerticalPlaneBase(plane: Plane) {
+        val pose = plane.centerPose
+        val ex = plane.extentX / 2f
+        val local = FloatArray(3)
+        val world = FloatArray(3)
+        val yFloor = lastSamplePose?.get(1) ?: 0f
+        for (sx in floatArrayOf(-ex, 0f, ex)) {
+            local[0] = sx
+            local[1] = 0f
+            local[2] = 0f
+            pose.transformPoint(local, 0, world, 0)
+            maybeAddSample(floatArrayOf(world[0], yFloor, world[2]))
+        }
+    }
+
     private fun sampleScreenHit(nx: Float, ny: Float) {
         try {
             val frame = arSceneView.frame ?: return
@@ -446,6 +490,22 @@ class ArMeasureActivity : AppCompatActivity() {
         lastOrthoScore = dims.orthogonalScore
         lastDiagError = dims.diagonalError
 
+        // +128: expand using camera pose trail (interior path + standoff)
+        val poseDims = if (poseSamples.size >= 8) resolveCloudMeters(poseSamples) else null
+        if (poseDims != null) {
+            val stand = 0.75 // Planner5D-class half-standoff meters
+            val poseW = max(poseDims.widthM, poseDims.lengthM) + 2 * stand
+            val poseL = min(poseDims.widthM, poseDims.lengthM) + 2 * stand
+            if (lastCoverageScore < 0.75) {
+                w = max(w, w * 0.45 + poseW * 0.55)
+                l = max(l, l * 0.45 + poseL * 0.55)
+            } else {
+                w = max(w, min(poseW, w * 1.12))
+                l = max(l, min(poseL, l * 1.12))
+            }
+            lastCoverageScore = max(lastCoverageScore, poseDims.coverageScore * 0.9)
+        }
+
         // +126: fuse largest ARCore plane extent when coverage still incomplete
         // (partial walk underestimates; plane growth helps — Planner5D tip)
         val pW = max(planeExtentXM, planeExtentZM)
@@ -458,6 +518,7 @@ class ArMeasureActivity : AppCompatActivity() {
 
         autoWidthM = max(w, l)
         autoLengthM = min(w, l)
+        refreshWalkMap()
         // Stability: size not changing much
         if (prevW > 0.5 && prevL > 0.5) {
             val dw = abs(prevW - autoWidthM) / prevW
