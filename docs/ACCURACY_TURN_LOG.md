@@ -46,6 +46,8 @@
 | **77** | **+130** | No new FB after +128/+129 one-button scan; accuracy densify + furniture wall-anchor | (1) **ARCore PointCloud** near-floor densify (**not** DepthMode — black-camera risk). (2) **Adaptive standoff** from floor−pose gap + **agreement** score. (3) Soft-max fused size with native measure when they agree. (4) `toPlanWithAiFurniture`: OpeningChain + **FurniturePositionMap** + door keep-out. Research: depth-from-motion ~5–8 cm offline; on-device PointCloud safer. Tests agreement + wall-anchored AI plan. | **Field:** install **+130** → Scan the room → full loop. Size should be more stable; furniture wall-hugged. **Next:** optional raw depth on supported devices only; export corners for Open3D colab. |
 | **78** | **+131** | No new FB; next: conditional depth + Open3D export | (1) **DepthMode.AUTOMATIC only if** `isDepthModeSupported` — else DISABLED (fixes +121 black-camera on OEMs). (2) **Depth-assist screen rays** densify floor/wall hits when depth on. (3) Stricter Done gate (cover ≥55% or dense stable cloud). (4) Home Scan writes **`_floor.xyz` / PLY** + `toOpen3dXyz/Ply`; colab helper `open3d_floor_fit.py` (PCA + optional Open3D RANSAC). Tests export. | **Field:** install **+131** on depth-capable phones (HUD “depth on”). Export path for offline Open3D. **Next:** use depth range for wall-distance lock; server RANSAC polish. |
 | **79** | **+132** | UX: cover % looked like unfinished progress | Done enabled when **size ready** (not stuck waiting for 100% cover); auto-finish when stable; copy clarifies walk = size, furniture after. Ships with +131 depth densify. | Install **+132**. |
+| **80** | **+133** | Feedback `225fb5de` on +132: check (screenshot open walls, sparse 10×10) | Always **4 closed walls** in `toEditor`; denser AI furniture by area; reject tiny/sparse walks. | Needed stronger 10×10 reject + sanitize perimeter. |
+| **81** | **+134** | Harden 225fb5de (10×10 incomplete + open outline) | (1) `qualityRejectReason` rejects weak ~10×10 maps. (2) `BlueprintSafety.sanitizeRoom` seals 4 walls if count < 4. (3) Force denser family furniture if seed < 4. Tests. | Install **+134** re-scan full loop. **Next:** depth wall-distance lock. |
 
 ---
 
@@ -56,7 +58,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–78 / +105–**+131** | Home Scan → densify → **conditional depth + Open3D export** |
+| D Accuracy resume | 55–81 / +105–**+134** | AR walk → **closed walls + quality gate** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

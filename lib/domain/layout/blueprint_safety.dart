@@ -35,7 +35,31 @@ class BlueprintSafety {
     return (w, l);
   }
 
+  /// Four wall strokes forming a closed rectangle (editor pixel space).
+  static List<StrokeModel> closedPerimeterWalls(
+    double widthFt,
+    double lengthFt,
+    double pixelsPerFoot, {
+    String Function()? idFactory,
+  }) {
+    final pxf = safePixelsPerFoot(pixelsPerFoot);
+    final (w, l) = safeRoomSize(widthFt, lengthFt);
+    final ww = w * pxf;
+    final ll = l * pxf;
+    String id() => idFactory?.call() ??
+        'wall_${DateTime.now().microsecondsSinceEpoch}_${math.Random().nextInt(1 << 20)}';
+    return [
+      StrokeModel(id: id(), type: StrokeType.wall, points: [Offset.zero, Offset(ww, 0)]),
+      StrokeModel(id: id(), type: StrokeType.wall, points: [Offset(ww, 0), Offset(ww, ll)]),
+      StrokeModel(id: id(), type: StrokeType.wall, points: [Offset(ww, ll), Offset(0, ll)]),
+      StrokeModel(id: id(), type: StrokeType.wall, points: [Offset(0, ll), Offset.zero]),
+    ];
+  }
+
   /// Drop/repair invalid strokes and furniture before editor paint.
+  ///
+  /// +134: if wall strokes are missing/incomplete, inject a closed rectangle
+  /// (feedback 225fb5de open outline after AR scan).
   static RoomModel sanitizeRoom(RoomModel room) {
     final (w, l) = safeRoomSize(room.widthInFeet, room.lengthInFeet);
     final strokes = <StrokeModel>[];
@@ -55,6 +79,12 @@ class BlueprintSafety {
 
     // Assume default scale for position clamp when only feet are known
     const pxf = 20.0;
+    final wallCount = strokes.where((s) => s.type == StrokeType.wall).length;
+    if (wallCount < 4) {
+      // Drop any partial walls; keep openings/doors/windows
+      strokes.removeWhere((s) => s.type == StrokeType.wall);
+      strokes.insertAll(0, closedPerimeterWalls(w, l, pxf));
+    }
     final roomR = FurnitureBounds.roomRect(w, l, pxf);
     final furniture = <FurnitureItem>[];
     for (final f in room.furniture) {

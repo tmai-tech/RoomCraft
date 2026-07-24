@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+134 (2026-07-24)
+
+### Fix — harden incomplete AR plan (feedback 225fb5de)
+- Reject weak ~**10×10** maps with low cover/samples before opening editor.
+- `BlueprintSafety` always injects **4 closed walls** if outline incomplete.
+- Denser furniture seed if AI layout is sparse.
+- See `docs/ACCURACY_TURN_LOG.md` Turns 80–81.
+
 ## 1.0.0-beta.1+133 (2026-07-24)
 
 ### Fix — feedback 225fb5de: bad 10×10 sparse plan after scan

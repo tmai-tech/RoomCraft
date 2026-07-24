@@ -65,18 +65,12 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         appVersion: AppConfig.versionLabel,
       );
 
-      // +133: reject half-walks that land on a fake small square (feedback 225fb5de)
-      final size = pack.resolvedSize;
-      final tooFew = pack.sampleCount < 16 && pack.poseCount < 20;
-      final tiny = size.widthFt < 9 || size.lengthFt < 8;
-      if (tooFew || tiny) {
+      // +133/+134: reject incomplete walks (fake 10×10 sparse plan — 225fb5de)
+      final reject = pack.qualityRejectReason();
+      if (reject != null) {
         setState(() {
           _busy = false;
-          _error = tiny
-              ? 'Room size looks too small (${size.widthFt.toStringAsFixed(0)}×${size.lengthFt.toStringAsFixed(0)} ft). '
-                  'Walk a full loop near all walls, then Done.'
-              : 'Not enough map points (${pack.sampleCount}). '
-                  'Walk slowly around the whole room, then Done.';
+          _error = reject;
         });
         return;
       }
@@ -86,7 +80,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         await HomeScanService().save(pack);
       } catch (_) {}
 
-      // No resolveForReview wipe — direct plan + dense furniture + closed walls
+      // Dense furniture + closed walls (editor sanitize also re-seals perimeter)
       final plan = pack.toPlanWithAiFurniture();
       final pxf = AppConfig.defaultPixelsPerFoot;
       final converted = ScanParser.toEditor(plan, pxf);

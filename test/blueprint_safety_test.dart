@@ -11,6 +11,33 @@ import 'package:room_craft/providers/room_provider.dart';
 import 'package:room_craft/screens/blueprint_screen.dart';
 
 void main() {
+  test('+134 sanitizeRoom injects closed perimeter when walls missing', () {
+    final open = RoomModel(
+      id: 'open',
+      name: 'open',
+      widthInFeet: 14,
+      lengthInFeet: 12,
+      strokes: [
+        // Only one partial wall (feedback 225fb5de class)
+        StrokeModel(
+          id: 'w1',
+          type: StrokeType.wall,
+          points: const [Offset(0, 0), Offset(100, 0)],
+        ),
+        StrokeModel(
+          id: 'd1',
+          type: StrokeType.door,
+          points: const [Offset(40, 0), Offset(80, 0)],
+        ),
+      ],
+      furniture: const [],
+    );
+    final s = BlueprintSafety.sanitizeRoom(open);
+    expect(s.strokes.where((x) => x.type == StrokeType.wall).length, 4);
+    // Door opening preserved
+    expect(s.strokes.any((x) => x.type == StrokeType.door), isTrue);
+  });
+
   test('+113 sanitizeRoom fixes NaN furniture and zero size', () {
     final bad = RoomModel(
       id: 'x',

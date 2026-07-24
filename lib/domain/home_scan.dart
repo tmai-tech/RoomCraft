@@ -45,6 +45,37 @@ class HomeScanPackage {
   int get sampleCount => floorHitsM.length;
   int get poseCount => posesM.length;
 
+  /// +134 quality gate — reject incomplete walks that produce fake 10×10 plans
+  /// (feedback 225fb5de).
+  ///
+  /// Returns null when OK, else a user-facing error string.
+  String? qualityRejectReason() {
+    final size = resolvedSize;
+    final w = size.widthFt;
+    final l = size.lengthFt;
+    final area = w * l;
+    final squareish =
+        w > 0 && ((w - l).abs() / math.max(w, l)) < 0.12;
+    final weakSamples = sampleCount < 20 && poseCount < 24;
+    final weakCover = size.coverage > 0 && size.coverage < 0.50;
+    final weakAgree = size.agreement > 0 && size.agreement < 0.50;
+
+    if (w < 9 || l < 8) {
+      return 'Room size looks too small (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
+          'Walk a full loop near all walls, then Done.';
+    }
+    // Classic half-walk: ~10×10 square with sparse map
+    if (area < 130 && squareish && (weakSamples || weakCover || weakAgree)) {
+      return 'Map looks incomplete (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft, '
+          '${sampleCount} pts). Walk all four walls slowly, then Done.';
+    }
+    if (weakSamples && area < 150) {
+      return 'Not enough map points ($sampleCount). '
+          'Walk slowly around the whole room, then Done.';
+    }
+    return null;
+  }
+
   /// Prefer fused walk re-fit (+128/+130); else floor-only; else native measure.
   ({
     double widthFt,
@@ -165,19 +196,28 @@ class HomeScanPackage {
       widthInFeet: base.roomWidthFt,
       lengthInFeet: base.roomLengthFt,
     );
-    // +133: denser living/family fill so plan is not empty-looking after scan
+    // +133/+134: denser living/family fill so plan is not empty-looking after scan
     final area = base.roomWidthFt * base.roomLengthFt;
-    final picked = style ??
+    var picked = style ??
         (area >= 160
             ? DesignStyle.family
             : area >= 110
                 ? DesignStyle.cozy
                 : DesignStyle.homeOffice);
-    final items = AiDesigner.furnish(
+    var items = AiDesigner.furnish(
       room: room,
       pixelsPerFoot: pixelsPerFoot,
       style: picked,
     );
+    // +134: if layout is still sparse, force denser family recipe
+    if (items.length < 4 && style == null) {
+      picked = DesignStyle.family;
+      items = AiDesigner.furnish(
+        room: room,
+        pixelsPerFoot: pixelsPerFoot,
+        style: picked,
+      );
+    }
     final furniture = <ScanFurnitureHint>[
       for (final f in items)
         ScanFurnitureHint(
@@ -197,10 +237,10 @@ class HomeScanPackage {
       warnings: [
         ...base.warnings.where((w) => !w.contains('Placeholder door')),
         'AI starter furniture (${picked.label}) — edit freely; not from photos',
-        'Walk map locked size; move/delete pieces in editor (+130 wall-anchored)',
+        'Walk map locked size; closed walls + wall-anchored pieces (+134)',
       ],
     );
-    // +130 accuracy: openings chain + wall positions + door clearances
+    // +130/+134 accuracy: openings chain + wall positions + door clearances
     plan = OpeningChainFidelity.ensure(plan);
     plan = FurniturePositionMap.ensure(plan);
     plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
