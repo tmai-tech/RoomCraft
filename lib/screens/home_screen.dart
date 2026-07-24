@@ -10,8 +10,7 @@ import '../services/prefs_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/room_thumbnail.dart';
 import 'blueprint_screen.dart';
-import '../services/ar_measure_service.dart';
-import 'scanner_screen.dart';
+import 'room_scan_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -204,23 +203,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return result;
   }
 
-  void _createNewAI() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ScannerScreen()))
-        .then((_) => _loadRooms());
-  }
-
-  /// Distinct AR Room Planner path — opens scanner in AR guided measure mode.
+  /// One-tap room scan → walk AR → plan with furniture (+129).
   void _createNewAR() {
     Navigator.of(context)
-        .push(
-          MaterialPageRoute(
-            builder: (_) => const ScannerScreen(
-              initialScanMode: 'ar_guided',
-              openAdvanced: true,
-            ),
-          ),
-        )
+        .push(MaterialPageRoute(builder: (_) => const RoomScanScreen()))
         .then((_) => _loadRooms());
   }
 
@@ -280,9 +266,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateOptions,
-        label: const Text('New Blueprint'),
-        icon: const Icon(Icons.add),
+        onPressed: _createNewAR,
+        label: const Text('Scan the room'),
+        icon: const Icon(Icons.view_in_ar),
       ),
     );
   }
@@ -351,7 +337,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Scan a room with your camera or draw a plan from scratch.',
+              'Scan your room once. You get a plan with furniture.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey.shade600),
             ),
@@ -359,19 +345,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             FilledButton.icon(
               onPressed: _createNewAR,
               icon: const Icon(Icons.view_in_ar),
-              label: const Text('Home Scan (walk room)'),
+              label: const Text('Scan the room'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+              ),
             ),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: _createNewAI,
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Scan with photos'),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
+            const SizedBox(height: 16),
+            TextButton(
               onPressed: _createNewManual,
-              icon: const Icon(Icons.edit),
-              label: const Text('Draw manually'),
+              child: const Text('Or draw manually'),
             ),
           ],
         ),
@@ -643,14 +625,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _pillarChip(
               keyName: 'home_pillar_ar',
               icon: Icons.view_in_ar,
-              label: 'AR Planner',
+              label: 'Scan the room',
               onTap: _createNewAR,
-            ),
-            _pillarChip(
-              keyName: 'home_pillar_scan',
-              icon: Icons.camera_alt_outlined,
-              label: 'Photo scan',
-              onTap: _createNewAI,
             ),
             _pillarChip(
               keyName: 'home_pillar_draw',
@@ -685,63 +661,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onPressed: onTap,
         backgroundColor: Colors.white,
         side: BorderSide(color: Colors.teal.shade100),
-      ),
-    );
-  }
-
-  void _showCreateOptions() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.view_in_ar, color: Colors.teal),
-                title: const Text('Home Scan / AR'),
-                subtitle: Text(
-                  ArMeasureService.isPlatformSupported
-                      ? 'ARCore real dimensions → plan → furnish'
-                      : 'Needs Android + ARCore (photo scan still available)',
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _createNewAR();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.auto_awesome, color: Colors.blue),
-                title: const Text('Scan with AI photos'),
-                subtitle: const Text('Photos → top-down plan'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _createNewAI();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit, color: Colors.green),
-                title: const Text('Draw manually'),
-                subtitle: const Text('Walls and furniture by hand'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _createNewManual();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.yard_outlined, color: Colors.green),
-                title: const Text('Exterior patio from gallery'),
-                subtitle: const Text('Open backyard patio starter'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showGallery();
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
       ),
     );
   }

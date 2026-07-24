@@ -843,13 +843,7 @@ class ArMeasureActivity : AppCompatActivity() {
                 "Walk slowly along the walls while pointing at the floor.$coverHint " +
                     "Optional: Add floor pin at hard corners. Then Use this size."
             btnMark.text = "Add floor pin (optional)"
-            btnDone.text = if (lastCoverageScore >= 0.75) {
-                "Build plan from walk"
-            } else if (autoWidthM >= 1.5) {
-                "Build plan (walk more for accuracy)"
-            } else {
-                "Build plan from walk"
-            }
+            btnDone.text = "Done"
             measuredSummary.text = buildString {
                 append("Floor samples: ${walkSamples.size}")
                 if (poseSamples.isNotEmpty()) {

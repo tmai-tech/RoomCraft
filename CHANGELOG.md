@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+129 (2026-07-24)
+
+### UX — one button: Scan the room → plan with furniture
+- Single primary action: **Scan the room** (home FAB + empty state).
+- Flow: walk AR → automatic plan with furniture → open editor. No dialogs, no photo upload step.
+- Advanced photo scan remains in codebase but off the main path.
+
 ## 1.0.0-beta.1+128 (2026-07-24)
 
 ### Accuracy — pose+floor fuse + assist openings (+128)
