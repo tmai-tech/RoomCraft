@@ -515,12 +515,12 @@ class ArMeasureActivity : AppCompatActivity() {
     }
 
     private fun liveAimDistance(): String? {
-        val aimFrom: FloatArray? = when {
+        val aimFrom: FloatArray = when {
             polygonMode && cornerDots.isNotEmpty() && cornerDots.size < totalCorners ->
                 cornerDots.last()
-            pendingStartPose != null -> pendingStartPose
-            else -> null
-        } ?: return null
+            pendingStartPose != null -> pendingStartPose!!
+            else -> return null
+        }
         val hit = peekCenterHit() ?: return null
         val pose = hit.hitPose
         val d = distance(aimFrom, floatArrayOf(pose.tx(), pose.ty(), pose.tz()))
@@ -911,7 +911,8 @@ class ArMeasureActivity : AppCompatActivity() {
         val wallsOut = if ((autoMode || polygonMode) && wallMeters.size < 4) {
             doubleArrayOf(w, l, w, l)
         } else {
-            wallMeters.toDoubleArray().ifEmpty { doubleArrayOf(w, l, w, l) }
+            val arr = wallMeters.toDoubleArray()
+            if (arr.isEmpty()) doubleArrayOf(w, l, w, l) else arr
         }
         val data = Intent().apply {
             putExtra(EXTRA_WIDTH_M, w)
@@ -1241,7 +1242,4 @@ class ArMeasureActivity : AppCompatActivity() {
                 if (pv < minV) minV = pv
                 if (pv > maxV) maxV = pv
             }
-            return Triple(max(abs(maxU - minU), abs(maxV - minV)), min(abs(maxU - minU), abs(maxV - minV)), orthoScore)
-        }
-    }
-}
+            return Triple(max(abs(maxU - minU), abs(maxV - minV)), min(abs(maxU - minU), abs(maxV - 
