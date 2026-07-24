@@ -212,11 +212,16 @@ class ArMeasureActivity : AppCompatActivity() {
                     handler.removeCallbacks(cameraWatchdog)
                 }
 
-                // +125/+127: auto-sample floor + camera pose while user walks
+                // +125/+127/+130: floor + pose + feature points while user walks
                 if (autoMode && frame.camera.trackingState == TrackingState.TRACKING) {
                     if (uiTick % 4 == 0) {
                         sampleAutoFloor(session, frame)
                         sampleCameraPose(frame)
+                    }
+                    // +130: sparse ARCore feature points near floor (no DepthMode —
+                    // AUTOMATIC depth blacked camera on many OEMs in +121)
+                    if (uiTick % 10 == 0) {
+                        sampleFeaturePointsNearFloor(frame)
                     }
                 }
 
@@ -445,6 +450,43 @@ class ArMeasureActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * +130: densify floor cloud from ARCore feature [PointCloud] near floor Y.
+     * Does **not** enable DepthMode (black-camera risk). Feature points improve
+     * room edge capture while walking (magicplan / Open3D sparse map class).
+     */
+    private fun sampleFeaturePointsNearFloor(frame: com.google.ar.core.Frame) {
+        try {
+            val cloud = frame.acquirePointCloud()
+            try {
+                val buf = cloud.points
+                val yRef = lastSamplePose?.get(1)
+                    ?: frame.camera.pose.ty() - 1.4f // rough floor from eye height
+                var i = 0
+                var added = 0
+                // PointCloud buffer: x,y,z,confidence floats
+                while (buf.remaining() >= 4 && added < 24) {
+                    val x = buf.get()
+                    val y = buf.get()
+                    val z = buf.get()
+                    val conf = buf.get()
+                    i++
+                    if (conf < 0.35f) continue
+                    // Keep points within ~35 cm of estimated floor
+                    if (kotlin.math.abs(y - yRef) > 0.35f) continue
+                    // Subsample: every ~3rd qualifying point
+                    if (i % 3 != 0) continue
+                    maybeAddSample(floatArrayOf(x, yRef, z))
+                    added++
+                }
+            } finally {
+                cloud.release()
+            }
+        } catch (_: Exception) {
+            // Point cloud not available on this frame — ignore
+        }
+    }
+
     private fun sampleScreenHit(nx: Float, ny: Float) {
         try {
             val frame = arSceneView.frame ?: return
@@ -490,10 +532,17 @@ class ArMeasureActivity : AppCompatActivity() {
         lastOrthoScore = dims.orthogonalScore
         lastDiagError = dims.diagonalError
 
-        // +128: expand using camera pose trail (interior path + standoff)
+        // +128/+130: expand using camera pose trail (interior path + adaptive standoff)
         val poseDims = if (poseSamples.size >= 8) resolveCloudMeters(poseSamples) else null
         if (poseDims != null) {
-            val stand = 0.75 // Planner5D-class half-standoff meters
+            var stand = 0.75 // Planner5D-class half-standoff meters
+            // Adaptive: half-gap between floor cloud and pose path when floor is larger
+            val gapW = (max(w, l) - max(poseDims.widthM, poseDims.lengthM)) / 2.0
+            val gapL = (min(w, l) - min(poseDims.widthM, poseDims.lengthM)) / 2.0
+            val gap = max(gapW, gapL)
+            if (lastCoverageScore >= 0.5 && gap in 0.30..1.40) {
+                stand = (stand * 0.35 + gap * 0.65).coerceIn(0.35, 1.25)
+            }
             val poseW = max(poseDims.widthM, poseDims.lengthM) + 2 * stand
             val poseL = min(poseDims.widthM, poseDims.lengthM) + 2 * stand
             if (lastCoverageScore < 0.75) {

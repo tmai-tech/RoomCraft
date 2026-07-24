@@ -2,6 +2,15 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+130 (2026-07-24)
+
+### Accuracy — feature densify + adaptive fuse (+130)
+- AR walk densifies floor map with **ARCore feature PointCloud** near floor (no DepthMode — avoids black camera).
+- **Adaptive standoff** from floor−pose gap; **agreement** score in Home Scan diagnostics.
+- Soft-max fused size with native measure when they agree.
+- AI starter furniture after walk: wall-anchor + door keep-out.
+- See `docs/ACCURACY_TURN_LOG.md` Turn 77.
+
 ## 1.0.0-beta.1+129 (2026-07-24)
 
 ### UX — one button: Scan the room → plan with furniture

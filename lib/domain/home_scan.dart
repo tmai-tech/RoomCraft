@@ -7,7 +7,10 @@ import '../models/scan_result.dart';
 import '../services/ar_measure_service.dart';
 import 'accurate_scan.dart';
 import 'ar_polygon_map.dart';
+import 'furniture_position_map.dart';
 import 'layout/ai_designer.dart';
+import 'opening_chain_fidelity.dart';
+import 'photo_true_layout.dart';
 import 'plan_accuracy_metrics.dart';
 
 /// Home Scan (Planner 5D / magicplan class) — walk + AR → metric plan (+127/+128).
@@ -42,25 +45,39 @@ class HomeScanPackage {
   int get sampleCount => floorHitsM.length;
   int get poseCount => posesM.length;
 
-  /// Prefer fused walk re-fit (+128); else floor-only; else native measure.
+  /// Prefer fused walk re-fit (+128/+130); else floor-only; else native measure.
   ({
     double widthFt,
     double lengthFt,
     double coverage,
     double ortho,
     String fuseSource,
+    double agreement,
   }) get resolvedSize {
     final fused = ArPolygonMap.resolveWalkFeet(
       floorHits: floorHitsM,
       poses: posesM,
     );
     if (fused != null && fused.widthFt >= 3 && fused.lengthFt >= 3) {
+      // +130: if native measure agrees and is larger (common under-size of
+      // partial floor mesh), soft-max with native when agreement is OK.
+      var w = fused.widthFt;
+      var l = fused.lengthFt;
+      final nw = measure.widthFt;
+      final nl = measure.lengthFt;
+      if (nw >= 3 && nl >= 3 && fused.agreement >= 0.55) {
+        final nW = nw >= nl ? nw : nl;
+        final nL = nw >= nl ? nl : nw;
+        if (nW > w && nW / w <= 1.18) w = w * 0.55 + nW * 0.45;
+        if (nL > l && nL / l <= 1.18) l = l * 0.55 + nL * 0.45;
+      }
       return (
-        widthFt: fused.widthFt,
-        lengthFt: fused.lengthFt,
+        widthFt: w >= l ? w : l,
+        lengthFt: w >= l ? l : w,
         coverage: fused.coverageScore,
         ortho: fused.orthogonalScore,
         fuseSource: fused.fuseSource,
+        agreement: fused.agreement,
       );
     }
     if (floorHitsM.length >= 4) {
@@ -72,6 +89,7 @@ class HomeScanPackage {
           coverage: fit.coverageScore,
           ortho: fit.orthogonalScore,
           fuseSource: 'floor',
+          agreement: 0.85,
         );
       }
     }
@@ -81,6 +99,7 @@ class HomeScanPackage {
       coverage: measure.coverageScore,
       ortho: measure.orthogonalScore,
       fuseSource: 'native',
+      agreement: 0.7,
     );
   }
 
@@ -97,6 +116,9 @@ class HomeScanPackage {
       source: ScaleSource.arPolygon,
       oppositeWallError: oppErr,
     );
+    final agreeNote = size.agreement > 0
+        ? ' · agree ${(size.agreement * 100).round()}%'
+        : '';
     return AccurateScan.enforce(
       widthFt: w,
       lengthFt: l,
@@ -107,15 +129,17 @@ class HomeScanPackage {
       sourceLabel: 'Home Scan (AR walk → metric plan)',
       accuracyScore: score,
       warnings: [
-        'Home Scan (+128): floor hits + pose trail fuse → room size',
+        'Home Scan (+130): floor + pose fuse + feature densify → room size',
         'Room ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
             ' · samples $sampleCount · poses $poseCount'
             '${ortho > 0 ? ' · fit ${(ortho * 100).round()}%' : ''}'
             '${cov > 0 ? ' · wall cover ${(cov * 100).round()}%' : ''}'
-            ' · ${size.fuseSource}',
+            '$agreeNote · ${size.fuseSource}',
         'Scale lock: ${ScaleLockConfidence.sourceLabel(ScaleSource.arPolygon)}',
         if (cov > 0 && cov < 0.75)
           'Incomplete walk loop — re-scan walking all four walls for better size',
+        if (size.agreement > 0 && size.agreement < 0.55)
+          'Floor vs walk path disagree — walk closer to walls for better size',
         if (sampleCount < 12 && poseCount < 16)
           'Few samples — walk slower; aim at floor near walls (Planner5D tip)',
         'Placeholder door/window — edit or delete in Review',
@@ -124,10 +148,10 @@ class HomeScanPackage {
     );
   }
 
-  /// Metric room + on-device AI starter furniture (+128).
+  /// Metric room + on-device AI starter furniture (+128/+130).
   ///
   /// Walk locks **size**; furniture is a catalog layout seed (not photo-true).
-  /// No forced photo upload — user edits in Review/editor.
+  /// +130: wall-anchor + door keep-out so pieces don't float mid-room / block doors.
   ScanResult toPlanWithAiFurniture({
     DesignStyle style = DesignStyle.modernMinimal,
     double pixelsPerFoot = 20,
@@ -139,10 +163,12 @@ class HomeScanPackage {
       widthInFeet: base.roomWidthFt,
       lengthInFeet: base.roomLengthFt,
     );
+    // Pick style from aspect: long rooms → home office / living; square → modern
+    final picked = style;
     final items = AiDesigner.furnish(
       room: room,
       pixelsPerFoot: pixelsPerFoot,
-      style: style,
+      style: picked,
     );
     final furniture = <ScanFurnitureHint>[
       for (final f in items)
@@ -158,14 +184,19 @@ class HomeScanPackage {
           included: true,
         ),
     ];
-    return base.copyWith(
+    var plan = base.copyWith(
       furniture: furniture,
       warnings: [
         ...base.warnings.where((w) => !w.contains('Placeholder door')),
-        'AI starter furniture (${style.label}) — edit freely; not from photos',
-        'Walk map locked size; move/delete pieces in Review or editor',
+        'AI starter furniture (${picked.label}) — edit freely; not from photos',
+        'Walk map locked size; move/delete pieces in editor (+130 wall-anchored)',
       ],
     );
+    // +130 accuracy: openings chain + wall positions + door clearances
+    plan = OpeningChainFidelity.ensure(plan);
+    plan = FurniturePositionMap.ensure(plan);
+    plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
+    return plan;
   }
 
   Map<String, dynamic> toJson() {
@@ -192,6 +223,7 @@ class HomeScanPackage {
         'coverage': size.coverage,
         'ortho': size.ortho,
         'fuse_source': size.fuseSource,
+        'agreement': size.agreement,
       },
       'floor_hits_m': floorHitsM,
       'poses_m': posesM,

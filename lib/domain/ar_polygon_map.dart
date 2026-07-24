@@ -12,6 +12,8 @@ import 'dart:math' as math;
 ///   angular coverage score (Planner5D walk completeness)
 /// - **+128**: fuse **floor hits + camera pose trail** (walk path is interior;
 ///   expand by standoff like Planner5D 1.5–2 m from walls)
+/// - **+130**: adaptive standoff from floor−pose gap; size agreement score;
+///   feature-point densify on device (native PointCloud, no DepthMode)
 ///
 /// Python research analogues (server / offline experiments):
 /// - Open3D plane segmentation + RANSAC / statistical outlier removal
@@ -109,11 +111,13 @@ class ArPolygonMap {
     );
   }
 
-  /// +128: fuse floor hits with camera pose trail for Home Scan accuracy.
+  /// +128/+130: fuse floor hits with camera pose trail for Home Scan accuracy.
   ///
   /// Floor hits map the plane mesh; poses map where the user walked (usually
   /// **inside** the room). Incomplete floor coverage under-sizes — expand
-  /// toward pose envelope + standoff (magicplan / Planner5D walk class).
+  /// toward pose envelope + **adaptive** standoff (magicplan / Planner5D).
+  ///
+  /// [agreement] is 0..1 how well floor vs pose envelope match (high = trust).
   static ({
     double widthM,
     double lengthM,
@@ -122,6 +126,8 @@ class ArPolygonMap {
     double orthogonalScore,
     double coverageScore,
     String fuseSource,
+    double agreement,
+    double standoffUsedM,
   })? resolveWalkMeters({
     List<List<double>> floorHits = const [],
     List<List<double>> poses = const [],
@@ -141,11 +147,23 @@ class ArPolygonMap {
         orthogonalScore: floor.orthogonalScore,
         coverageScore: floor.coverageScore,
         fuseSource: 'floor',
+        agreement: 1.0,
+        standoffUsedM: 0.0,
       );
     }
 
-    // Expand interior path by standoff on both sides → wall-to-wall estimate
-    final stand = standoffM.clamp(0.35, 1.25);
+    // +130 adaptive standoff: when floor is larger than pose path, use half-gap
+    var stand = standoffM.clamp(0.35, 1.25);
+    if (floor != null && floor.coverageScore >= 0.5) {
+      final gapW = (floor.widthM - pose.widthM) / 2.0;
+      final gapL = (floor.lengthM - pose.lengthM) / 2.0;
+      final gap = math.max(gapW, gapL);
+      if (gap >= 0.30 && gap <= 1.40) {
+        // Blend default with measured wall clearance
+        stand = (stand * 0.35 + gap * 0.65).clamp(0.35, 1.25);
+      }
+    }
+
     final poseW = pose.widthM + 2 * stand;
     final poseL = pose.lengthM + 2 * stand;
     final poseWNrm = math.max(poseW, poseL);
@@ -160,11 +178,11 @@ class ArPolygonMap {
         orthogonalScore: (pose.orthogonalScore * 0.95).clamp(0.7, 0.97),
         coverageScore: (pose.coverageScore * 0.95).clamp(0.0, 1.0),
         fuseSource: 'pose+standoff',
+        agreement: 0.55,
+        standoffUsedM: stand,
       );
     }
 
-    // When floor cover is strong, prefer floor but allow soft growth if pose
-    // envelope implies a larger room (mesh didn't reach far walls).
     double w;
     double l;
     String src;
@@ -173,22 +191,24 @@ class ArPolygonMap {
       l = math.max(floor.lengthM, math.min(poseLNrm, floor.lengthM * 1.12));
       src = 'floor+poseSoft';
     } else if (floor.coverageScore >= 0.45) {
-      // Incomplete loop: blend toward pose envelope
       w = math.max(floor.widthM, floor.widthM * 0.45 + poseWNrm * 0.55);
       l = math.max(floor.lengthM, floor.lengthM * 0.45 + poseLNrm * 0.55);
       src = 'floor+poseBlend';
     } else {
-      // Sparse floor — trust expanded pose more
       w = math.max(floor.widthM, poseWNrm);
       l = math.max(floor.lengthM, poseLNrm);
       src = 'poseDominant';
     }
 
-    // Sanity: never shrink below either raw fit; cap runaway growth
     final rawMaxW = math.max(floor.widthM, pose.widthM);
     final rawMaxL = math.max(floor.lengthM, pose.lengthM);
     w = w.clamp(rawMaxW * 0.95, rawMaxW * 1.55 + 2 * stand);
     l = l.clamp(rawMaxL * 0.95, rawMaxL * 1.55 + 2 * stand);
+
+    // Agreement: floor vs expanded pose (1 = match, 0 = far apart)
+    final aW = _sizeAgreement(floor.widthM, poseWNrm);
+    final aL = _sizeAgreement(floor.lengthM, poseLNrm);
+    final agreement = math.min(aW, aL);
 
     final cov = math.max(floor.coverageScore, pose.coverageScore * 0.9);
     final ortho = math.max(floor.orthogonalScore, pose.orthogonalScore * 0.95);
@@ -197,11 +217,21 @@ class ArPolygonMap {
       widthM: math.max(w, l),
       lengthM: math.min(w, l),
       oppositeEdgeError: floor.oppositeEdgeError,
-      diagonalError: floor.diagonalError,
+      diagonalError: math.max(floor.diagonalError, 1.0 - agreement),
       orthogonalScore: ortho.clamp(0.7, 0.98),
       coverageScore: cov.clamp(0.0, 1.0),
       fuseSource: src,
+      agreement: agreement,
+      standoffUsedM: stand,
     );
+  }
+
+  /// 1 when a≈b, decays as relative error grows.
+  static double _sizeAgreement(double a, double b) {
+    final m = math.max(a, b);
+    if (m < 0.5) return 0.0;
+    final rel = (a - b).abs() / m;
+    return (1.0 - rel * 1.5).clamp(0.0, 1.0);
   }
 
   /// Feet wrapper for [resolveWalkMeters].
@@ -213,6 +243,8 @@ class ArPolygonMap {
     double orthogonalScore,
     double coverageScore,
     String fuseSource,
+    double agreement,
+    double standoffUsedM,
   })? resolveWalkFeet({
     List<List<double>> floorHits = const [],
     List<List<double>> poses = const [],
@@ -233,6 +265,8 @@ class ArPolygonMap {
       orthogonalScore: m.orthogonalScore,
       coverageScore: m.coverageScore,
       fuseSource: m.fuseSource,
+      agreement: m.agreement,
+      standoffUsedM: m.standoffUsedM,
     );
   }
 

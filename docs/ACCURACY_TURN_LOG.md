@@ -43,6 +43,7 @@
 
 | **74** | **+127** | Implement Home Scan class (walk → plan) | On-device package: floor hits + pose trail; `HomeScanPackage`/`HomeScanService`; re-fit + Review; UI Home Scan branding. Cloud worker later. | Install **+127**, walk full loop, Review empty metric plan. |
 | **76** | **+128** | No new FB; next after +126/+127: pose-trail accuracy + non-empty plan | (1) **`ArPolygonMap.resolveWalkMeters`**: fuse floor hits + camera pose trail + 0.75 m standoff (Planner5D walk-inside-room). (2) Home Scan `resolvedSize` uses fuse; package JSON logs `fuse_source`. (3) Assist **placeholder door/window** so Review is not bare box (e7b247fd). (4) Native: **vertical plane bases** + pose envelope in live size; `HORIZONTAL_AND_VERTICAL` finding. Tests fuse expand + openings. | **Field:** install **+128**, walk walls looking at floor *and* walls; expect size not short when floor mesh incomplete. **Next:** photo inventory auto after walk; optional depth densify. |
+| **77** | **+130** | No new FB after +128/+129 one-button scan; accuracy densify + furniture wall-anchor | (1) **ARCore PointCloud** near-floor densify (**not** DepthMode — black-camera risk). (2) **Adaptive standoff** from floor−pose gap + **agreement** score. (3) Soft-max fused size with native measure when they agree. (4) `toPlanWithAiFurniture`: OpeningChain + **FurniturePositionMap** + door keep-out. Research: depth-from-motion ~5–8 cm offline; on-device PointCloud safer. Tests agreement + wall-anchored AI plan. | **Field:** install **+130** → Scan the room → full loop. Size should be more stable; furniture wall-hugged. **Next:** optional raw depth on supported devices only; export corners for Open3D colab. |
 
 ---
 
@@ -53,7 +54,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–76 / +105–**+128** | Geometry → walk → robust → Home Scan → **pose+floor fuse** |
+| D Accuracy resume | 55–77 / +105–**+130** | Geometry → Home Scan → fuse → **PointCloud densify** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

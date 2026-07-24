@@ -1,6 +1,6 @@
 # Known issues — RoomCraft closed beta
 
-Last updated: 2026-07-24 · Version **1.0.0-beta.1+128**
+Last updated: 2026-07-24 · Version **1.0.0-beta.1+130**
 
 ## Expected limitations
 

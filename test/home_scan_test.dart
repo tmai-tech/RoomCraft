@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:room_craft/domain/ar_polygon_map.dart';
 import 'package:room_craft/domain/home_scan.dart';
 import 'package:room_craft/domain/photo_true_layout.dart';
+import 'package:room_craft/models/stroke_model.dart';
 import 'package:room_craft/services/ar_measure_service.dart';
 
 void main() {
@@ -99,6 +100,69 @@ void main() {
     expect(plan.roomWidthFt, greaterThan(10));
     expect(
       plan.warnings.any((w) => w.contains('AI starter furniture')),
+      isTrue,
+    );
+  });
+
+  test('+130 fuse reports agreement and adaptive standoff', () {
+    final floor = ArPolygonMap.walkCloudRectM(
+      widthM: 5.0,
+      lengthM: 3.5,
+      samplesPerEdge: 8,
+      noiseM: 0.02,
+    );
+    final poses = ArPolygonMap.walkCloudRectM(
+      widthM: 3.5,
+      lengthM: 2.0,
+      samplesPerEdge: 8,
+      noiseM: 0.02,
+      seed: 5,
+    );
+    final r = ArPolygonMap.resolveWalkMeters(
+      floorHits: floor,
+      poses: poses,
+      standoffM: 0.75,
+    );
+    expect(r, isNotNull);
+    expect(r!.agreement, greaterThan(0.0));
+    expect(r.standoffUsedM, greaterThanOrEqualTo(0.35));
+    expect(r.standoffUsedM, lessThanOrEqualTo(1.25));
+    expect(r.fuseSource, isNotEmpty);
+  });
+
+  test('+130 AI furniture wall-anchored + openings present', () {
+    final cloud = ArPolygonMap.walkCloudRectM(widthM: 5.0, lengthM: 4.0);
+    final flat = <double>[];
+    for (final p in cloud) {
+      flat.addAll(p);
+    }
+    final measure = ArRoomMeasure(
+      widthFt: 16.4,
+      lengthFt: 13.1,
+      widthM: 5.0,
+      lengthM: 4.0,
+      mode: 'auto',
+      cornersM: flat,
+      sampleCount: cloud.length,
+      coverageScore: 0.9,
+      orthogonalScore: 0.95,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final plan = pack.toPlanWithAiFurniture();
+    expect(plan.furniture.where((f) => f.included), isNotEmpty);
+    expect(plan.walls.any((s) => s.type == StrokeType.door), isTrue);
+    final w = plan.roomWidthFt;
+    final l = plan.roomLengthFt;
+    var nearWall = 0;
+    for (final f in plan.furniture.where((x) => x.included)) {
+      final cx = f.posFt.dx;
+      final cy = f.posFt.dy;
+      final d = [cx, w - cx, cy, l - cy].reduce((a, b) => a < b ? a : b);
+      if (d < 3.5) nearWall++;
+    }
+    expect(nearWall, greaterThan(0));
+    expect(
+      plan.warnings.any((w) => w.contains('+130') || w.contains('wall-anchored')),
       isTrue,
     );
   });
