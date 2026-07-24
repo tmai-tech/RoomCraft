@@ -198,35 +198,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         _isLoading = false;
         _loadingDetail = '';
       });
-      final cov = m.coverageScore;
-      final warn = m.consistencyError > 0.08
-          ? ' Edges/coverage weak — walk more walls if size looks short.'
-          : (m.isAuto || m.isPolygon) && m.orthogonalScore >= 0.9
-              ? ' Floor map fit looks strong.'
-              : '';
-      final coverNote = m.isAuto && cov > 0 && cov < 0.75
-          ? ' Wall cover only ${(cov * 100).round()}% — re-walk edges for accuracy.'
-          : '';
-      final samples = m.sampleCount > 0 ? m.sampleCount : pack.sampleCount;
+      // +128: Home Scan should open a usable plan (size + AI layout), not
+      // nag for furniture photos. Photos remain optional assist later.
+      if (m.isAuto || m.isPolygon) {
+        await _openHomeScanResult(pack);
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 6),
-          content: Text(
-            '${m.summaryLabel}.$warn$coverNote '
-            'Home Scan saved ($samples floor pts). '
-            'Tap Build plan for Review, or add photos for furniture.',
-          ),
-          action: SnackBarAction(
-            label: 'Add photos',
-            onPressed: () {
-              if (!mounted) return;
-              setState(() {
-                // Stay on AR path but surface free-frame picker via advanced
-                _showAdvanced = true;
-              });
-            },
-          ),
-        ),
+        SnackBar(content: Text('${m.summaryLabel}. Tap Build plan to continue.')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -241,6 +220,59 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         );
       }
     }
+  }
+
+  /// +128: after walk → usable plan (size + AI furniture), not photo upload nag.
+  Future<void> _openHomeScanResult(HomeScanPackage pack) async {
+    if (!mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Home Scan mapped'),
+        content: Text(
+          'Room ${pack.resolvedSize.widthFt.toStringAsFixed(1)} × '
+          '${pack.resolvedSize.lengthFt.toStringAsFixed(1)} ft from your walk '
+          '(${pack.sampleCount} floor pts · ${pack.poseCount} poses).\n\n'
+          '• Open plan with starter furniture (recommended)\n'
+          '• Empty metric room only\n'
+          '• Place furniture in AR camera\n\n'
+          'Photos are optional later — not required after a walk scan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'empty'),
+            child: const Text('Empty room'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'ar_place'),
+            child: const Text('AR place'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'furnished'),
+            child: const Text('Open plan'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    final mode = choice ?? 'furnished';
+    if (mode == 'ar_place' && _arMeasure != null) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ArPlaceLayoutScreen(
+            measure: _arMeasure!,
+            roomName: 'Home Scan',
+          ),
+        ),
+      );
+      return;
+    }
+    final raw = mode == 'empty' ? pack.toPlan() : pack.toPlanWithAiFurniture();
+    final plan = PhotoTrueLayout.resolveForReview(raw);
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ScanReviewScreen(initial: plan)),
+    );
   }
 
   @override
@@ -1531,7 +1563,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                   ],
                   const SizedBox(height: 16),
                   Text(
-                    '2. Optional — photos for furniture',
+                    '2. Optional later — wall photos (not required after Home Scan)',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),

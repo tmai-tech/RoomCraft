@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
-import '../models/furniture_item.dart';
 import '../models/room_model.dart';
 import '../models/scan_result.dart';
 import '../services/ar_measure_service.dart';
