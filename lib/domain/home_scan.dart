@@ -150,12 +150,12 @@ class HomeScanPackage {
     );
   }
 
-  /// Metric room + on-device AI starter furniture (+128/+130).
+  /// Metric room + on-device AI starter furniture (+128/+130/+133).
   ///
   /// Walk locks **size**; furniture is a catalog layout seed (not photo-true).
-  /// +130: wall-anchor + door keep-out so pieces don't float mid-room / block doors.
+  /// +133: denser default style (not sparse modern-minimal on 10×10).
   ScanResult toPlanWithAiFurniture({
-    DesignStyle style = DesignStyle.modernMinimal,
+    DesignStyle? style,
     double pixelsPerFoot = 20,
   }) {
     final base = toPlan();
@@ -165,8 +165,14 @@ class HomeScanPackage {
       widthInFeet: base.roomWidthFt,
       lengthInFeet: base.roomLengthFt,
     );
-    // Pick style from aspect: long rooms → home office / living; square → modern
-    final picked = style;
+    // +133: denser living/family fill so plan is not empty-looking after scan
+    final area = base.roomWidthFt * base.roomLengthFt;
+    final picked = style ??
+        (area >= 160
+            ? DesignStyle.family
+            : area >= 110
+                ? DesignStyle.cozy
+                : DesignStyle.homeOffice);
     final items = AiDesigner.furnish(
       room: room,
       pixelsPerFoot: pixelsPerFoot,

@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+133 (2026-07-24)
+
+### Fix — feedback 225fb5de: bad 10×10 sparse plan after scan
+- Always **4 closed walls** in editor from scan (no broken outline).
+- Denser AI furniture default (family/cozy/office by room size).
+- Reject half-walks that produce tiny rooms / too few points — ask to re-scan.
+- Skip resolveForReview wipe on one-tap scan path.
+
 ## 1.0.0-beta.1+132 (2026-07-24)
 
 ### Fix — scan stuck at ~90% / furniture confusion

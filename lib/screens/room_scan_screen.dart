@@ -3,14 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
 import '../domain/home_scan.dart';
-import '../domain/photo_true_layout.dart';
 import '../domain/scan_parser.dart';
 import '../providers/room_provider.dart';
 import '../services/ar_measure_service.dart';
 import '../services/home_scan_service.dart';
 import 'blueprint_screen.dart';
 
-/// One button flow: scan room → plan with furniture. Nothing else (+129).
+/// Scan the room → plan with furniture. One path only (+129/+133).
 class RoomScanScreen extends ConsumerStatefulWidget {
   const RoomScanScreen({super.key});
 
@@ -61,19 +60,34 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       final measure = await ArMeasureService.measureRoom(mode: 'auto');
       if (!mounted) return;
 
-      setState(() => _status = 'Creating plan with furniture…');
       final pack = HomeScanPackage.fromMeasure(
         measure,
         appVersion: AppConfig.versionLabel,
       );
+
+      // +133: reject half-walks that land on a fake small square (feedback 225fb5de)
+      final size = pack.resolvedSize;
+      final tooFew = pack.sampleCount < 16 && pack.poseCount < 20;
+      final tiny = size.widthFt < 9 || size.lengthFt < 8;
+      if (tooFew || tiny) {
+        setState(() {
+          _busy = false;
+          _error = tiny
+              ? 'Room size looks too small (${size.widthFt.toStringAsFixed(0)}×${size.lengthFt.toStringAsFixed(0)} ft). '
+                  'Walk a full loop near all walls, then Done.'
+              : 'Not enough map points (${pack.sampleCount}). '
+                  'Walk slowly around the whole room, then Done.';
+        });
+        return;
+      }
+
+      setState(() => _status = 'Creating plan with furniture…');
       try {
         await HomeScanService().save(pack);
       } catch (_) {}
 
-      // Walk = room size. Furniture = auto layout on that size (not from floor video).
-      final plan = PhotoTrueLayout.resolveForReview(
-        pack.toPlanWithAiFurniture(),
-      );
+      // No resolveForReview wipe — direct plan + dense furniture + closed walls
+      final plan = pack.toPlanWithAiFurniture();
       final pxf = AppConfig.defaultPixelsPerFoot;
       final converted = ScanParser.toEditor(plan, pxf);
       ref.read(roomProvider.notifier).initFromScan(
@@ -130,8 +144,8 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Walk around the room once. Tap Done when the size shows. '
-                  'You get a plan with furniture automatically.',
+                  'Walk around the whole room once. Tap Done when size appears.\n'
+                  'You get a full plan with furniture.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),

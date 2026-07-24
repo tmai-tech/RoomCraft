@@ -355,28 +355,59 @@ class ScanParser {
   }
 
   /// Convert feet-space scan to editor strokes/furniture (pixel positions).
+  ///
+  /// +133: always inject a closed rectangle of wall strokes so the plan is never
+  /// a broken open outline (feedback 225fb5de incomplete walls).
   static ({
     double width,
     double length,
     List<StrokeModel> strokes,
     List<FurnitureItem> furniture,
   }) toEditor(ScanResult result, double pixelsPerFoot) {
-    final strokes = result.walls.map((w) {
+    final pxf = pixelsPerFoot <= 0 ? 20.0 : pixelsPerFoot;
+    final w = result.roomWidthFt <= 0 ? 12.0 : result.roomWidthFt;
+    final l = result.roomLengthFt <= 0 ? 12.0 : result.roomLengthFt;
+
+    final openings = result.walls.where((s) => s.type != StrokeType.wall).map((seg) {
       return StrokeModel(
         id: _uuid.v4(),
-        type: w.type,
+        type: seg.type,
         points: [
-          Offset(w.startFt.dx * pixelsPerFoot, w.startFt.dy * pixelsPerFoot),
-          Offset(w.endFt.dx * pixelsPerFoot, w.endFt.dy * pixelsPerFoot),
+          Offset(seg.startFt.dx * pxf, seg.startFt.dy * pxf),
+          Offset(seg.endFt.dx * pxf, seg.endFt.dy * pxf),
         ],
       );
     }).toList();
+
+    // Full closed perimeter (always)
+    final perimeter = <StrokeModel>[
+      StrokeModel(
+        id: _uuid.v4(),
+        type: StrokeType.wall,
+        points: [Offset.zero, Offset(w * pxf, 0)],
+      ),
+      StrokeModel(
+        id: _uuid.v4(),
+        type: StrokeType.wall,
+        points: [Offset(w * pxf, 0), Offset(w * pxf, l * pxf)],
+      ),
+      StrokeModel(
+        id: _uuid.v4(),
+        type: StrokeType.wall,
+        points: [Offset(w * pxf, l * pxf), Offset(0, l * pxf)],
+      ),
+      StrokeModel(
+        id: _uuid.v4(),
+        type: StrokeType.wall,
+        points: [Offset(0, l * pxf), Offset.zero],
+      ),
+    ];
 
     final furniture = result.furniture.where((f) => f.included).map((f) {
       return FurnitureItem(
         id: _uuid.v4(),
         type: f.type,
-        position: Offset(f.posFt.dx * pixelsPerFoot, f.posFt.dy * pixelsPerFoot),
+        position: Offset(f.posFt.dx * pxf, f.posFt.dy * pxf),
         widthInFeet: f.widthFt,
         lengthInFeet: f.lengthFt,
         rotationAngle: f.rotationRad,
@@ -384,9 +415,9 @@ class ScanParser {
     }).toList();
 
     return (
-      width: result.roomWidthFt,
-      length: result.roomLengthFt,
-      strokes: strokes,
+      width: w,
+      length: l,
+      strokes: [...perimeter, ...openings],
       furniture: furniture,
     );
   }
