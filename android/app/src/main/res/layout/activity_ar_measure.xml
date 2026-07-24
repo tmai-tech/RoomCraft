@@ -4,13 +4,19 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- SceneView AR camera (Filament + ARCore) — replaces broken custom GLSurfaceView -->
     <io.github.sceneview.ar.ARSceneView
         android:id="@+id/ar_scene_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Center reticle -->
+    <!-- Live top-down understanding (dots + room box) -->
+    <com.logicrequire.room_craft.ar.WalkMapView
+        android:id="@+id/walk_map"
+        android:layout_width="140dp"
+        android:layout_height="140dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
