@@ -1242,4 +1242,7 @@ class ArMeasureActivity : AppCompatActivity() {
                 if (pv < minV) minV = pv
                 if (pv > maxV) maxV = pv
             }
-            return Triple(max(abs(maxU - minU), abs(maxV - minV)), min(abs(maxU - minU), abs(maxV - 
+            return Triple(max(abs(maxU - minU), abs(maxV - minV)), min(abs(maxU - minU), abs(maxV - minV)), orthoScore)
+        }
+    }
+}
