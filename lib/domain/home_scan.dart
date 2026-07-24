@@ -139,20 +139,26 @@ class HomeScanPackage {
       final ll = measure.wallLockLengthM * mToFt;
       final lockW = ww >= ll ? ww : ll;
       final lockL = ww >= ll ? ll : ww;
-      if (lockW >= 6 && lockL >= 5) {
+      if (lockW >= 5 && lockL >= 4) {
         final aW = w > 0 ? (lockW - w).abs() / lockW : 1.0;
         final aL = l > 0 ? (lockL - l).abs() / lockL : 1.0;
-        if (measure.wallLockPairs >= 2 && aW < 0.22 && aL < 0.22) {
+        final strongUnder = lockW > w * 1.20 || lockL > l * 1.20;
+        if (measure.wallLockPairs >= 2 && (aW < 0.22 && aL < 0.22 || strongUnder)) {
+          // Agree OR clear under-size → trust wall-to-wall pairs
           w = lockW;
           l = lockL;
           src = 'wallLock';
-          agree = math.max(agree, 0.92);
+          agree = math.max(agree, strongUnder ? 0.85 : 0.92);
           ortho = math.max(ortho, 0.96);
           cov = math.max(cov, 0.88);
         } else {
           // Soft expand toward wall lock (under-size fix)
-          if (lockW > w) w = w * 0.4 + lockW * 0.6;
-          if (lockL > l) l = l * 0.4 + lockL * 0.6;
+          if (lockW > w) {
+            w = strongUnder ? w * 0.25 + lockW * 0.75 : w * 0.4 + lockW * 0.6;
+          }
+          if (lockL > l) {
+            l = strongUnder ? l * 0.25 + lockL * 0.75 : l * 0.4 + lockL * 0.6;
+          }
           src = '$src+wallLock';
           agree = math.max(agree, 0.8);
         }
