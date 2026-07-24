@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+131 (2026-07-24)
+
+### Accuracy — conditional depth + Open3D export (+131)
+- Enable **DepthMode.AUTOMATIC only when supported** (else DISABLED — avoids +121 black camera).
+- Depth-assist screen rays densify walk map; stricter Done quality gate.
+- Home Scan writes Open3D **XYZ/PLY**; `experiments/colab/lib/open3d_floor_fit.py` for offline RANSAC.
+- See `docs/ACCURACY_TURN_LOG.md` Turn 78.
+
 ## 1.0.0-beta.1+130 (2026-07-24)
 
 ### Accuracy — feature densify + adaptive fuse (+130)

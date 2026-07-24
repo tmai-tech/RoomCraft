@@ -130,6 +130,33 @@ void main() {
     expect(r.fuseSource, isNotEmpty);
   });
 
+  test('+131 Open3D XYZ/PLY export has vertices', () {
+    final cloud = ArPolygonMap.walkCloudRectM(widthM: 4.0, lengthM: 3.0);
+    final flat = <double>[];
+    for (final p in cloud) {
+      flat.addAll(p);
+    }
+    final measure = ArRoomMeasure(
+      widthFt: 13.1,
+      lengthFt: 9.8,
+      widthM: 4.0,
+      lengthM: 3.0,
+      mode: 'auto',
+      cornersM: flat,
+      sampleCount: cloud.length,
+      coverageScore: 0.85,
+      depthEnabled: true,
+      depthSamples: 12,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final xyz = pack.toOpen3dXyz();
+    expect(xyz.trim().split('\n').length, greaterThanOrEqualTo(12));
+    final ply = pack.toOpen3dPly();
+    expect(ply.contains('element vertex'), isTrue);
+    expect(ply.contains('end_header'), isTrue);
+    expect(measure.depthEnabled, isTrue);
+  });
+
   test('+130 AI furniture wall-anchored + openings present', () {
     final cloud = ArPolygonMap.walkCloudRectM(widthM: 5.0, lengthM: 4.0);
     final flat = <double>[];

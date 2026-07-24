@@ -28,6 +28,9 @@ class ArRoomMeasure {
   final double diagonalError;
   /// +126 angular walk coverage (0..1) — Planner5D loop completeness.
   final double coverageScore;
+  /// +131 Depth API was enabled for this capture (device-supported only).
+  final bool depthEnabled;
+  final int depthSamples;
 
   const ArRoomMeasure({
     required this.widthFt,
@@ -45,6 +48,8 @@ class ArRoomMeasure {
     this.orthogonalScore = 0,
     this.diagonalError = 0,
     this.coverageScore = 0,
+    this.depthEnabled = false,
+    this.depthSamples = 0,
   });
 
   factory ArRoomMeasure.fromMap(Map<dynamic, dynamic> map) {
@@ -71,6 +76,8 @@ class ArRoomMeasure {
       orthogonalScore: (map['orthogonalScore'] as num?)?.toDouble() ?? 0,
       diagonalError: (map['diagonalError'] as num?)?.toDouble() ?? 0,
       coverageScore: (map['coverageScore'] as num?)?.toDouble() ?? 0,
+      depthEnabled: map['depthEnabled'] == true,
+      depthSamples: (map['depthSamples'] as num?)?.toInt() ?? 0,
     );
   }
 

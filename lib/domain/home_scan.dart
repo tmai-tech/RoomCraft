@@ -129,12 +129,14 @@ class HomeScanPackage {
       sourceLabel: 'Home Scan (AR walk → metric plan)',
       accuracyScore: score,
       warnings: [
-        'Home Scan (+130): floor + pose fuse + feature densify → room size',
+        'Home Scan (+131): floor + pose + features'
+            '${measure.depthEnabled ? ' + depth' : ''} → room size',
         'Room ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
             ' · samples $sampleCount · poses $poseCount'
             '${ortho > 0 ? ' · fit ${(ortho * 100).round()}%' : ''}'
             '${cov > 0 ? ' · wall cover ${(cov * 100).round()}%' : ''}'
-            '$agreeNote · ${size.fuseSource}',
+            '$agreeNote · ${size.fuseSource}'
+            '${measure.depthEnabled ? ' · depth' : ''}',
         'Scale lock: ${ScaleLockConfidence.sourceLabel(ScaleSource.arPolygon)}',
         if (cov > 0 && cov < 0.75)
           'Incomplete walk loop — re-scan walking all four walls for better size',
@@ -234,6 +236,44 @@ class HomeScanPackage {
 
   String toJsonString({bool pretty = true}) =>
       pretty ? const JsonEncoder.withIndent('  ').convert(toJson()) : jsonEncode(toJson());
+
+  /// Open3D / CloudCompare friendly XYZ (meters). One point per line: `x y z`.
+  ///
+  /// Offline: `o3d.io.read_point_cloud("scan.xyz", format='xyz')` then plane RANSAC.
+  String toOpen3dXyz({bool includePoses = false}) {
+    final buf = StringBuffer();
+    for (final p in floorHitsM) {
+      if (p.length < 3) continue;
+      buf.writeln('${p[0]} ${p[1]} ${p[2]}');
+    }
+    if (includePoses) {
+      for (final p in posesM) {
+        if (p.length < 3) continue;
+        buf.writeln('${p[0]} ${p[1]} ${p[2]}');
+      }
+    }
+    return buf.toString();
+  }
+
+  /// Minimal PLY (ASCII vertex-only) for MeshLab / Open3D.
+  String toOpen3dPly({bool includePoses = false}) {
+    final pts = <List<double>>[
+      ...floorHitsM.where((p) => p.length >= 3),
+      if (includePoses) ...posesM.where((p) => p.length >= 3),
+    ];
+    final buf = StringBuffer()
+      ..writeln('ply')
+      ..writeln('format ascii 1.0')
+      ..writeln('element vertex ${pts.length}')
+      ..writeln('property float x')
+      ..writeln('property float y')
+      ..writeln('property float z')
+      ..writeln('end_header');
+    for (final p in pts) {
+      buf.writeln('${p[0]} ${p[1]} ${p[2]}');
+    }
+    return buf.toString();
+  }
 
   factory HomeScanPackage.fromMeasure(
     ArRoomMeasure m, {

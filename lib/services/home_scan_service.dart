@@ -24,6 +24,11 @@ class HomeScanService {
     final d = await _dir();
     final f = File('${d.path}/${pack.id}.json');
     await f.writeAsString(pack.toJsonString());
+    // +131: also write Open3D-ready XYZ for offline RANSAC experiments
+    try {
+      await File('${d.path}/${pack.id}_floor.xyz')
+          .writeAsString(pack.toOpen3dXyz());
+    } catch (_) {}
     final index = File('${d.path}/index.jsonl');
     await index.writeAsString(
       '${jsonEncode({
@@ -37,6 +42,16 @@ class HomeScanService {
       mode: FileMode.append,
     );
     return f;
+  }
+
+  /// Export Open3D XYZ (+ optional PLY) next to the package JSON.
+  Future<({File xyz, File ply})> exportOpen3d(HomeScanPackage pack) async {
+    final d = await _dir();
+    final xyz = File('${d.path}/${pack.id}_floor.xyz');
+    final ply = File('${d.path}/${pack.id}_floor.ply');
+    await xyz.writeAsString(pack.toOpen3dXyz());
+    await ply.writeAsString(pack.toOpen3dPly());
+    return (xyz: xyz, ply: ply);
   }
 
   Future<List<String>> listIds() async {

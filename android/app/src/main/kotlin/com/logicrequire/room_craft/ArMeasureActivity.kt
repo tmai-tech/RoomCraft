@@ -77,6 +77,9 @@ class ArMeasureActivity : AppCompatActivity() {
     /** +126: largest ARCore horizontal plane extents (world XZ). */
     private var planeExtentXM = 0.0
     private var planeExtentZM = 0.0
+    /** +131: Depth API enabled only when session supports it. */
+    private var depthEnabled = false
+    private var depthSampleCount = 0
 
     private val handler = Handler(Looper.getMainLooper())
     private val cameraWatchdog = Runnable {
@@ -150,17 +153,38 @@ class ArMeasureActivity : AppCompatActivity() {
             btnDone.setOnClickListener { finishWithResult() }
             btnMark.setOnClickListener { markCenterHit() }
 
-            arSceneView.sessionConfiguration = { _, config ->
-                config.depthMode = Config.DepthMode.DISABLED
+            // +131: enable Depth only when supported (always-on AUTOMATIC blacked
+            // camera on many OEMs in +121). Unsupported devices stay DISABLED.
+            arSceneView.sessionConfiguration = { session, config ->
+                depthEnabled = try {
+                    session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)
+                } catch (_: Exception) {
+                    false
+                }
+                config.depthMode = if (depthEnabled) {
+                    Config.DepthMode.AUTOMATIC
+                } else {
+                    Config.DepthMode.DISABLED
+                }
                 // +128: horizontal + vertical so wall planes densify the floor map
                 config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
                 config.lightEstimationMode = Config.LightEstimationMode.DISABLED
                 config.focusMode = Config.FocusMode.AUTO
                 config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
                 config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+                Log.i(TAG, "depthEnabled=$depthEnabled (+131)")
             }
-            arSceneView.configureSession { _, config ->
-                config.depthMode = Config.DepthMode.DISABLED
+            arSceneView.configureSession { session, config ->
+                depthEnabled = try {
+                    session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)
+                } catch (_: Exception) {
+                    false
+                }
+                config.depthMode = if (depthEnabled) {
+                    Config.DepthMode.AUTOMATIC
+                } else {
+                    Config.DepthMode.DISABLED
+                }
                 config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
                 config.lightEstimationMode = Config.LightEstimationMode.DISABLED
                 config.focusMode = Config.FocusMode.AUTO
@@ -212,16 +236,19 @@ class ArMeasureActivity : AppCompatActivity() {
                     handler.removeCallbacks(cameraWatchdog)
                 }
 
-                // +125/+127/+130: floor + pose + feature points while user walks
+                // +125/+127/+130/+131: floor + pose + features + optional depth rays
                 if (autoMode && frame.camera.trackingState == TrackingState.TRACKING) {
                     if (uiTick % 4 == 0) {
                         sampleAutoFloor(session, frame)
                         sampleCameraPose(frame)
                     }
-                    // +130: sparse ARCore feature points near floor (no DepthMode —
-                    // AUTOMATIC depth blacked camera on many OEMs in +121)
+                    // +130: sparse ARCore feature points near floor
                     if (uiTick % 10 == 0) {
                         sampleFeaturePointsNearFloor(frame)
+                    }
+                    // +131: depth-assisted wall/floor rays when Depth API supported
+                    if (depthEnabled && uiTick % 12 == 0) {
+                        sampleDepthAssistRays(frame)
                     }
                 }
 
@@ -452,8 +479,7 @@ class ArMeasureActivity : AppCompatActivity() {
 
     /**
      * +130: densify floor cloud from ARCore feature [PointCloud] near floor Y.
-     * Does **not** enable DepthMode (black-camera risk). Feature points improve
-     * room edge capture while walking (magicplan / Open3D sparse map class).
+     * Feature points improve room edge capture while walking (Open3D sparse map).
      */
     private fun sampleFeaturePointsNearFloor(frame: com.google.ar.core.Frame) {
         try {
@@ -484,6 +510,41 @@ class ArMeasureActivity : AppCompatActivity() {
             }
         } catch (_: Exception) {
             // Point cloud not available on this frame — ignore
+        }
+    }
+
+    /**
+     * +131: screen-edge hit tests (depth improves hits when AUTOMATIC supported).
+     * Adds floor/wall base points so incomplete plane mesh under-sizes less.
+     */
+    private fun sampleDepthAssistRays(frame: com.google.ar.core.Frame) {
+        try {
+            if (arSceneView.width <= 0 || arSceneView.height <= 0) return
+            val yFloor = lastSamplePose?.get(1) ?: 0f
+            val rays = arrayOf(
+                0.18f to 0.58f,
+                0.82f to 0.58f,
+                0.50f to 0.42f,
+                0.50f to 0.72f,
+                0.30f to 0.50f,
+                0.70f to 0.50f,
+            )
+            for ((nx, ny) in rays) {
+                val cx = arSceneView.width * nx
+                val cy = arSceneView.height * ny
+                val hits = frame.hitTest(cx, cy)
+                val best = hits.firstOrNull { h ->
+                    val t = h.trackable
+                    t is Plane && t.trackingState == TrackingState.TRACKING
+                } ?: hits.firstOrNull()
+                if (best != null) {
+                    val p = best.hitPose
+                    // Project to floor Y for planar cloud fit
+                    maybeAddSample(floatArrayOf(p.tx(), yFloor, p.tz()))
+                    depthSampleCount++
+                }
+            }
+        } catch (_: Exception) {
         }
     }
 
@@ -901,6 +962,7 @@ class ArMeasureActivity : AppCompatActivity() {
                 if (lastCoverageScore > 0) {
                     append(String.format(" · wall cover %.0f%%", lastCoverageScore * 100))
                 }
+                if (depthEnabled) append(" · depth on")
                 append('\n')
                 if (autoWidthM >= 0.5 && autoLengthM >= 0.5) {
                     append(
@@ -921,10 +983,12 @@ class ArMeasureActivity : AppCompatActivity() {
                     append("Keep walking until size appears…")
                 }
             }
-            // Allow Done earlier, but prefer coverage ≥50% for quality
+            // +131 quality gate: prefer cover ≥55% or dense stable cloud
             val ready = autoWidthM >= 1.5 && autoLengthM >= 1.5 &&
-                walkSamples.size >= 8 &&
-                (lastCoverageScore >= 0.45 || walkSamples.size >= 40)
+                walkSamples.size >= 12 &&
+                (lastCoverageScore >= 0.55 ||
+                    (walkSamples.size >= 48 && autoStableTicks >= 6) ||
+                    (lastCoverageScore >= 0.45 && walkSamples.size >= 28))
             btnDone.isEnabled = ready
             return
         }
@@ -1029,6 +1093,8 @@ class ArMeasureActivity : AppCompatActivity() {
             putExtra(EXTRA_ORTHO_SCORE, lastOrthoScore)
             putExtra(EXTRA_DIAG_ERROR, lastDiagError)
             putExtra(EXTRA_COVERAGE_SCORE, lastCoverageScore)
+            putExtra(EXTRA_DEPTH_ENABLED, depthEnabled)
+            putExtra(EXTRA_DEPTH_SAMPLES, depthSampleCount)
             val samples = if (autoMode) walkSamples else cornerDots
             if (samples.isNotEmpty()) {
                 val flat = FloatArray(samples.size * 3)
@@ -1084,6 +1150,9 @@ class ArMeasureActivity : AppCompatActivity() {
         const val EXTRA_DIAG_ERROR = "diag_error"
         /** +126 walk angular coverage 0..1. */
         const val EXTRA_COVERAGE_SCORE = "coverage_score"
+        /** +131 Depth API was enabled for this measure. */
+        const val EXTRA_DEPTH_ENABLED = "depth_enabled"
+        const val EXTRA_DEPTH_SAMPLES = "depth_samples"
         const val EXTRA_ERROR = "error"
         const val MODE_QUICK = "quick"
         const val MODE_CHAIN = "chain"

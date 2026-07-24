@@ -340,6 +340,10 @@ class MainActivity : FlutterActivity() {
                     data.getIntExtra(ArMeasureActivity.EXTRA_SAMPLE_COUNT, cornersFlat.size / 3)
                 val poseCount =
                     data.getIntExtra(ArMeasureActivity.EXTRA_POSE_COUNT, posesFlat.size / 3)
+                val depthEnabled =
+                    data.getBooleanExtra(ArMeasureActivity.EXTRA_DEPTH_ENABLED, false)
+                val depthSamples =
+                    data.getIntExtra(ArMeasureActivity.EXTRA_DEPTH_SAMPLES, 0)
                 pending.success(
                     mapOf(
                         "widthFt" to widthFt,
@@ -356,6 +360,8 @@ class MainActivity : FlutterActivity() {
                         "orthogonalScore" to orthoScore,
                         "diagonalError" to diagError,
                         "coverageScore" to coverageScore,
+                        "depthEnabled" to depthEnabled,
+                        "depthSamples" to depthSamples,
                         "source" to "arcore",
                     ),
                 )
