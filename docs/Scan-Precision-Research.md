@@ -77,7 +77,13 @@ Industry pipeline (magicplan, RoomPlan, Matterport, Pointorama):
 4. **Openings + furniture** as secondary labeling (vision or catalog).
 5. **User verify** dimensions (tape/laser lock for pro accuracy).
 
-RoomCraft **+123/+124** implements the phone-grade step (1–3) as an **AR multi-dot floor map**: user marks 4 floor corners (sparse point cloud), reconstruct W×L from ordered opposite edges, then **orthogonal Gram-Schmidt rectangle fit** + **auto diagonal refine** from the same corner cloud (`ArPolygonMap` / native `resolvePolygonMeters`). Live aim HUD shows meters from last mark (AR Plan-class UX). Metric scale is **ARCore world meters**, not photo guesswork.
+RoomCraft **+123–+126** implements the phone-grade step (1–3) as:
+
+1. **Easy AR walk** (default, +125): continuous floor hits + plane polygon samples while the user walks (Planner5D Home Scan UX — 1.5–2 m from walls, camera slightly down).
+2. **Robust fit (+126)**: statistical outlier removal + **percentile (p2–p98) hull** on PCA axes (Open3D SOR-class) so tracking glitches cannot inflate size; **angular coverage** scores walk completeness.
+3. **Advanced multi-dot**: 4 floor corners + orthogonal Gram-Schmidt + diagonal refine.
+
+Metric scale is **ARCore world meters**, not photo guesswork. Furniture/openings still need photos, catalog, or AR Place after size lock.
 
 ### Python / open libraries for high-accuracy room mapping
 
@@ -95,11 +101,11 @@ Practical RoomCraft path: **AR multi-dot primary** → optional photo inventory 
 
 ## Capture tips (best results today)
 
-1. Prefer **AR Room Planner → 4-corner multi-dot** (or tape Field measure).
-2. Good lighting; walk corners slowly; wait for floor grid / Tracking before Mark.
+1. Prefer **AR Room Planner → easy walk** (full loop near walls until cover ≥75%), or tape Field measure.
+2. Good lighting; walk slowly; wait for live camera before sizing.
 3. If AR camera stays black: update **Google Play Services for AR**, re-grant camera.
-4. Standard door ~2.5–3 ft; don’t accept AI whole-wall doors on photo path.
-5. Furniture: catalog sizes + depth from wall; center from left corner.
+4. After size: add 2–3 room photos for furniture, or place from catalog / AR Place.
+5. Standard door ~2.5–3 ft; don’t accept AI whole-wall doors on photo path.
 6. In Review, fix openings before opening the editor.
 
 ## Sources (industry)

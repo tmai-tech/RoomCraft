@@ -578,7 +578,7 @@ class ScaleLockConfidence {
   static String sourceLabel(ScaleSource source) {
     switch (source) {
       case ScaleSource.arPolygon:
-        return 'AR 4-corner multi-dot map';
+        return 'AR multi-dot / easy walk map';
       case ScaleSource.arChain:
         return 'AR 4-wall chain';
       case ScaleSource.arQuick:

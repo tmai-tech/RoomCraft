@@ -22,6 +22,8 @@ class ArRoomMeasure {
   final double orthogonalScore;
   /// +124 |measuredDiag/expected − 1| after auto refine.
   final double diagonalError;
+  /// +126 angular walk coverage (0..1) — Planner5D loop completeness.
+  final double coverageScore;
 
   const ArRoomMeasure({
     required this.widthFt,
@@ -35,6 +37,7 @@ class ArRoomMeasure {
     this.cornersM = const [],
     this.orthogonalScore = 0,
     this.diagonalError = 0,
+    this.coverageScore = 0,
   });
 
   factory ArRoomMeasure.fromMap(Map<dynamic, dynamic> map) {
@@ -55,6 +58,7 @@ class ArRoomMeasure {
       cornersM: asDoubles(map['cornersM']),
       orthogonalScore: (map['orthogonalScore'] as num?)?.toDouble() ?? 0,
       diagonalError: (map['diagonalError'] as num?)?.toDouble() ?? 0,
+      coverageScore: (map['coverageScore'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -86,7 +90,10 @@ class ArRoomMeasure {
       final o = orthogonalScore > 0
           ? ' · fit ${(orthogonalScore * 100).round()}%'
           : '';
-      return '$base · AR easy walk$o';
+      final c = coverageScore > 0
+          ? ' · cover ${(coverageScore * 100).round()}%'
+          : '';
+      return '$base · AR easy walk$o$c';
     }
     if (isPolygon) {
       final o = orthogonalScore > 0
@@ -100,11 +107,16 @@ class ArRoomMeasure {
     return '$base · AR quick';
   }
 
-  /// Combined consistency error for scale-lock blend (+124).
+  /// Combined consistency error for scale-lock blend (+124/+126).
+  /// Incomplete walk coverage raises effective error so score is honest.
   double get consistencyError {
     final wall = oppositeWallError;
-    // Prefer the worse of wall/diag when both present
-    return wall > diagonalError ? wall : diagonalError;
+    var err = wall > diagonalError ? wall : diagonalError;
+    if (isAuto && coverageScore > 0 && coverageScore < 0.75) {
+      final covErr = (0.75 - coverageScore) * 0.20;
+      if (covErr > err) err = covErr;
+    }
+    return err;
   }
 
   ArRoomMeasure get normalized {
@@ -121,6 +133,7 @@ class ArRoomMeasure {
       cornersM: cornersM,
       orthogonalScore: orthogonalScore,
       diagonalError: diagonalError,
+      coverageScore: coverageScore,
     );
   }
 }

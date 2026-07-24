@@ -330,6 +330,8 @@ class MainActivity : FlutterActivity() {
                     data.getDoubleExtra(ArMeasureActivity.EXTRA_ORTHO_SCORE, 0.0)
                 val diagError =
                     data.getDoubleExtra(ArMeasureActivity.EXTRA_DIAG_ERROR, 0.0)
+                val coverageScore =
+                    data.getDoubleExtra(ArMeasureActivity.EXTRA_COVERAGE_SCORE, 0.0)
                 pending.success(
                     mapOf(
                         "widthFt" to widthFt,
@@ -342,6 +344,7 @@ class MainActivity : FlutterActivity() {
                         "cornersM" to cornersFlat,
                         "orthogonalScore" to orthoScore,
                         "diagonalError" to diagError,
+                        "coverageScore" to coverageScore,
                         "source" to "arcore",
                     ),
                 )

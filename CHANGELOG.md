@@ -2,6 +2,16 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+126 (2026-07-24)
+
+### Accuracy — robust AR easy walk (+126)
+- **Outlier-resistant room size:** statistical trim + **p2–p98 percentile hull** on walk cloud (Dart + native) so Instant Placement glitches cannot inflate the plan.
+- **Wall coverage score** (8-sector) with live coach: walk more walls until cover ≥75% (Planner5D-class loop).
+- Soft fuse with ARCore plane extents when coverage incomplete; multi-ray floor sampling.
+- Incomplete cover raises consistency error → honest Review score.
+- Post-AR snackbar nudges **add photos for furniture** (empty plan is size-only by design).
+- Tests for polluted clouds + partial-edge coverage. See `docs/ACCURACY_TURN_LOG.md` Turn 75.
+
 ## 1.0.0-beta.1+122 (2026-07-23)
 
 ### Fix — AR still blank on +121 (feedback a41da384)

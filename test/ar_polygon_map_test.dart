@@ -152,10 +152,94 @@ void main() {
       'wallsFt': [16.0, 12.0, 16.0, 12.0],
       'orthogonalScore': 0.92,
       'diagonalError': 0.02,
+      'coverageScore': 0.88,
       'cornersM': List.generate(60, (i) => i * 0.1),
       'source': 'arcore',
     });
     expect(m.isAuto, isTrue);
     expect(m.summaryLabel, contains('easy walk'));
+    expect(m.summaryLabel, contains('cover'));
+  });
+
+  test('+126 walk cloud with far outliers still recovers size', () {
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 5.0,
+      lengthM: 3.5,
+      samplesPerEdge: 10,
+      noiseM: 0.04,
+    );
+    // Inject Instant Placement / tracking glitches far outside the room
+    final polluted = [
+      ...cloud,
+      [20.0, 0.0, 20.0],
+      [-15.0, 0.0, 8.0],
+      [5.0, 0.0, -12.0],
+      [30.0, 0.0, -5.0],
+    ];
+    final r = ArPolygonMap.resolveMeters(polluted);
+    expect(r, isNotNull);
+    // Without robust trim, min-max would be ~45 m — must stay near 5×3.5
+    expect(r!.widthM, closeTo(5.0, 0.55));
+    expect(r.lengthM, closeTo(3.5, 0.55));
+    expect(r.coverageScore, greaterThan(0.5));
+  });
+
+  test('+126 partial-edge walk reports low coverage', () {
+    // L-walk: bottom + right only (Planner5D incomplete loop — missing 2 walls)
+    final rng = <List<double>>[];
+    for (var i = 0; i < 16; i++) {
+      final t = i / 15.0;
+      rng.add([t * 5.0, 0.0, 0.0]);
+      rng.add([t * 5.0, 0.0, 0.12]); // thin band so length ≥ 0.5m
+    }
+    for (var i = 0; i < 16; i++) {
+      final t = i / 15.0;
+      rng.add([5.0, 0.0, t * 3.5]);
+      rng.add([4.88, 0.0, t * 3.5]);
+    }
+    final r = ArPolygonMap.resolveMeters(rng);
+    expect(r, isNotNull);
+    // L-shape covers at most ~half the compass around centroid
+    expect(r!.coverageScore, lessThan(0.90));
+    // Full perimeter walk has higher cover
+    final full = ArPolygonMap.walkCloudRectM(
+      widthM: 5.0,
+      lengthM: 3.5,
+      samplesPerEdge: 8,
+      noiseM: 0.02,
+    );
+    final fullR = ArPolygonMap.resolveMeters(full);
+    expect(fullR, isNotNull);
+    expect(fullR!.coverageScore, greaterThan(r.coverageScore));
+  });
+
+  test('+126 consistencyError rises when coverage incomplete', () {
+    final low = ArRoomMeasure.fromMap({
+      'widthFt': 16.0,
+      'lengthFt': 12.0,
+      'widthM': 4.88,
+      'lengthM': 3.66,
+      'mode': 'auto',
+      'wallsFt': [16.0, 12.0, 16.0, 12.0],
+      'orthogonalScore': 0.9,
+      'diagonalError': 0.01,
+      'coverageScore': 0.4,
+      'cornersM': List.generate(30, (i) => i * 0.1),
+      'source': 'arcore',
+    });
+    final high = ArRoomMeasure.fromMap({
+      'widthFt': 16.0,
+      'lengthFt': 12.0,
+      'widthM': 4.88,
+      'lengthM': 3.66,
+      'mode': 'auto',
+      'wallsFt': [16.0, 12.0, 16.0, 12.0],
+      'orthogonalScore': 0.9,
+      'diagonalError': 0.01,
+      'coverageScore': 0.9,
+      'cornersM': List.generate(30, (i) => i * 0.1),
+      'source': 'arcore',
+    });
+    expect(low.consistencyError, greaterThan(high.consistencyError));
   });
 }

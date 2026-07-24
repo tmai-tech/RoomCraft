@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-/// Multi-dot / walk-cloud floor map → room W×L (+123–+125).
+/// Multi-dot / walk-cloud floor map → room W×L (+123–+126).
 ///
 /// Planner 5D / magicplan-class accuracy uses **metric geometry** from the
 /// device (AR/LiDAR), not monocular photos.
@@ -8,12 +8,14 @@ import 'dart:math' as math;
 /// - **+123**: 4 corner dots
 /// - **+124**: orthogonal fit + auto diagonal
 /// - **+125**: dense walk cloud (N samples / plane extents) for easy scan
+/// - **+126**: robust cloud — outlier trim, percentile hull (Open3D-style),
+///   angular coverage score (Planner5D walk completeness)
 ///
 /// Python research analogues (server / offline experiments):
-/// - Open3D plane segmentation + RANSAC wall extraction
+/// - Open3D plane segmentation + RANSAC / statistical outlier removal
 /// - RTAB-Map / ORB-SLAM3 sparse maps
 /// - AliceVision Meshroom photogrammetry (offline video)
-/// - scipy.spatial ConvexHull on floor-projected points
+/// - scipy.spatial ConvexHull + percentile AABB on floor-projected points
 class ArPolygonMap {
   ArPolygonMap._();
 
@@ -24,10 +26,11 @@ class ArPolygonMap {
     double oppositeEdgeError,
     double diagonalError,
     double orthogonalScore,
+    double coverageScore,
   })? resolveMeters(List<List<double>> dotsXyz) {
     if (dotsXyz.length < 4) return null;
 
-    // +125: dense walk cloud → orthogonal bounding rect (PCA axes)
+    // +125/+126: dense walk cloud → robust orthogonal rect (PCA + percentiles)
     if (dotsXyz.length > 4) {
       final cloud = _cloudOrthogonalFit(dotsXyz);
       if (cloud != null && cloud.widthM >= 0.5 && cloud.lengthM >= 0.5) {
@@ -37,6 +40,7 @@ class ArPolygonMap {
           oppositeEdgeError: 0.0,
           diagonalError: 0.0,
           orthogonalScore: cloud.orthogonalScore,
+          coverageScore: cloud.coverageScore,
         );
       }
     }
@@ -73,6 +77,7 @@ class ArPolygonMap {
       oppositeEdgeError: edgeFit.oppositeEdgeError,
       diagonalError: diag.error,
       orthogonalScore: ortho?.orthogonalScore ?? 0.0,
+      coverageScore: 1.0, // 4 deliberate corners → full coverage
     );
   }
 
@@ -83,6 +88,7 @@ class ArPolygonMap {
     double oppositeEdgeError,
     double diagonalError,
     double orthogonalScore,
+    double coverageScore,
   })? resolveFeet(List<List<double>> dotsXyz) {
     final m = resolveMeters(dotsXyz);
     if (m == null) return null;
@@ -93,6 +99,7 @@ class ArPolygonMap {
       oppositeEdgeError: m.oppositeEdgeError,
       diagonalError: m.diagonalError,
       orthogonalScore: m.orthogonalScore,
+      coverageScore: m.coverageScore,
     );
   }
 
@@ -285,32 +292,44 @@ class ArPolygonMap {
     );
   }
 
-  /// +125: PCA-ish axes from sample covariance → orthogonal bounding box.
-  static ({double widthM, double lengthM, double orthogonalScore})?
-      _cloudOrthogonalFit(List<List<double>> pts) {
+  /// +125/+126: PCA axes + **percentile hull** + outlier trim (Open3D-class).
+  ///
+  /// Raw min–max AABB on AR hits overestimates when Instant Placement or
+  /// depth noise lands far outside the room. Planner5D / magicplan-class maps
+  /// use robust extents (percentiles) and completeness (angular coverage).
+  static ({
+    double widthM,
+    double lengthM,
+    double orthogonalScore,
+    double coverageScore,
+  })? _cloudOrthogonalFit(List<List<double>> pts) {
     if (pts.length < 4) return null;
+
+    // Working set: drop gross outliers via iterative statistical filter.
+    var work = List<List<double>>.from(pts);
+    work = _statisticalOutlierTrim(work, maxIters: 2);
+
     var cx = 0.0, cz = 0.0;
-    for (final p in pts) {
+    for (final p in work) {
       cx += p[0];
       cz += _z(p);
     }
-    cx /= pts.length;
-    cz /= pts.length;
+    cx /= work.length;
+    cz /= work.length;
 
-    // Covariance
+    // Covariance on trimmed set
     var sxx = 0.0, sxz = 0.0, szz = 0.0;
-    for (final p in pts) {
+    for (final p in work) {
       final dx = p[0] - cx;
       final dz = _z(p) - cz;
       sxx += dx * dx;
       sxz += dx * dz;
       szz += dz * dz;
     }
-    sxx /= pts.length;
-    sxz /= pts.length;
-    szz /= pts.length;
+    sxx /= work.length;
+    sxz /= work.length;
+    szz /= work.length;
 
-    // Largest eigenvector of 2x2 covariance (principal axis)
     final trace = sxx + szz;
     final det = sxx * szz - sxz * sxz;
     final disc = math.max(0.0, trace * trace / 4 - det);
@@ -325,40 +344,117 @@ class ArPolygonMap {
     var un = math.sqrt(ux * ux + uz * uz);
     ux /= un;
     uz /= un;
-    // Orthogonal V
-    var vx = -uz;
-    var vz = ux;
+    final vx = -uz;
+    final vz = ux;
 
-    var minU = double.infinity, maxU = -double.infinity;
-    var minV = double.infinity, maxV = -double.infinity;
-    for (final p in pts) {
+    final us = <double>[];
+    final vs = <double>[];
+    for (final p in work) {
       final dx = p[0] - cx;
       final dz = _z(p) - cz;
-      final pu = dx * ux + dz * uz;
-      final pv = dx * vx + dz * vz;
-      if (pu < minU) minU = pu;
-      if (pu > maxU) maxU = pu;
-      if (pv < minV) minV = pv;
-      if (pv > maxV) maxV = pv;
+      us.add(dx * ux + dz * uz);
+      vs.add(dx * vx + dz * vz);
     }
-    final sideA = (maxU - minU).abs();
-    final sideB = (maxV - minV).abs();
+
+    // Percentile hull (p2–p98) — resists single far hits better than min/max.
+    final uLo = _percentile(us, 0.02);
+    final uHi = _percentile(us, 0.98);
+    final vLo = _percentile(vs, 0.02);
+    final vHi = _percentile(vs, 0.98);
+    var sideA = (uHi - uLo).abs();
+    var sideB = (vHi - vLo).abs();
+
+    // Soft expand toward p0.5–p99.5 if coverage is strong (don't shrink true walls)
+    final cov = _angularCoverage(work, cx, cz);
+    if (cov >= 0.75) {
+      final uLo2 = _percentile(us, 0.005);
+      final uHi2 = _percentile(us, 0.995);
+      final vLo2 = _percentile(vs, 0.005);
+      final vHi2 = _percentile(vs, 0.995);
+      // Blend 70% core + 30% outer so wall-edge samples count
+      sideA = sideA * 0.70 + (uHi2 - uLo2).abs() * 0.30;
+      sideB = sideB * 0.70 + (vHi2 - vLo2).abs() * 0.30;
+    }
+
     if (sideA < 0.5 || sideB < 0.5) return null;
 
-    // Score from eigenvalue anisotropy (elongated rooms still OK)
-    final lambda2 = trace - lambda1;
-    final ratio = lambda1 <= 1e-9 ? 0.0 : (lambda2 / lambda1).abs();
-    // Not used as orthogonality — cloud always projects to ortho axes
-    final orthogonalScore = 0.92;
-
-    // Suppress unused warning style
-    final _ = ratio;
+    // Fit quality: high when samples ring the room (Planner5D walk complete)
+    final orthogonalScore = (0.78 + 0.20 * cov).clamp(0.70, 0.98);
 
     return (
       widthM: math.max(sideA, sideB),
       lengthM: math.min(sideA, sideB),
       orthogonalScore: orthogonalScore,
+      coverageScore: cov,
     );
+  }
+
+  /// Angular coverage in 8 sectors around centroid (0..1). Incomplete walks
+  /// leave opposite walls empty → user must keep walking (Planner5D tip).
+  static double _angularCoverage(
+    List<List<double>> pts,
+    double cx,
+    double cz,
+  ) {
+    if (pts.isEmpty) return 0;
+    final bins = List<int>.filled(8, 0);
+    for (final p in pts) {
+      final a = math.atan2(_z(p) - cz, p[0] - cx);
+      var i = ((a + math.pi) / (2 * math.pi) * 8).floor();
+      if (i < 0) i = 0;
+      if (i > 7) i = 7;
+      bins[i]++;
+    }
+    final filled = bins.where((c) => c > 0).length;
+    return filled / 8.0;
+  }
+
+  /// Remove points farther than [k]×MAD from median in XZ (Open3D SOR-lite).
+  static List<List<double>> _statisticalOutlierTrim(
+    List<List<double>> pts, {
+    int maxIters = 2,
+    double k = 3.5,
+  }) {
+    var work = pts;
+    for (var iter = 0; iter < maxIters; iter++) {
+      if (work.length < 8) break;
+      var mx = 0.0, mz = 0.0;
+      for (final p in work) {
+        mx += p[0];
+        mz += _z(p);
+      }
+      mx /= work.length;
+      mz /= work.length;
+      final dists = <double>[
+        for (final p in work)
+          math.sqrt(
+            (p[0] - mx) * (p[0] - mx) + (_z(p) - mz) * (_z(p) - mz),
+          ),
+      ];
+      final med = _percentile(dists, 0.5);
+      final absDev = <double>[for (final d in dists) (d - med).abs()];
+      final mad = _percentile(absDev, 0.5);
+      if (mad < 0.05) break;
+      final thr = med + k * mad * 1.4826; // MAD→σ scale
+      final kept = <List<double>>[];
+      for (var i = 0; i < work.length; i++) {
+        if (dists[i] <= thr) kept.add(work[i]);
+      }
+      if (kept.length < 4 || kept.length == work.length) break;
+      work = kept;
+    }
+    return work;
+  }
+
+  static double _percentile(List<double> values, double p) {
+    if (values.isEmpty) return 0;
+    final s = [...values]..sort();
+    if (s.length == 1) return s.first;
+    final t = (p.clamp(0.0, 1.0)) * (s.length - 1);
+    final i = t.floor();
+    final f = t - i;
+    if (i >= s.length - 1) return s.last;
+    return s[i] * (1 - f) + s[i + 1] * f;
   }
 
   static ({double ratio, double error}) _diagonalCheck(

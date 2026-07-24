@@ -188,15 +188,31 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
         _isLoading = false;
         _loadingDetail = '';
       });
+      final cov = m.coverageScore;
       final warn = m.consistencyError > 0.08
-          ? ' Edges/diagonals differ — room may not be rectangular.'
+          ? ' Edges/coverage weak — walk more walls if size looks short.'
           : (m.isAuto || m.isPolygon) && m.orthogonalScore >= 0.9
               ? ' Floor map fit looks strong.'
               : '';
+      final coverNote = m.isAuto && cov > 0 && cov < 0.75
+          ? ' Wall cover only ${(cov * 100).round()}% — re-walk edges for accuracy.'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          duration: const Duration(seconds: 6),
           content: Text(
-            '${m.summaryLabel}.$warn Optional: add photos for furniture.',
+            '${m.summaryLabel}.$warn$coverNote '
+            'Next: add 2–3 room photos for furniture, or open empty plan.',
+          ),
+          action: SnackBarAction(
+            label: 'Add photos',
+            onPressed: () {
+              if (!mounted) return;
+              setState(() {
+                // Stay on AR path but surface free-frame picker via advanced
+                _showAdvanced = true;
+              });
+            },
           ),
         ),
       );
@@ -906,11 +922,14 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               if (oppErr > 0.08)
                 'Edges/diagonals differ by ${(oppErr * 100).round()}% — edit in Review if needed',
               if (frames.isEmpty)
-                'No furniture yet — add in Review or Place furniture in AR (easy next step)',
-              'Scale lock (+108/+119/+125): ${ScaleLockConfidence.sourceLabel(src)} '
+                'No furniture yet — add photos before scan, place from catalog in Review, or AR Place (+126)',
+              if (easy && (_arMeasure?.coverageScore ?? 0) > 0)
+                'AR walk wall cover ${((_arMeasure!.coverageScore) * 100).round()}%'
+                    '${(_arMeasure!.coverageScore) < 0.75 ? ' — incomplete loop may under-size' : ''}',
+              'Scale lock (+108/+119/+126): ${ScaleLockConfidence.sourceLabel(src)} '
                   'floor ${(floor * 100).round()}%',
               if (arScore >= 0.99)
-                '100% AR measured room geometry (+125 easy walk)',
+                '100% AR measured room geometry (+126 robust walk)',
             ],
             sourceLabel: easy
                 ? 'ARCore easy walk map'

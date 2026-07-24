@@ -32,6 +32,8 @@ import kotlin.math.sqrt
  * +125 Easy walk-to-map (feedback e7b247fd): common users should not mark
  * four abstract corners. Default mode **auto**: walk the room; we sample
  * floor hits + ARCore plane extents and fit an orthogonal rectangle.
+ * +126: robust percentile hull + outlier trim + coverage coaching
+ * (Planner5D-class walk completeness; Open3D-style SOR).
  * Manual polygon / chain / quick remain available.
  */
 class ArMeasureActivity : AppCompatActivity() {
@@ -65,6 +67,11 @@ class ArMeasureActivity : AppCompatActivity() {
     private var autoWidthM = 0.0
     private var autoLengthM = 0.0
     private var autoStableTicks = 0
+    /** +126: angular coverage of walk cloud (0..1). */
+    private var lastCoverageScore = 0.0
+    /** +126: largest ARCore horizontal plane extents (world XZ). */
+    private var planeExtentXM = 0.0
+    private var planeExtentZM = 0.0
 
     private val handler = Handler(Looper.getMainLooper())
     private val cameraWatchdog = Runnable {
@@ -305,6 +312,8 @@ class ArMeasureActivity : AppCompatActivity() {
 
     /** Continuous walk sampling + plane polygon vertices. */
     private fun sampleAutoFloor(session: com.google.ar.core.Session, frame: com.google.ar.core.Frame) {
+        var maxEx = 0f
+        var maxEz = 0f
         // 1) Plane extents / polygon vertices (Planner5D-style growth)
         for (plane in session.getAllTrackables(Plane::class.java)) {
             if (plane.trackingState != TrackingState.TRACKING) continue
@@ -314,7 +323,7 @@ class ArMeasureActivity : AppCompatActivity() {
                 // polygon is xz in plane local; transform via center pose
                 val pose = plane.centerPose
                 val n = poly.limit() / 2
-                val step = max(1, n / 8)
+                val step = max(1, n / 10)
                 var i = 0
                 val local = FloatArray(3)
                 val world = FloatArray(3)
@@ -329,6 +338,8 @@ class ArMeasureActivity : AppCompatActivity() {
                 // Also corners of extent box
                 val ex = plane.extentX / 2f
                 val ez = plane.extentZ / 2f
+                if (plane.extentX > maxEx) maxEx = plane.extentX
+                if (plane.extentZ > maxEz) maxEz = plane.extentZ
                 for (sx in floatArrayOf(-ex, ex)) {
                     for (sz in floatArrayOf(-ez, ez)) {
                         local[0] = sx
@@ -342,22 +353,51 @@ class ArMeasureActivity : AppCompatActivity() {
                 Log.w(TAG, "plane sample", e)
             }
         }
+        if (maxEx > 0.5f) planeExtentXM = max(planeExtentXM, maxEx.toDouble())
+        if (maxEz > 0.5f) planeExtentZM = max(planeExtentZM, maxEz.toDouble())
 
-        // 2) Reticle floor hit while walking
+        // 2) Reticle floor hit while walking (+ multi-ray for denser edge map)
         val hit = resolveCenterHit()
         if (hit != null) {
             val p = hit.hitPose
             maybeAddSample(floatArrayOf(p.tx(), p.ty(), p.tz()))
         }
+        // Off-center rays (±12% of screen) capture wall-edge floor while walking
+        if (uiTick % 8 == 0) {
+            sampleScreenHit(0.38f, 0.55f)
+            sampleScreenHit(0.62f, 0.55f)
+            sampleScreenHit(0.50f, 0.68f)
+        }
 
         recomputeAutoSize()
     }
 
+    private fun sampleScreenHit(nx: Float, ny: Float) {
+        try {
+            val frame = arSceneView.frame ?: return
+            if (frame.timestamp == 0L) return
+            val cx = arSceneView.width * nx
+            val cy = arSceneView.height * ny
+            val hits = frame.hitTest(cx, cy)
+            val best = hits.firstOrNull { h ->
+                val t = h.trackable
+                t is Plane &&
+                    t.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
+                    t.trackingState == TrackingState.TRACKING
+            } ?: hits.firstOrNull()
+            if (best != null) {
+                val p = best.hitPose
+                maybeAddSample(floatArrayOf(p.tx(), p.ty(), p.tz()))
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun maybeAddSample(xyz: FloatArray) {
         val last = lastSamplePose
-        if (last != null && distance(last, xyz) < 0.18) return
+        if (last != null && distance(last, xyz) < 0.14) return
         // Cap cloud size
-        if (walkSamples.size > 400) {
+        if (walkSamples.size > 500) {
             // thin: drop every other early sample
             val kept = walkSamples.filterIndexed { i, _ -> i % 2 == 1 }.toMutableList()
             walkSamples.clear()
@@ -368,14 +408,27 @@ class ArMeasureActivity : AppCompatActivity() {
     }
 
     private fun recomputeAutoSize() {
-        val dims = resolveCloudMeters(walkSamples)
-        if (dims == null) return
+        val dims = resolveCloudMeters(walkSamples) ?: return
         val prevW = autoWidthM
         val prevL = autoLengthM
-        autoWidthM = dims.widthM
-        autoLengthM = dims.lengthM
+        var w = dims.widthM
+        var l = dims.lengthM
+        lastCoverageScore = dims.coverageScore
         lastOrthoScore = dims.orthogonalScore
         lastDiagError = dims.diagonalError
+
+        // +126: fuse largest ARCore plane extent when coverage still incomplete
+        // (partial walk underestimates; plane growth helps — Planner5D tip)
+        val pW = max(planeExtentXM, planeExtentZM)
+        val pL = min(planeExtentXM, planeExtentZM)
+        if (pW >= 1.0 && pL >= 1.0 && lastCoverageScore < 0.85) {
+            // Soft expand toward plane if plane is larger but within 25%
+            if (pW > w && pW / w <= 1.25) w = w * 0.55 + pW * 0.45
+            if (pL > l && pL / l <= 1.25) l = l * 0.55 + pL * 0.45
+        }
+
+        autoWidthM = max(w, l)
+        autoLengthM = min(w, l)
         // Stability: size not changing much
         if (prevW > 0.5 && prevL > 0.5) {
             val dw = abs(prevW - autoWidthM) / prevW
@@ -393,12 +446,24 @@ class ArMeasureActivity : AppCompatActivity() {
         when (cam) {
             TrackingState.TRACKING -> {
                 if (autoWidthM >= 1.5 && autoLengthM >= 1.5) {
+                    val covPct = (lastCoverageScore * 100).toInt()
+                    val coach = when {
+                        lastCoverageScore < 0.50 -> " · walk more walls"
+                        lastCoverageScore < 0.75 -> " · cover remaining sides"
+                        autoStableTicks >= 8 -> " · ready"
+                        else -> " · slow pass near walls"
+                    }
                     liveDistance.text = String.format(
-                        "%.1f × %.1f ft · keep walking edges",
+                        "%.1f × %.1f ft · cover %d%%%s",
                         autoWidthM * M_TO_FT,
                         autoLengthM * M_TO_FT,
+                        covPct,
+                        coach,
                     )
-                    liveDistance.setTextColor(0xFFAED581.toInt())
+                    liveDistance.setTextColor(
+                        if (lastCoverageScore >= 0.75) 0xFFAED581.toInt()
+                        else 0xFFFFCC80.toInt(),
+                    )
                 } else if (planes > 0 || walkSamples.isNotEmpty()) {
                     liveDistance.text =
                         "Mapping… ${walkSamples.size} pts · walk along walls"
@@ -676,14 +741,31 @@ class ArMeasureActivity : AppCompatActivity() {
         if (!::stepTitle.isInitialized) return
         if (autoMode) {
             stepTitle.text = "Easy AR walk — map your room"
+            val coverHint = when {
+                lastCoverageScore < 0.50 && walkSamples.size >= 8 ->
+                    " Tip: walk a full loop near all four walls (Planner5D-style)."
+                lastCoverageScore in 0.50..0.74 ->
+                    " Almost there — pass the sides you haven't walked."
+                else ->
+                    " Size fills in automatically (no corner math)."
+            }
             stepHint.text =
-                "Walk slowly along the walls while pointing at the floor. " +
-                    "Size fills in automatically (no corner math). " +
-                    "Optional: tap Add floor pin at hard corners. Then Use this size."
+                "Walk slowly along the walls while pointing at the floor.$coverHint " +
+                    "Optional: Add floor pin at hard corners. Then Use this size."
             btnMark.text = "Add floor pin (optional)"
-            btnDone.text = "Use this size"
+            btnDone.text = if (lastCoverageScore >= 0.75) {
+                "Use this size"
+            } else if (autoWidthM >= 1.5) {
+                "Use size (walk more for accuracy)"
+            } else {
+                "Use this size"
+            }
             measuredSummary.text = buildString {
-                append("Floor samples: ${walkSamples.size}\n")
+                append("Floor samples: ${walkSamples.size}")
+                if (lastCoverageScore > 0) {
+                    append(String.format(" · wall cover %.0f%%", lastCoverageScore * 100))
+                }
+                append('\n')
                 if (autoWidthM >= 0.5 && autoLengthM >= 0.5) {
                     append(
                         String.format(
@@ -696,11 +778,17 @@ class ArMeasureActivity : AppCompatActivity() {
                         append(String.format(" · fit %.0f%%", lastOrthoScore * 100))
                     }
                     if (autoStableTicks >= 8) append(" · stable")
+                    if (lastCoverageScore < 0.75 && autoWidthM >= 1.5) {
+                        append("\n→ Keep walking edges for better accuracy")
+                    }
                 } else {
                     append("Keep walking until size appears…")
                 }
             }
-            val ready = autoWidthM >= 1.5 && autoLengthM >= 1.5 && walkSamples.size >= 6
+            // Allow Done earlier, but prefer coverage ≥50% for quality
+            val ready = autoWidthM >= 1.5 && autoLengthM >= 1.5 &&
+                walkSamples.size >= 8 &&
+                (lastCoverageScore >= 0.45 || walkSamples.size >= 40)
             btnDone.isEnabled = ready
             return
         }
@@ -803,6 +891,7 @@ class ArMeasureActivity : AppCompatActivity() {
             putExtra(EXTRA_WALLS_FT, wallsOut.map { it * M_TO_FT }.toDoubleArray())
             putExtra(EXTRA_ORTHO_SCORE, lastOrthoScore)
             putExtra(EXTRA_DIAG_ERROR, lastDiagError)
+            putExtra(EXTRA_COVERAGE_SCORE, lastCoverageScore)
             val samples = if (autoMode) walkSamples else cornerDots
             if (samples.isNotEmpty()) {
                 val flat = FloatArray(samples.size * 3)
@@ -824,6 +913,7 @@ class ArMeasureActivity : AppCompatActivity() {
         val oppositeEdgeError: Double,
         val diagonalError: Double,
         val orthogonalScore: Double,
+        val coverageScore: Double = 1.0,
     )
 
     companion object {
@@ -839,6 +929,8 @@ class ArMeasureActivity : AppCompatActivity() {
         const val EXTRA_CORNERS_M = "corners_m"
         const val EXTRA_ORTHO_SCORE = "ortho_score"
         const val EXTRA_DIAG_ERROR = "diag_error"
+        /** +126 walk angular coverage 0..1. */
+        const val EXTRA_COVERAGE_SCORE = "coverage_score"
         const val EXTRA_ERROR = "error"
         const val MODE_QUICK = "quick"
         const val MODE_CHAIN = "chain"
@@ -905,28 +997,30 @@ class ArMeasureActivity : AppCompatActivity() {
             )
         }
 
-        /** +125 PCA orthogonal bounding box for walk cloud. */
+        /** +125/+126 robust PCA + percentile hull for walk cloud. */
         fun resolveCloudMeters(dots: List<FloatArray>): PolygonDims? {
             if (dots.size < 4) return null
+            var work = statisticalOutlierTrim(dots)
+            if (work.size < 4) work = dots
             var cx = 0.0
             var cz = 0.0
-            for (p in dots) {
+            for (p in work) {
                 cx += p[0]
                 cz += p[2]
             }
-            cx /= dots.size
-            cz /= dots.size
+            cx /= work.size
+            cz /= work.size
             var sxx = 0.0
             var sxz = 0.0
             var szz = 0.0
-            for (p in dots) {
+            for (p in work) {
                 val dx = p[0] - cx
                 val dz = p[2] - cz
                 sxx += dx * dx
                 sxz += dx * dz
                 szz += dz * dz
             }
-            val n = dots.size.toDouble()
+            val n = work.size.toDouble()
             sxx /= n
             sxz /= n
             szz /= n
@@ -945,30 +1039,90 @@ class ArMeasureActivity : AppCompatActivity() {
             uz /= un
             val vx = -uz
             val vz = ux
-            var minU = Double.POSITIVE_INFINITY
-            var maxU = Double.NEGATIVE_INFINITY
-            var minV = Double.POSITIVE_INFINITY
-            var maxV = Double.NEGATIVE_INFINITY
-            for (p in dots) {
+            val us = ArrayList<Double>(work.size)
+            val vs = ArrayList<Double>(work.size)
+            for (p in work) {
                 val dx = p[0] - cx
                 val dz = p[2] - cz
-                val pu = dx * ux + dz * uz
-                val pv = dx * vx + dz * vz
-                if (pu < minU) minU = pu
-                if (pu > maxU) maxU = pu
-                if (pv < minV) minV = pv
-                if (pv > maxV) maxV = pv
+                us.add(dx * ux + dz * uz)
+                vs.add(dx * vx + dz * vz)
             }
-            val sideA = abs(maxU - minU)
-            val sideB = abs(maxV - minV)
+            var sideA = abs(percentile(us, 0.98) - percentile(us, 0.02))
+            var sideB = abs(percentile(vs, 0.98) - percentile(vs, 0.02))
+            val cov = angularCoverage(work, cx, cz)
+            if (cov >= 0.75) {
+                val sideA2 = abs(percentile(us, 0.995) - percentile(us, 0.005))
+                val sideB2 = abs(percentile(vs, 0.995) - percentile(vs, 0.005))
+                sideA = sideA * 0.70 + sideA2 * 0.30
+                sideB = sideB * 0.70 + sideB2 * 0.30
+            }
             if (sideA < 0.5 || sideB < 0.5) return null
+            val ortho = (0.78 + 0.20 * cov).coerceIn(0.70, 0.98)
             return PolygonDims(
                 widthM = max(sideA, sideB),
                 lengthM = min(sideA, sideB),
                 oppositeEdgeError = 0.0,
                 diagonalError = 0.0,
-                orthogonalScore = 0.92,
+                orthogonalScore = ortho,
+                coverageScore = cov,
             )
+        }
+
+        private fun angularCoverage(
+            pts: List<FloatArray>,
+            cx: Double,
+            cz: Double,
+        ): Double {
+            if (pts.isEmpty()) return 0.0
+            val bins = IntArray(8)
+            for (p in pts) {
+                val a = atan2(p[2] - cz, p[0] - cx)
+                var i = ((a + Math.PI) / (2 * Math.PI) * 8).toInt()
+                if (i < 0) i = 0
+                if (i > 7) i = 7
+                bins[i]++
+            }
+            val filled = bins.count { it > 0 }
+            return filled / 8.0
+        }
+
+        private fun statisticalOutlierTrim(pts: List<FloatArray>): List<FloatArray> {
+            var work = pts
+            repeat(2) {
+                if (work.size < 8) return work
+                var mx = 0.0
+                var mz = 0.0
+                for (p in work) {
+                    mx += p[0]
+                    mz += p[2]
+                }
+                mx /= work.size
+                mz /= work.size
+                val dists = work.map { p ->
+                    val dx = p[0] - mx
+                    val dz = p[2] - mz
+                    sqrt(dx * dx + dz * dz)
+                }
+                val med = percentile(dists, 0.5)
+                val mad = percentile(dists.map { abs(it - med) }, 0.5)
+                if (mad < 0.05) return work
+                val thr = med + 3.5 * mad * 1.4826
+                val kept = work.filterIndexed { i, _ -> dists[i] <= thr }
+                if (kept.size < 4 || kept.size == work.size) return work
+                work = kept
+            }
+            return work
+        }
+
+        private fun percentile(values: List<Double>, p: Double): Double {
+            if (values.isEmpty()) return 0.0
+            val s = values.sorted()
+            if (s.size == 1) return s[0]
+            val t = p.coerceIn(0.0, 1.0) * (s.size - 1)
+            val i = t.toInt()
+            val f = t - i
+            if (i >= s.size - 1) return s.last()
+            return s[i] * (1 - f) + s[i + 1] * f
         }
 
         private fun edgeLen(a: FloatArray, b: FloatArray): Double {
