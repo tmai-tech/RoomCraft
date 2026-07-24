@@ -48,6 +48,7 @@
 | **79** | **+132** | UX: cover % looked like unfinished progress | Done enabled when **size ready** (not stuck waiting for 100% cover); auto-finish when stable; copy clarifies walk = size, furniture after. Ships with +131 depth densify. | Install **+132**. |
 | **80** | **+133** | Feedback `225fb5de` on +132: check (screenshot open walls, sparse 10×10) | Always **4 closed walls** in `toEditor`; denser AI furniture by area; reject tiny/sparse walks. | Needed stronger 10×10 reject + sanitize perimeter. |
 | **81** | **+134** | Harden 225fb5de (10×10 incomplete + open outline) | (1) `qualityRejectReason` rejects weak ~10×10 maps. (2) `BlueprintSafety.sanitizeRoom` seals 4 walls if count < 4. (3) Force denser family furniture if seed < 4. Tests. | Install **+134** re-scan full loop. **Next:** depth wall-distance lock. |
+| **82** | **+135** | No new FB after +134; final wall-distance lock + quality auto-Done | (1) Dart **`wallDistanceLockMeters`** (pose centroid → p90 opposite walls on PCA axes) fused into `resolveWalkMeters`. (2) Native: vertical plane **anti-parallel pairs** + heading-bin wall ranges → expand under-size. (3) Auto-finish only when cover/samples/wall-lock quality OK (no more half-walk freeze). Tests +135. | **Field:** install **+135**, full wall loop (look at walls). Report if size still off. **Next:** user accuracy feedback or depth range API polish. |
 
 ---
 
@@ -58,7 +59,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–81 / +105–**+134** | AR walk → **closed walls + quality gate** |
+| D Accuracy resume | 55–82 / +105–**+135** | AR walk → **wall-distance lock + quality auto-Done** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

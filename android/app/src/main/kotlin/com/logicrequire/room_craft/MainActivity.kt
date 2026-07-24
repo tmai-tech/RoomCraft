@@ -344,6 +344,12 @@ class MainActivity : FlutterActivity() {
                     data.getBooleanExtra(ArMeasureActivity.EXTRA_DEPTH_ENABLED, false)
                 val depthSamples =
                     data.getIntExtra(ArMeasureActivity.EXTRA_DEPTH_SAMPLES, 0)
+                val wallLockWM =
+                    data.getDoubleExtra(ArMeasureActivity.EXTRA_WALL_LOCK_W_M, 0.0)
+                val wallLockLM =
+                    data.getDoubleExtra(ArMeasureActivity.EXTRA_WALL_LOCK_L_M, 0.0)
+                val wallLockPairs =
+                    data.getIntExtra(ArMeasureActivity.EXTRA_WALL_LOCK_PAIRS, 0)
                 pending.success(
                     mapOf(
                         "widthFt" to widthFt,
@@ -362,6 +368,9 @@ class MainActivity : FlutterActivity() {
                         "coverageScore" to coverageScore,
                         "depthEnabled" to depthEnabled,
                         "depthSamples" to depthSamples,
+                        "wallLockWidthM" to wallLockWM,
+                        "wallLockLengthM" to wallLockLM,
+                        "wallLockPairs" to wallLockPairs,
                         "source" to "arcore",
                     ),
                 )

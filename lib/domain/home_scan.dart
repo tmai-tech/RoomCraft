@@ -76,7 +76,7 @@ class HomeScanPackage {
     return null;
   }
 
-  /// Prefer fused walk re-fit (+128/+130); else floor-only; else native measure.
+  /// Prefer fused walk re-fit (+128/+130/+135 wall lock); else floor; else native.
   ({
     double widthFt,
     double lengthFt,
@@ -85,15 +85,26 @@ class HomeScanPackage {
     String fuseSource,
     double agreement,
   }) get resolvedSize {
+    const mToFt = 3.28084;
     final fused = ArPolygonMap.resolveWalkFeet(
       floorHits: floorHitsM,
       poses: posesM,
     );
+    var w = 0.0;
+    var l = 0.0;
+    var cov = 0.0;
+    var ortho = 0.0;
+    var src = 'native';
+    var agree = 0.7;
+
     if (fused != null && fused.widthFt >= 3 && fused.lengthFt >= 3) {
-      // +130: if native measure agrees and is larger (common under-size of
-      // partial floor mesh), soft-max with native when agreement is OK.
-      var w = fused.widthFt;
-      var l = fused.lengthFt;
+      w = fused.widthFt;
+      l = fused.lengthFt;
+      cov = fused.coverageScore;
+      ortho = fused.orthogonalScore;
+      src = fused.fuseSource;
+      agree = fused.agreement;
+      // +130 soft-max with native measure
       final nw = measure.widthFt;
       final nl = measure.lengthFt;
       if (nw >= 3 && nl >= 3 && fused.agreement >= 0.55) {
@@ -102,35 +113,59 @@ class HomeScanPackage {
         if (nW > w && nW / w <= 1.18) w = w * 0.55 + nW * 0.45;
         if (nL > l && nL / l <= 1.18) l = l * 0.55 + nL * 0.45;
       }
-      return (
-        widthFt: w >= l ? w : l,
-        lengthFt: w >= l ? l : w,
-        coverage: fused.coverageScore,
-        ortho: fused.orthogonalScore,
-        fuseSource: fused.fuseSource,
-        agreement: fused.agreement,
-      );
-    }
-    if (floorHitsM.length >= 4) {
+    } else if (floorHitsM.length >= 4) {
       final fit = ArPolygonMap.resolveFeet(floorHitsM);
       if (fit != null && fit.widthFt >= 3 && fit.lengthFt >= 3) {
-        return (
-          widthFt: fit.widthFt,
-          lengthFt: fit.lengthFt,
-          coverage: fit.coverageScore,
-          ortho: fit.orthogonalScore,
-          fuseSource: 'floor',
-          agreement: 0.85,
-        );
+        w = fit.widthFt;
+        l = fit.lengthFt;
+        cov = fit.coverageScore;
+        ortho = fit.orthogonalScore;
+        src = 'floor';
+        agree = 0.85;
       }
     }
+    if (w < 3 || l < 3) {
+      w = measure.widthFt;
+      l = measure.lengthFt;
+      cov = measure.coverageScore;
+      ortho = measure.orthogonalScore;
+      src = 'native';
+      agree = 0.7;
+    }
+
+    // +135: opposite vertical plane wall-to-wall lock (highest metric trust)
+    if (measure.hasWallLock) {
+      final ww = measure.wallLockWidthM * mToFt;
+      final ll = measure.wallLockLengthM * mToFt;
+      final lockW = ww >= ll ? ww : ll;
+      final lockL = ww >= ll ? ll : ww;
+      if (lockW >= 6 && lockL >= 5) {
+        final aW = w > 0 ? (lockW - w).abs() / lockW : 1.0;
+        final aL = l > 0 ? (lockL - l).abs() / lockL : 1.0;
+        if (measure.wallLockPairs >= 2 && aW < 0.22 && aL < 0.22) {
+          w = lockW;
+          l = lockL;
+          src = 'wallLock';
+          agree = math.max(agree, 0.92);
+          ortho = math.max(ortho, 0.96);
+          cov = math.max(cov, 0.88);
+        } else {
+          // Soft expand toward wall lock (under-size fix)
+          if (lockW > w) w = w * 0.4 + lockW * 0.6;
+          if (lockL > l) l = l * 0.4 + lockL * 0.6;
+          src = '$src+wallLock';
+          agree = math.max(agree, 0.8);
+        }
+      }
+    }
+
     return (
-      widthFt: measure.widthFt,
-      lengthFt: measure.lengthFt,
-      coverage: measure.coverageScore,
-      ortho: measure.orthogonalScore,
-      fuseSource: 'native',
-      agreement: 0.7,
+      widthFt: w >= l ? w : l,
+      lengthFt: w >= l ? l : w,
+      coverage: cov,
+      ortho: ortho,
+      fuseSource: src,
+      agreement: agree,
     );
   }
 
@@ -160,14 +195,16 @@ class HomeScanPackage {
       sourceLabel: 'Home Scan (AR walk → metric plan)',
       accuracyScore: score,
       warnings: [
-        'Home Scan (+131): floor + pose + features'
-            '${measure.depthEnabled ? ' + depth' : ''} → room size',
+        'Home Scan (+135): floor + pose + wall-distance lock'
+            '${measure.depthEnabled ? ' + depth' : ''}'
+            '${measure.hasWallLock ? ' + wall-lock' : ''} → room size',
         'Room ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
             ' · samples $sampleCount · poses $poseCount'
             '${ortho > 0 ? ' · fit ${(ortho * 100).round()}%' : ''}'
             '${cov > 0 ? ' · wall cover ${(cov * 100).round()}%' : ''}'
             '$agreeNote · ${size.fuseSource}'
-            '${measure.depthEnabled ? ' · depth' : ''}',
+            '${measure.depthEnabled ? ' · depth' : ''}'
+            '${measure.hasWallLock ? ' · walls×${measure.wallLockPairs}' : ''}',
         'Scale lock: ${ScaleLockConfidence.sourceLabel(ScaleSource.arPolygon)}',
         if (cov > 0 && cov < 0.75)
           'Incomplete walk loop — re-scan walking all four walls for better size',
@@ -175,6 +212,8 @@ class HomeScanPackage {
           'Floor vs walk path disagree — walk closer to walls for better size',
         if (sampleCount < 12 && poseCount < 16)
           'Few samples — walk slower; aim at floor near walls (Planner5D tip)',
+        if (size.fuseSource.contains('wallLock'))
+          'Wall-distance lock applied (opposite vertical planes)',
         'Placeholder door/window — edit or delete in Review',
         if (score >= 0.99) '100% AR walk measured room geometry (metric size)',
       ],
@@ -237,10 +276,10 @@ class HomeScanPackage {
       warnings: [
         ...base.warnings.where((w) => !w.contains('Placeholder door')),
         'AI starter furniture (${picked.label}) — edit freely; not from photos',
-        'Walk map locked size; closed walls + wall-anchored pieces (+134)',
+        'Walk map locked size; closed walls + wall-anchored pieces (+135)',
       ],
     );
-    // +130/+134 accuracy: openings chain + wall positions + door clearances
+    // +130/+134/+135 accuracy: openings chain + wall positions + door clearances
     plan = OpeningChainFidelity.ensure(plan);
     plan = FurniturePositionMap.ensure(plan);
     plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);

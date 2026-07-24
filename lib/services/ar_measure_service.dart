@@ -31,6 +31,10 @@ class ArRoomMeasure {
   /// +131 Depth API was enabled for this capture (device-supported only).
   final bool depthEnabled;
   final int depthSamples;
+  /// +135 wall-to-wall from opposite vertical plane pairs (meters).
+  final double wallLockWidthM;
+  final double wallLockLengthM;
+  final int wallLockPairs;
 
   const ArRoomMeasure({
     required this.widthFt,
@@ -50,6 +54,9 @@ class ArRoomMeasure {
     this.coverageScore = 0,
     this.depthEnabled = false,
     this.depthSamples = 0,
+    this.wallLockWidthM = 0,
+    this.wallLockLengthM = 0,
+    this.wallLockPairs = 0,
   });
 
   factory ArRoomMeasure.fromMap(Map<dynamic, dynamic> map) {
@@ -78,8 +85,14 @@ class ArRoomMeasure {
       coverageScore: (map['coverageScore'] as num?)?.toDouble() ?? 0,
       depthEnabled: map['depthEnabled'] == true,
       depthSamples: (map['depthSamples'] as num?)?.toInt() ?? 0,
+      wallLockWidthM: (map['wallLockWidthM'] as num?)?.toDouble() ?? 0,
+      wallLockLengthM: (map['wallLockLengthM'] as num?)?.toDouble() ?? 0,
+      wallLockPairs: (map['wallLockPairs'] as num?)?.toInt() ?? 0,
     );
   }
+
+  bool get hasWallLock =>
+      wallLockPairs > 0 && wallLockWidthM >= 1.5 && wallLockLengthM >= 1.5;
 
   bool get isChain => mode == 'chain' && wallsFt.length >= 4;
 
@@ -156,6 +169,11 @@ class ArRoomMeasure {
       orthogonalScore: orthogonalScore,
       diagonalError: diagonalError,
       coverageScore: coverageScore,
+      depthEnabled: depthEnabled,
+      depthSamples: depthSamples,
+      wallLockWidthM: wallLockWidthM,
+      wallLockLengthM: wallLockLengthM,
+      wallLockPairs: wallLockPairs,
     );
   }
 }

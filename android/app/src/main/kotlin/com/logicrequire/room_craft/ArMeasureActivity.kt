@@ -80,6 +80,15 @@ class ArMeasureActivity : AppCompatActivity() {
     /** +131: Depth API enabled only when session supports it. */
     private var depthEnabled = false
     private var depthSampleCount = 0
+    /**
+     * +135 wall-distance lock:
+     * - opposite vertical plane pairs (primary)
+     * - heading-bin camera→wall ranges (secondary when planes sparse)
+     */
+    private val wallRangeBins = Array(8) { mutableListOf<Double>() }
+    private var wallLockWidthM = 0.0
+    private var wallLockLengthM = 0.0
+    private var wallLockPairs = 0
 
     private val handler = Handler(Looper.getMainLooper())
     private val cameraWatchdog = Runnable {
@@ -250,6 +259,10 @@ class ArMeasureActivity : AppCompatActivity() {
                     if (depthEnabled && uiTick % 12 == 0) {
                         sampleDepthAssistRays(frame)
                     }
+                    // +135: wall-distance samples (vertical planes / mid hits)
+                    if (uiTick % 8 == 0) {
+                        sampleWallRanges(frame)
+                    }
                 }
 
                 if (uiTick % 6 == 0) {
@@ -392,12 +405,31 @@ class ArMeasureActivity : AppCompatActivity() {
     private fun sampleAutoFloor(session: com.google.ar.core.Session, frame: com.google.ar.core.Frame) {
         var maxEx = 0f
         var maxEz = 0f
+        // Vertical walls for +135 wall-to-wall lock: (nx, nz, centerX, centerZ)
+        val verticals = mutableListOf<FloatArray>()
         // 1) Horizontal + vertical plane samples (Planner5D-style growth)
         for (plane in session.getAllTrackables(Plane::class.java)) {
             if (plane.trackingState != TrackingState.TRACKING) continue
             if (plane.type == Plane.Type.VERTICAL) {
                 try {
                     sampleVerticalPlaneBase(plane)
+                    val pose = plane.centerPose
+                    // ARCore: pose +Y is the plane normal
+                    val n = FloatArray(3)
+                    pose.getYAxis(n, 0)
+                    val nx = n[0]
+                    val nz = n[2]
+                    val nn = sqrt((nx * nx + nz * nz).toDouble()).toFloat()
+                    if (nn > 0.3f) {
+                        verticals.add(
+                            floatArrayOf(
+                                nx / nn,
+                                nz / nn,
+                                pose.tx(),
+                                pose.tz(),
+                            ),
+                        )
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "vertical plane sample", e)
                 }
@@ -441,6 +473,9 @@ class ArMeasureActivity : AppCompatActivity() {
         }
         if (maxEx > 0.5f) planeExtentXM = max(planeExtentXM, maxEx.toDouble())
         if (maxEz > 0.5f) planeExtentZM = max(planeExtentZM, maxEz.toDouble())
+        if (verticals.size >= 2) {
+            updateWallLockFromVerticals(verticals)
+        }
 
         // 2) Reticle floor hit while walking (+ multi-ray for denser edge map)
         val hit = resolveCenterHit()
@@ -456,6 +491,45 @@ class ArMeasureActivity : AppCompatActivity() {
         }
 
         recomputeAutoSize()
+    }
+
+    /**
+     * +135: opposite vertical plane pairs → wall-to-wall meters (Planner5D / CAD class).
+     * Distance along shared normal between anti-parallel walls.
+     */
+    private fun updateWallLockFromVerticals(verticals: List<FloatArray>) {
+        val dists = mutableListOf<Double>()
+        for (i in verticals.indices) {
+            val a = verticals[i]
+            for (j in i + 1 until verticals.size) {
+                val b = verticals[j]
+                val dot = a[0] * b[0] + a[1] * b[1]
+                // Opposite walls: normals anti-parallel
+                if (dot > -0.75f) continue
+                val dx = (b[2] - a[2]).toDouble()
+                val dz = (b[3] - a[3]).toDouble()
+                // Project separation onto A's normal
+                val dist = abs(dx * a[0] + dz * a[1])
+                if (dist in 1.5..25.0) dists.add(dist)
+            }
+        }
+        if (dists.isEmpty()) return
+        dists.sort()
+        // Use largest two distinct axes if possible
+        val largest = dists.last()
+        var second = 0.0
+        for (k in dists.size - 2 downTo 0) {
+            val d = dists[k]
+            // Different dimension if differs by >15%
+            if (abs(d - largest) / largest > 0.15) {
+                second = d
+                break
+            }
+        }
+        if (second < 1.5) second = largest // square room fallback uses one pair twice carefully
+        wallLockWidthM = max(largest, second)
+        wallLockLengthM = if (second >= 1.5) min(largest, second) else largest * 0.85
+        wallLockPairs = dists.size
     }
 
     /**
@@ -548,6 +622,108 @@ class ArMeasureActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * +135 wall-distance lock: measure camera → wall hit range by heading.
+     * Uses vertical planes first (true walls), then mid-height Instant Placement.
+     */
+    private fun sampleWallRanges(frame: com.google.ar.core.Frame) {
+        try {
+            if (arSceneView.width <= 0 || arSceneView.height <= 0) return
+            val cam = frame.camera.pose
+            val camX = cam.tx().toDouble()
+            val camZ = cam.tz().toDouble()
+            // Forward vector on XZ from camera rotation
+            val fwd = FloatArray(3)
+            cam.getTransformedAxis(2, 1f, fwd) // -Z is forward in ARCore; use axis 2
+            // Heading of camera look on XZ (prefer -Z forward)
+            var hx = (-fwd[0]).toDouble()
+            var hz = (-fwd[2]).toDouble()
+            val hLen = sqrt(hx * hx + hz * hz)
+            if (hLen < 1e-4) return
+            hx /= hLen
+            hz /= hLen
+
+            val rays = arrayOf(
+                0.50f to 0.42f, // slightly above center (walls, not floor)
+                0.35f to 0.45f,
+                0.65f to 0.45f,
+            )
+            for ((nx, ny) in rays) {
+                val cx = arSceneView.width * nx
+                val cy = arSceneView.height * ny
+                val hits = frame.hitTest(cx, cy)
+                val best = hits.firstOrNull { h ->
+                    val t = h.trackable
+                    t is Plane &&
+                        t.type == Plane.Type.VERTICAL &&
+                        t.trackingState == TrackingState.TRACKING
+                } ?: hits.firstOrNull { h ->
+                    val t = h.trackable
+                    t is Plane && t.trackingState == TrackingState.TRACKING
+                }
+                if (best == null) continue
+                val p = best.hitPose
+                val dx = p.tx().toDouble() - camX
+                val dz = p.tz().toDouble() - camZ
+                val dist = sqrt(dx * dx + dz * dz)
+                // Plausible wall clearance while walking inside a room
+                if (dist < 0.40 || dist > 8.0) continue
+                // Prefer hits roughly in look direction
+                val lookDot = (dx * hx + dz * hz) / dist
+                if (lookDot < 0.35) continue
+                val heading = atan2(dz, dx) // world XZ heading of hit
+                var bin = ((heading + Math.PI) / (2 * Math.PI) * 8).toInt()
+                if (bin < 0) bin = 0
+                if (bin > 7) bin = 7
+                val bucket = wallRangeBins[bin]
+                if (bucket.size > 40) {
+                    // thin early samples
+                    val kept = bucket.filterIndexed { i, _ -> i % 2 == 1 }.toMutableList()
+                    bucket.clear()
+                    bucket.addAll(kept)
+                }
+                bucket.add(dist)
+                if (depthEnabled) depthSampleCount++
+            }
+            recomputeWallLock()
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Secondary wall lock from heading-bin ranges when vertical plane pairs
+     * are sparse (user walked but ARCore hasn't meshed both opposite walls).
+     */
+    private fun recomputeWallLock() {
+        // Prefer vertical-plane pairs when we already have ≥2
+        if (wallLockPairs >= 2 && wallLockWidthM >= 1.8) return
+        fun med(vals: List<Double>): Double {
+            if (vals.isEmpty()) return 0.0
+            val s = vals.sorted()
+            return s[s.size / 2]
+        }
+        val axes = mutableListOf<Double>()
+        for (i in 0 until 4) {
+            val a = med(wallRangeBins[i])
+            val b = med(wallRangeBins[i + 4])
+            if (a >= 0.40 && b >= 0.40) axes.add(a + b)
+        }
+        if (axes.size < 2) return
+        axes.sortDescending()
+        val ww = max(axes[0], axes[1])
+        val ll = min(axes[0], axes[1])
+        if (ww < 1.5 || ll < 1.2) return
+        // Soft fill only if empty or expand under-size lock
+        if (wallLockPairs == 0) {
+            wallLockWidthM = ww
+            wallLockLengthM = ll
+            wallLockPairs = 1 // weaker than plane pairs
+        } else if (ww > wallLockWidthM && ww / wallLockWidthM <= 1.35) {
+            wallLockWidthM = wallLockWidthM * 0.4 + ww * 0.6
+            wallLockLengthM = wallLockLengthM * 0.4 + ll * 0.6
+        }
+    }
+
     private fun sampleScreenHit(nx: Float, ny: Float) {
         try {
             val frame = arSceneView.frame ?: return
@@ -626,6 +802,28 @@ class ArMeasureActivity : AppCompatActivity() {
             if (pL > l && pL / l <= 1.25) l = l * 0.55 + pL * 0.45
         }
 
+        // +135: wall-to-wall lock from opposite vertical planes (highest trust)
+        if (wallLockWidthM >= 1.8 && wallLockLengthM >= 1.5 && wallLockPairs > 0) {
+            val ww = max(wallLockWidthM, wallLockLengthM)
+            val ll = min(wallLockWidthM, wallLockLengthM)
+            // Prefer wall lock when cloud is smaller (under-size) or agrees within 18%
+            val agreeW = abs(ww - max(w, l)) / ww
+            val agreeL = abs(ll - min(w, l)) / ll
+            if (ww > max(w, l) * 0.95 || agreeW < 0.18) {
+                w = if (agreeW < 0.12) w * 0.35 + ww * 0.65 else max(w, ww * 0.92)
+            }
+            if (ll > min(w, l) * 0.95 || agreeL < 0.18) {
+                l = if (agreeL < 0.12) l * 0.35 + ll * 0.65 else max(l, ll * 0.92)
+            }
+            // Strong lock: both dimensions from wall pairs
+            if (wallLockPairs >= 2 && agreeW < 0.20 && agreeL < 0.20) {
+                w = ww
+                l = ll
+                lastOrthoScore = max(lastOrthoScore, 0.96)
+                lastCoverageScore = max(lastCoverageScore, 0.85)
+            }
+        }
+
         autoWidthM = max(w, l)
         autoLengthM = min(w, l)
         refreshWalkMap()
@@ -646,11 +844,21 @@ class ArMeasureActivity : AppCompatActivity() {
         when (cam) {
             TrackingState.TRACKING -> {
                 if (autoWidthM >= 1.5 && autoLengthM >= 1.5) {
-                    // +132: never show a fake "90% stuck" progress. Size ready = Done ready.
+                    // +132: size ready = Done ready (never fake 100% cover wait).
+                    // +135: auto-finish only when map quality is OK (avoids 10×10 half-walks).
                     val readyNow = walkSamples.size >= 8 || poseSamples.size >= 12
-                    liveDistance.text = if (readyNow) {
+                    val qualityOk = lastCoverageScore >= 0.55 ||
+                        (walkSamples.size >= 28 && poseSamples.size >= 20 && lastCoverageScore >= 0.40) ||
+                        (wallLockWidthM >= 2.0 && wallLockLengthM >= 1.5 && walkSamples.size >= 16)
+                    liveDistance.text = if (readyNow && qualityOk) {
                         String.format(
                             "%.1f × %.1f ft — tap Done",
+                            autoWidthM * M_TO_FT,
+                            autoLengthM * M_TO_FT,
+                        )
+                    } else if (readyNow) {
+                        String.format(
+                            "%.1f × %.1f ft — walk all walls…",
                             autoWidthM * M_TO_FT,
                             autoLengthM * M_TO_FT,
                         )
@@ -662,10 +870,10 @@ class ArMeasureActivity : AppCompatActivity() {
                         )
                     }
                     liveDistance.setTextColor(
-                        if (readyNow) 0xFFAED581.toInt() else 0xFFFFCC80.toInt(),
+                        if (readyNow && qualityOk) 0xFFAED581.toInt() else 0xFFFFCC80.toInt(),
                     )
-                    // Auto-finish when size stable so user is never stuck waiting for 100%
-                    if (readyNow && autoStableTicks >= 10 && !destroyed) {
+                    // Auto-finish only when size stable AND walk quality OK (+135)
+                    if (readyNow && qualityOk && autoStableTicks >= 12 && !destroyed) {
                         handler.post {
                             if (!destroyed && autoMode) finishWithResult()
                         }
@@ -962,6 +1170,8 @@ class ArMeasureActivity : AppCompatActivity() {
                         ),
                     )
                     append(" · ${walkSamples.size} map points")
+                    if (wallLockPairs > 0) append(" · walls locked")
+                    if (depthEnabled) append(" · depth")
                     append("\nTap Done to open your plan with furniture.")
                 } else {
                     append("Walk around until room size appears…")
@@ -1077,6 +1287,9 @@ class ArMeasureActivity : AppCompatActivity() {
             putExtra(EXTRA_COVERAGE_SCORE, lastCoverageScore)
             putExtra(EXTRA_DEPTH_ENABLED, depthEnabled)
             putExtra(EXTRA_DEPTH_SAMPLES, depthSampleCount)
+            putExtra(EXTRA_WALL_LOCK_W_M, wallLockWidthM)
+            putExtra(EXTRA_WALL_LOCK_L_M, wallLockLengthM)
+            putExtra(EXTRA_WALL_LOCK_PAIRS, wallLockPairs)
             val samples = if (autoMode) walkSamples else cornerDots
             if (samples.isNotEmpty()) {
                 val flat = FloatArray(samples.size * 3)
@@ -1135,6 +1348,10 @@ class ArMeasureActivity : AppCompatActivity() {
         /** +131 Depth API was enabled for this measure. */
         const val EXTRA_DEPTH_ENABLED = "depth_enabled"
         const val EXTRA_DEPTH_SAMPLES = "depth_samples"
+        /** +135 opposite vertical plane wall-to-wall (meters). */
+        const val EXTRA_WALL_LOCK_W_M = "wall_lock_w_m"
+        const val EXTRA_WALL_LOCK_L_M = "wall_lock_l_m"
+        const val EXTRA_WALL_LOCK_PAIRS = "wall_lock_pairs"
         const val EXTRA_ERROR = "error"
         const val MODE_QUICK = "quick"
         const val MODE_CHAIN = "chain"

@@ -51,6 +51,44 @@ void main() {
     expect(pack.qualityRejectReason()!.toLowerCase(), contains('walk'));
   });
 
+  test('+135 wall-lock measure expands under-sized cloud', () {
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 3.0,
+      lengthM: 2.5,
+      samplesPerEdge: 6,
+    );
+    final flat = <double>[];
+    for (final p in cloud) {
+      flat.addAll(p);
+    }
+    // Floor cloud under-sizes; vertical wall lock has true 5×4 m
+    final measure = ArRoomMeasure(
+      widthFt: 9.8,
+      lengthFt: 8.2,
+      widthM: 3.0,
+      lengthM: 2.5,
+      mode: 'auto',
+      cornersM: flat,
+      sampleCount: cloud.length,
+      poseCount: 20,
+      coverageScore: 0.55,
+      orthogonalScore: 0.9,
+      wallLockWidthM: 5.0,
+      wallLockLengthM: 4.0,
+      wallLockPairs: 2,
+    );
+    expect(measure.hasWallLock, isTrue);
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final size = pack.resolvedSize;
+    // Wall lock ~5×4 m → ≥16×13 ft; under-sized 3m cloud must expand
+    expect(size.widthFt, greaterThan(13.5));
+    expect(size.lengthFt, greaterThan(11.0));
+    expect(
+      size.fuseSource.contains('wallLock') || size.widthFt > 12,
+      isTrue,
+    );
+  });
+
   test('+134 good full walk passes quality gate', () {
     final cloud = ArPolygonMap.walkCloudRectM(
       widthM: 5.5,
@@ -94,5 +132,42 @@ void main() {
     final json = pack.toJson();
     expect(json['schema'], 'roomcraft_home_scan_v1');
     expect((json['poses_m'] as List).length, 3);
+  });
+
+  test('+135 wall-distance fuse yields usable furniture plan', () {
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 6.0,
+      lengthM: 4.5,
+      samplesPerEdge: 10,
+    );
+    final flat = <double>[for (final p in cloud) ...p];
+    // Interior pose trail
+    final poses = <double>[
+      for (var i = 0; i < 20; i++) ...[1.2 + i * 0.15, 1.5, 1.5 + (i % 4) * 0.2],
+    ];
+    final measure = ArRoomMeasure(
+      widthFt: 19.7,
+      lengthFt: 14.8,
+      widthM: 6.0,
+      lengthM: 4.5,
+      mode: 'auto',
+      cornersM: flat,
+      posesM: poses,
+      sampleCount: cloud.length,
+      poseCount: 20,
+      coverageScore: 0.7,
+      orthogonalScore: 0.9,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    expect(pack.qualityRejectReason(), isNull);
+    final plan = pack.toPlanWithAiFurniture();
+    expect(plan.roomWidthFt, greaterThan(14));
+    expect(plan.roomLengthFt, greaterThan(10));
+    expect(plan.furniture.where((f) => f.included).length, greaterThanOrEqualTo(4));
+    // Closed perimeter walls present
+    final walls = plan.walls.where((s) => s.type == StrokeType.wall).length;
+    expect(walls, greaterThanOrEqualTo(4));
+    final ed = ScanParser.toEditor(plan, 20);
+    expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
   });
 }

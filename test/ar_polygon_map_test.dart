@@ -242,4 +242,52 @@ void main() {
     });
     expect(low.consistencyError, greaterThan(high.consistencyError));
   });
+
+  test('+135 wall-distance lock recovers full room from perimeter hits', () {
+    // Interior poses + full wall ring (Planner5D walk-inside)
+    final floor = ArPolygonMap.walkCloudRectM(
+      widthM: 6.0,
+      lengthM: 4.0,
+      samplesPerEdge: 10,
+      noiseM: 0.03,
+    );
+    final poses = <List<double>>[
+      for (var i = 0; i < 12; i++)
+        [1.5 + i * 0.25, 1.5, 1.2 + (i % 3) * 0.3],
+    ];
+    final lock = ArPolygonMap.wallDistanceLockMeters(
+      floorHits: floor,
+      poses: poses,
+    );
+    expect(lock, isNotNull);
+    expect(lock!.widthM, closeTo(6.0, 0.45));
+    expect(lock.lengthM, closeTo(4.0, 0.45));
+    expect(lock.confidence, greaterThan(0.4));
+  });
+
+  test('+135 walk fuse includes wallDistance when cover incomplete', () {
+    // Full perimeter but sparse one side — lock should expand under-size floor
+    final floor = ArPolygonMap.walkCloudRectM(
+      widthM: 5.5,
+      lengthM: 4.0,
+      samplesPerEdge: 8,
+      noiseM: 0.04,
+    );
+    // Poses only in center strip (incomplete path envelope)
+    final poses = <List<double>>[
+      for (var i = 0; i < 16; i++) [2.0 + i * 0.1, 1.5, 1.8],
+    ];
+    final fused = ArPolygonMap.resolveWalkMeters(
+      floorHits: floor,
+      poses: poses,
+    );
+    expect(fused, isNotNull);
+    expect(fused!.widthM, greaterThan(4.5));
+    expect(fused.lengthM, greaterThan(3.2));
+    // Prefer wall-distance in fuse source when lock confident
+    expect(
+      fused.fuseSource.contains('wallDistance') || fused.agreement > 0.3,
+      isTrue,
+    );
+  });
 }

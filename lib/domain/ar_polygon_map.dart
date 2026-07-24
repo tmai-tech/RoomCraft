@@ -14,6 +14,8 @@ import 'dart:math' as math;
 ///   expand by standoff like Planner5D 1.5–2 m from walls)
 /// - **+130**: adaptive standoff from floor−pose gap; size agreement score;
 ///   feature-point densify on device (native PointCloud, no DepthMode)
+/// - **+135**: **wall-distance lock** — pose-centroid → perimeter radial
+///   extents on PCA axes (magicplan-class wall clearance → room W×L)
 ///
 /// Python research analogues (server / offline experiments):
 /// - Open3D plane segmentation + RANSAC / statistical outlier removal
@@ -111,11 +113,112 @@ class ArPolygonMap {
     );
   }
 
-  /// +128/+130: fuse floor hits with camera pose trail for Home Scan accuracy.
+  /// +135: wall-distance lock from interior pose center → floor perimeter.
+  ///
+  /// Magicplan / Planner5D-class: distances from walk path center to wall
+  /// samples on PCA axes estimate true room W×L even when the floor mesh is
+  /// incomplete on one side. Returns null when samples are too sparse.
+  static ({
+    double widthM,
+    double lengthM,
+    double confidence,
+  })? wallDistanceLockMeters({
+    List<List<double>> floorHits = const [],
+    List<List<double>> poses = const [],
+  }) {
+    if (floorHits.length < 8) return null;
+
+    // Interior origin: pose centroid when available, else floor centroid
+    double ox = 0, oz = 0;
+    final originSrc = poses.length >= 4 ? poses : floorHits;
+    for (final p in originSrc) {
+      ox += p[0];
+      oz += _z(p);
+    }
+    ox /= originSrc.length;
+    oz /= originSrc.length;
+
+    // PCA axes on floor hits (wall ring)
+    var sxx = 0.0, sxz = 0.0, szz = 0.0;
+    for (final p in floorHits) {
+      final dx = p[0] - ox;
+      final dz = _z(p) - oz;
+      sxx += dx * dx;
+      sxz += dx * dz;
+      szz += dz * dz;
+    }
+    final n = floorHits.length.toDouble();
+    sxx /= n;
+    sxz /= n;
+    szz /= n;
+    final trace = sxx + szz;
+    final det = sxx * szz - sxz * sxz;
+    final disc = math.max(0.0, trace * trace / 4 - det);
+    final lambda1 = trace / 2 + math.sqrt(disc);
+    var ux = sxz;
+    var uz = lambda1 - sxx;
+    if (ux.abs() + uz.abs() < 1e-9) {
+      ux = 1.0;
+      uz = 0.0;
+    }
+    var un = math.sqrt(ux * ux + uz * uz);
+    ux /= un;
+    uz /= un;
+    final vx = -uz;
+    final vz = ux;
+
+    // Signed projections from interior origin; wall-distance = p90 in each half
+    final uPos = <double>[];
+    final uNeg = <double>[];
+    final vPos = <double>[];
+    final vNeg = <double>[];
+    for (final p in floorHits) {
+      final dx = p[0] - ox;
+      final dz = _z(p) - oz;
+      final pu = dx * ux + dz * uz;
+      final pv = dx * vx + dz * vz;
+      if (pu >= 0) {
+        uPos.add(pu);
+      } else {
+        uNeg.add(-pu);
+      }
+      if (pv >= 0) {
+        vPos.add(pv);
+      } else {
+        vNeg.add(-pv);
+      }
+    }
+
+    // Need hits on both sides of each axis for a real wall-to-wall lock
+    if (uPos.length < 2 || uNeg.length < 2 || vPos.length < 2 || vNeg.length < 2) {
+      return null;
+    }
+
+    final sideU = _percentile(uPos, 0.90) + _percentile(uNeg, 0.90);
+    final sideV = _percentile(vPos, 0.90) + _percentile(vNeg, 0.90);
+    if (sideU < 0.8 || sideV < 0.8) return null;
+
+    // Confidence: both axes have balanced wall hits + angular cover
+    final balU = math.min(uPos.length, uNeg.length) /
+        math.max(uPos.length, uNeg.length);
+    final balV = math.min(vPos.length, vNeg.length) /
+        math.max(vPos.length, vNeg.length);
+    final cov = _angularCoverage(floorHits, ox, oz);
+    final conf = (0.35 * balU + 0.35 * balV + 0.30 * cov).clamp(0.0, 1.0);
+
+    return (
+      widthM: math.max(sideU, sideV),
+      lengthM: math.min(sideU, sideV),
+      confidence: conf,
+    );
+  }
+
+  /// +128/+130/+135: fuse floor hits with camera pose trail for Home Scan.
   ///
   /// Floor hits map the plane mesh; poses map where the user walked (usually
   /// **inside** the room). Incomplete floor coverage under-sizes — expand
   /// toward pose envelope + **adaptive** standoff (magicplan / Planner5D).
+  /// +135 also fuses **wall-distance lock** when opposite-wall samples exist.
   ///
   /// [agreement] is 0..1 how well floor vs pose envelope match (high = trust).
   static ({
@@ -135,19 +238,55 @@ class ArPolygonMap {
   }) {
     final floor = floorHits.length >= 4 ? resolveMeters(floorHits) : null;
     final pose = poses.length >= 8 ? resolveMeters(poses) : null;
+    final wallLock = wallDistanceLockMeters(
+      floorHits: floorHits,
+      poses: poses,
+    );
 
-    if (floor == null && pose == null) return null;
+    if (floor == null && pose == null && wallLock == null) return null;
+
+    // Wall-lock only (rare: sparse cloud but clear opposite walls)
+    if (floor == null && pose == null && wallLock != null) {
+      return (
+        widthM: wallLock.widthM,
+        lengthM: wallLock.lengthM,
+        oppositeEdgeError: 0.0,
+        diagonalError: 0.0,
+        orthogonalScore: 0.85,
+        coverageScore: wallLock.confidence,
+        fuseSource: 'wallDistance',
+        agreement: wallLock.confidence,
+        standoffUsedM: 0.0,
+      );
+    }
 
     if (pose == null) {
+      var w = floor!.widthM;
+      var l = floor.lengthM;
+      var src = 'floor';
+      var agree = 1.0;
+      // +135 soft fuse wall lock when it expands incomplete floor
+      if (wallLock != null && wallLock.confidence >= 0.45) {
+        final aW = _sizeAgreement(w, wallLock.widthM);
+        final aL = _sizeAgreement(l, wallLock.lengthM);
+        if (wallLock.widthM > w && wallLock.widthM / w <= 1.35) {
+          w = w * 0.45 + wallLock.widthM * 0.55;
+        }
+        if (wallLock.lengthM > l && wallLock.lengthM / l <= 1.35) {
+          l = l * 0.45 + wallLock.lengthM * 0.55;
+        }
+        src = 'floor+wallDistance';
+        agree = math.min(aW, aL);
+      }
       return (
-        widthM: floor!.widthM,
-        lengthM: floor.lengthM,
+        widthM: math.max(w, l),
+        lengthM: math.min(w, l),
         oppositeEdgeError: floor.oppositeEdgeError,
         diagonalError: floor.diagonalError,
         orthogonalScore: floor.orthogonalScore,
         coverageScore: floor.coverageScore,
-        fuseSource: 'floor',
-        agreement: 1.0,
+        fuseSource: src,
+        agreement: agree,
         standoffUsedM: 0.0,
       );
     }
@@ -170,15 +309,25 @@ class ArPolygonMap {
     final poseLNrm = math.min(poseW, poseL);
 
     if (floor == null) {
+      var w = poseWNrm;
+      var l = poseLNrm;
+      var src = 'pose+standoff';
+      var agree = 0.55;
+      if (wallLock != null && wallLock.confidence >= 0.40) {
+        w = math.max(w, wallLock.widthM * 0.55 + w * 0.45);
+        l = math.max(l, wallLock.lengthM * 0.55 + l * 0.45);
+        src = 'pose+wallDistance';
+        agree = wallLock.confidence;
+      }
       return (
-        widthM: poseWNrm,
-        lengthM: poseLNrm,
+        widthM: math.max(w, l),
+        lengthM: math.min(w, l),
         oppositeEdgeError: 0.0,
         diagonalError: 0.0,
         orthogonalScore: (pose.orthogonalScore * 0.95).clamp(0.7, 0.97),
         coverageScore: (pose.coverageScore * 0.95).clamp(0.0, 1.0),
-        fuseSource: 'pose+standoff',
-        agreement: 0.55,
+        fuseSource: src,
+        agreement: agree,
         standoffUsedM: stand,
       );
     }
@@ -200,6 +349,24 @@ class ArPolygonMap {
       src = 'poseDominant';
     }
 
+    // +135 wall-distance lock: prefer measured wall-to-wall when confident
+    if (wallLock != null && wallLock.confidence >= 0.50) {
+      final lw = wallLock.widthM;
+      final ll = wallLock.lengthM;
+      // Expand under-sized maps; mild shrink only if lock is much smaller (noise)
+      if (lw > w && lw / w <= 1.40) {
+        w = w * 0.40 + lw * 0.60;
+      } else if (lw < w && w / lw <= 1.15 && wallLock.confidence >= 0.70) {
+        w = w * 0.70 + lw * 0.30;
+      }
+      if (ll > l && ll / l <= 1.40) {
+        l = l * 0.40 + ll * 0.60;
+      } else if (ll < l && l / ll <= 1.15 && wallLock.confidence >= 0.70) {
+        l = l * 0.70 + ll * 0.30;
+      }
+      src = '$src+wallDistance';
+    }
+
     final rawMaxW = math.max(floor.widthM, pose.widthM);
     final rawMaxL = math.max(floor.lengthM, pose.lengthM);
     w = w.clamp(rawMaxW * 0.95, rawMaxW * 1.55 + 2 * stand);
@@ -208,7 +375,16 @@ class ArPolygonMap {
     // Agreement: floor vs expanded pose (1 = match, 0 = far apart)
     final aW = _sizeAgreement(floor.widthM, poseWNrm);
     final aL = _sizeAgreement(floor.lengthM, poseLNrm);
-    final agreement = math.min(aW, aL);
+    var agreement = math.min(aW, aL);
+    if (wallLock != null && wallLock.confidence >= 0.5) {
+      agreement = math.max(
+        agreement,
+        math.min(
+          _sizeAgreement(w, wallLock.widthM),
+          _sizeAgreement(l, wallLock.lengthM),
+        ),
+      );
+    }
 
     final cov = math.max(floor.coverageScore, pose.coverageScore * 0.9);
     final ortho = math.max(floor.orthogonalScore, pose.orthogonalScore * 0.95);

@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+135 (2026-07-24)
+
+### Accuracy — wall-distance lock (+135)
+- **Wall-distance lock** from pose center → opposite wall samples (Dart PCA axes + native vertical-plane pairs + heading-bin ranges).
+- Fuse lock into walk size so incomplete floor mesh under-sizes less (magicplan-class).
+- **Stricter auto-finish**: only when cover/samples/wall-lock quality OK (stops half-walk 10×10 freezes from +132).
+- UX still: Scan → walk → Done → plan with furniture. See `docs/ACCURACY_TURN_LOG.md` Turn 82.
+
 ## 1.0.0-beta.1+134 (2026-07-24)
 
 ### Fix — harden incomplete AR plan (feedback 225fb5de)
