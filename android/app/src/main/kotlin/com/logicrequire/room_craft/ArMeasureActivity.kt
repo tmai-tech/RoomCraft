@@ -415,8 +415,7 @@ class ArMeasureActivity : AppCompatActivity() {
                     sampleVerticalPlaneBase(plane)
                     val pose = plane.centerPose
                     // ARCore: pose +Y is the plane normal
-                    val n = FloatArray(3)
-                    pose.getYAxis(n, 0)
+                    val n = pose.yAxis // FloatArray(3)
                     val nx = n[0]
                     val nz = n[2]
                     val nn = sqrt((nx * nx + nz * nz).toDouble()).toFloat()
@@ -632,10 +631,9 @@ class ArMeasureActivity : AppCompatActivity() {
             val cam = frame.camera.pose
             val camX = cam.tx().toDouble()
             val camZ = cam.tz().toDouble()
-            // Forward vector on XZ from camera rotation
-            val fwd = FloatArray(3)
-            cam.getTransformedAxis(2, 1f, fwd) // -Z is forward in ARCore; use axis 2
-            // Heading of camera look on XZ (prefer -Z forward)
+            // Forward vector on XZ from camera rotation (axis 2 = local Z)
+            val fwd = cam.getTransformedAxis(2, 1f) // returns FloatArray(3)
+            // Heading of camera look on XZ (prefer -Z forward in ARCore)
             var hx = (-fwd[0]).toDouble()
             var hz = (-fwd[2]).toDouble()
             val hLen = sqrt(hx * hx + hz * hz)
