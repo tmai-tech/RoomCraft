@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+138 (2026-07-25)
+
+### Accuracy — pose-envelope + user-confirm size lock + wall-hug (+138)
+- **Hard pose-envelope floor**: walk path + standoff never under-sizes vs partial floor (Dart + native).
+- **User-confirmed size is absolute** (`user_confirm` source) — re-fuse cannot overwrite tape/edit.
+- Post-walk AI furniture **wall-hug** arrange; denser living defaults; closed 4 walls.
+- Builds on +137 confirm gate. See Turn 85.
+
 ## 1.0.0-beta.1+137 (2026-07-25)
 
 ### Approach fix — confirm size before plan

@@ -76,10 +76,14 @@ class AiDesigner {
 
   /// Build a furnished plan for [room] in [style].
   /// Replaces furniture; keeps walls/openings.
+  ///
+  /// [arrangeStyle] overrides the style's default packing (Home Scan uses
+  /// [ArrangeStyle.wallHug] so pieces sit on walls after walk — +137).
   static List<FurnitureItem> furnish({
     required RoomModel room,
     required double pixelsPerFoot,
     required DesignStyle style,
+    ArrangeStyle? arrangeStyle,
   }) {
     final specs = room.isExterior
         ? _exteriorRecipe(room.widthInFeet, room.lengthInFeet)
@@ -102,19 +106,20 @@ class AiDesigner {
     final rugs = seed.where((f) => f.type == FurnitureType.rug).toList();
     final solid = seed.where((f) => f.type != FurnitureType.rug).toList();
     final seeded = room.copyWith(furniture: solid);
-    final arrangeStyle = switch (style) {
-      DesignStyle.modernMinimal => ArrangeStyle.spacious,
-      DesignStyle.cozy => ArrangeStyle.conversation,
-      DesignStyle.scandinavian => ArrangeStyle.spacious,
-      DesignStyle.family => ArrangeStyle.conversation,
-      DesignStyle.homeOffice => ArrangeStyle.wallHug,
-      DesignStyle.studio => ArrangeStyle.spacious,
-    };
+    final packing = arrangeStyle ??
+        switch (style) {
+          DesignStyle.modernMinimal => ArrangeStyle.spacious,
+          DesignStyle.cozy => ArrangeStyle.conversation,
+          DesignStyle.scandinavian => ArrangeStyle.spacious,
+          DesignStyle.family => ArrangeStyle.conversation,
+          DesignStyle.homeOffice => ArrangeStyle.wallHug,
+          DesignStyle.studio => ArrangeStyle.spacious,
+        };
 
     final placed = AutoArrange.arrangeWithStyle(
       room: seeded,
       pixelsPerFoot: pixelsPerFoot,
-      style: arrangeStyle,
+      style: packing,
     );
 
     // Rugs are floor layers — center, ignore packing collisions

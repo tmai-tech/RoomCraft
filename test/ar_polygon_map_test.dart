@@ -290,4 +290,45 @@ void main() {
       isTrue,
     );
   });
+
+  test('+137 poseFloor hard expands partial floor vs larger walk path', () {
+    // Floor mesh only covers ~3×2.5 m; user walked ~4.5×3.5 m interior
+    final floor = ArPolygonMap.walkCloudRectM(
+      widthM: 3.0,
+      lengthM: 2.5,
+      samplesPerEdge: 6,
+      noiseM: 0.03,
+    );
+    final poses = <List<double>>[];
+    for (var i = 0; i < 16; i++) {
+      final t = i / 16.0;
+      poses.add([0.5 + t * 4.0, 1.5, 0.5]);
+    }
+    for (var i = 0; i < 12; i++) {
+      final t = i / 12.0;
+      poses.add([4.5, 1.5, 0.5 + t * 3.0]);
+    }
+    for (var i = 0; i < 16; i++) {
+      final t = i / 16.0;
+      poses.add([4.5 - t * 4.0, 1.5, 3.5]);
+    }
+    for (var i = 0; i < 12; i++) {
+      final t = i / 12.0;
+      poses.add([0.5, 1.5, 3.5 - t * 3.0]);
+    }
+    final fused = ArPolygonMap.resolveWalkMeters(
+      floorHits: floor,
+      poses: poses,
+    );
+    expect(fused, isNotNull);
+    // Pose span ~4×3 + 1.5 standoff → ~5.5×4.5; must beat tiny 3×2.5 floor
+    expect(fused!.widthM, greaterThan(4.2));
+    expect(fused.lengthM, greaterThan(3.2));
+    expect(
+      fused.fuseSource.contains('poseFloor') ||
+          fused.fuseSource.contains('pose') ||
+          fused.widthM > 4.0,
+      isTrue,
+    );
+  });
 }

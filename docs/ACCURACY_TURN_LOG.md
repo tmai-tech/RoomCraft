@@ -50,6 +50,8 @@
 | **81** | **+134** | Harden 225fb5de (10×10 incomplete + open outline) | (1) `qualityRejectReason` rejects weak ~10×10 maps. (2) `BlueprintSafety.sanitizeRoom` seals 4 walls if count < 4. (3) Force denser family furniture if seed < 4. Tests. | Install **+134** re-scan full loop. **Next:** depth wall-distance lock. |
 | **82** | **+135** | No new FB after +134; final wall-distance lock + quality auto-Done | (1) Dart **`wallDistanceLockMeters`** (pose centroid → p90 opposite walls on PCA axes) fused into `resolveWalkMeters`. (2) Native: vertical plane **anti-parallel pairs** + heading-bin wall ranges → expand under-size. (3) Auto-finish only when cover/samples/wall-lock quality OK (no more half-walk freeze). Tests +135. | **Field:** install **+135**, full wall loop (look at walls). Report if size still off. **Next:** user accuracy feedback or depth range API polish. |
 | **83** | **+136** | No new FB after +135; path-expand size + denser usable plan | (1) **pathExpand** when walk path ≫ under-sized map. (2) Quality reject short path / no wall-lock incomplete squares. (3) Min 4–6 furniture by area; door on long wall. (4) Denser wall-range rays. Tests +136. | Install **+136** full loop. **Next:** user accuracy OK signal or fix next FB. |
+| **84** | **+137** | No new FB; approach gate — confirm AR size before plan | After walk, user **confirms/edits W×L ft** (tape if needed) before furniture plan. Stops silent wrong ~10×10 (225fb5de). | Needed size lock so re-fuse cannot overwrite confirm. |
+| **85** | **+138** | No new FB after +137; pose-envelope + confirm lock + wall-hug | (1) **poseFloor** hard min = walk + standoff (Dart + native). (2) **poseAabb** secondary. (3) `user_confirm` source **locks** size — no re-fuse overwrite. (4) AI **wallHug** after walk; closed 4 walls. Tests +138. | Install **+138**: walk → confirm size → plan. **Next:** user accuracy OK or fix next FB. |
 
 ---
 
@@ -60,7 +62,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–83 / +105–**+136** | AR walk → **path-expand + dense plan** |
+| D Accuracy resume | 55–85 / +105–**+138** | AR walk → confirm size → **pose-envelope + wall-hug** |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 

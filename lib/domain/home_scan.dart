@@ -5,10 +5,12 @@ import 'dart:ui';
 import '../models/room_model.dart';
 import '../models/scan_result.dart';
 import '../services/ar_measure_service.dart';
+import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
 import 'ar_polygon_map.dart';
 import 'furniture_position_map.dart';
 import 'layout/ai_designer.dart';
+import 'layout/auto_arrange.dart';
 import 'opening_chain_fidelity.dart';
 import 'photo_true_layout.dart';
 import 'plan_accuracy_metrics.dart';
@@ -48,7 +50,13 @@ class HomeScanPackage {
   /// +134/+136 quality gate — reject incomplete walks (fake 10×10, feedback 225fb5de).
   ///
   /// Returns null when OK, else a user-facing error string.
+  /// +138: never reject after user_confirm (tape/edit is truth).
   String? qualityRejectReason() {
+    if (measure.source == 'user_confirm' ||
+        measure.source == 'confirmed' ||
+        measure.source == 'tape') {
+      return null;
+    }
     final size = resolvedSize;
     final w = size.widthFt;
     final l = size.lengthFt;
@@ -92,6 +100,9 @@ class HomeScanPackage {
   }
 
   /// Prefer fused walk re-fit (+128/+130/+135 wall lock); else floor; else native.
+  ///
+  /// +138: when measure.source is user-confirmed (`user_confirm` / `confirmed`),
+  /// trust width/length feet absolutely — never re-fuse over the user's size.
   ({
     double widthFt,
     double lengthFt,
@@ -101,6 +112,26 @@ class HomeScanPackage {
     double agreement,
   }) get resolvedSize {
     const mToFt = 3.28084;
+    final userLocked = measure.source == 'user_confirm' ||
+        measure.source == 'confirmed' ||
+        measure.source == 'tape';
+    if (userLocked && measure.widthFt >= 6 && measure.lengthFt >= 6) {
+      final w = measure.widthFt >= measure.lengthFt
+          ? measure.widthFt
+          : measure.lengthFt;
+      final l = measure.widthFt >= measure.lengthFt
+          ? measure.lengthFt
+          : measure.widthFt;
+      return (
+        widthFt: w,
+        lengthFt: l,
+        coverage: math.max(measure.coverageScore, 0.95),
+        ortho: math.max(measure.orthogonalScore, 0.95),
+        fuseSource: 'userConfirm',
+        agreement: 1.0,
+      );
+    }
+
     final fused = ArPolygonMap.resolveWalkFeet(
       floorHits: floorHitsM,
       poses: posesM,
@@ -204,6 +235,22 @@ class HomeScanPackage {
       }
     }
 
+    // +137: axis-aligned pose AABB + standoff as hard size floor (secondary to PCA fuse)
+    final aabb = HomeScanGeometry.poseAabbMeters(posesM);
+    if (aabb != null && w >= 3 && l >= 3 && !src.contains('wallLock')) {
+      const stand = ArPolygonMap.defaultWalkStandoffM;
+      final envWM = (aabb.widthM + 2 * stand);
+      final envLM = (aabb.lengthM + 2 * stand);
+      final envW = math.max(envWM, envLM) * mToFt;
+      final envL = math.min(envWM, envLM) * mToFt;
+      if (envW > w * 1.06 || envL > l * 1.06) {
+        if (envW > w) w = math.max(w, envW * 0.96);
+        if (envL > l) l = math.max(l, envL * 0.96);
+        src = '$src+poseAabb';
+        agree = math.max(agree, 0.74);
+      }
+    }
+
     return (
       widthFt: w >= l ? w : l,
       lengthFt: w >= l ? l : w,
@@ -240,8 +287,9 @@ class HomeScanPackage {
       sourceLabel: 'Home Scan (AR walk → metric plan)',
       accuracyScore: score,
       warnings: [
-        'Home Scan (+136): floor + pose + wall-lock + path expand'
-            '${measure.depthEnabled ? ' + depth' : ''} → room size',
+        'Home Scan (+138): floor + pose envelope + wall-lock + path expand'
+            '${measure.depthEnabled ? ' + depth' : ''}'
+            '${size.fuseSource == 'userConfirm' ? ' · user size lock' : ''} → room size',
         'Room ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
             ' · samples $sampleCount · poses $poseCount'
             '${ortho > 0 ? ' · fit ${(ortho * 100).round()}%' : ''}'
@@ -260,16 +308,19 @@ class HomeScanPackage {
           'Wall-distance lock applied (opposite vertical planes)',
         if (size.fuseSource.contains('pathExpand'))
           'Size expanded from walk path length (under-size guard)',
+        if (size.fuseSource.contains('poseFloor') ||
+            size.fuseSource.contains('poseAabb'))
+          'Size floored by walk path envelope (under-size guard)',
         'Placeholder door/window — edit or delete in blueprint',
         if (score >= 0.99) '100% AR walk measured room geometry (metric size)',
       ],
     );
   }
 
-  /// Metric room + on-device AI starter furniture (+128–+136).
+  /// Metric room + on-device AI starter furniture (+128–+137).
   ///
   /// Walk locks **size**; furniture is a catalog layout seed (not photo-true).
-  /// +136: denser defaults (family/cozy) so plan is always usable after Done.
+  /// +137: wall-hug arrange + denser living fill so plan is usable after Done.
   ScanResult toPlanWithAiFurniture({
     DesignStyle? style,
     double pixelsPerFoot = 20,
@@ -281,23 +332,26 @@ class HomeScanPackage {
       widthInFeet: base.roomWidthFt,
       lengthInFeet: base.roomLengthFt,
     );
-    // +133–+136: denser living/family fill so plan is not empty after scan
+    // +133–+137: denser living/family fill so plan is not empty after scan
     final area = base.roomWidthFt * base.roomLengthFt;
     final minPieces = area >= 180
         ? 6
         : area >= 120
             ? 5
             : 4;
+    // Prefer wall-anchored living/office (Planner5D-class usable plan)
     var picked = style ??
-        (area >= 140
+        (area >= 120
             ? DesignStyle.family
-            : area >= 100
+            : area >= 90
                 ? DesignStyle.cozy
                 : DesignStyle.homeOffice);
     var items = AiDesigner.furnish(
       room: room,
       pixelsPerFoot: pixelsPerFoot,
       style: picked,
+      // +137: always wall-hug after walk so pieces sit on walls (not free-float)
+      arrangeStyle: ArrangeStyle.wallHug,
     );
     // Force denser recipes until min piece count
     if (items.length < minPieces && style == null) {
@@ -311,6 +365,7 @@ class HomeScanPackage {
           room: room,
           pixelsPerFoot: pixelsPerFoot,
           style: retry,
+          arrangeStyle: ArrangeStyle.wallHug,
         );
         if (next.length > items.length) {
           items = next;
@@ -338,13 +393,29 @@ class HomeScanPackage {
       warnings: [
         ...base.warnings.where((w) => !w.contains('Placeholder door')),
         'AI starter furniture (${picked.label}) — edit freely; not from photos',
-        'Walk map locked size; closed walls + wall-anchored pieces (+136)',
+        'Walk map locked size; closed walls + wall-hug pieces (+138)',
       ],
     );
-    // +130/+134/+135 accuracy: openings chain + wall positions + door clearances
+    // +130/+134/+137 accuracy: openings chain + wall positions + door clearances
     plan = OpeningChainFidelity.ensure(plan);
     plan = FurniturePositionMap.ensure(plan);
     plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
+    // Guarantee closed rectangle walls in plan (editor re-seals too)
+    if (plan.walls.where((s) => s.type == StrokeType.wall).length < 4) {
+      plan = AccurateScan.enforce(
+        widthFt: plan.roomWidthFt,
+        lengthFt: plan.roomLengthFt,
+        openings: plan.walls.where((s) => s.type != StrokeType.wall).toList(),
+        furniture: plan.furniture,
+        warnings: plan.warnings,
+        inventDefaultOpenings: plan.walls
+            .where((s) =>
+                s.type == StrokeType.door || s.type == StrokeType.window)
+            .isEmpty,
+        accuracyScore: plan.accuracyScore,
+        sourceLabel: plan.warnings.isNotEmpty ? plan.warnings.first : null,
+      );
+    }
     return plan;
   }
 
@@ -467,5 +538,35 @@ class HomeScanGeometry {
       sum += math.sqrt(dx * dx + dy * dy + dz * dz);
     }
     return sum;
+  }
+
+  /// Axis-aligned XZ envelope of pose trail (meters). Null if too few poses.
+  static ({double widthM, double lengthM})? poseAabbMeters(
+    List<List<double>> poses,
+  ) {
+    if (poses.length < 6) return null;
+    var minX = double.infinity;
+    var maxX = -double.infinity;
+    var minZ = double.infinity;
+    var maxZ = -double.infinity;
+    var n = 0;
+    for (final p in poses) {
+      if (p.length < 3) continue;
+      final x = p[0];
+      final z = p[2];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+      n++;
+    }
+    if (n < 6) return null;
+    final spanX = maxX - minX;
+    final spanZ = maxZ - minZ;
+    if (spanX < 0.4 && spanZ < 0.4) return null;
+    return (
+      widthM: math.max(spanX, spanZ),
+      lengthM: math.min(spanX, spanZ),
+    );
   }
 }

@@ -149,14 +149,14 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
             lengthM: l / 3.28084,
             mode: 'auto',
           );
-      // Override with confirmed size (truth step)
+      // Override with confirmed size (truth step) — source locks fuse (+138)
       final confirmed = ArRoomMeasure(
         widthFt: w >= l ? w : l,
         lengthFt: w >= l ? l : w,
         widthM: (w >= l ? w : l) / 3.28084,
         lengthM: (w >= l ? l : w) / 3.28084,
         mode: base.mode,
-        source: base.source,
+        source: 'user_confirm',
         wallsFt: base.wallsFt,
         wallsM: base.wallsM,
         cornersM: base.cornersM,
@@ -165,7 +165,13 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         poseCount: base.poseCount,
         orthogonalScore: base.orthogonalScore,
         diagonalError: base.diagonalError,
-        coverageScore: base.coverageScore,
+        coverageScore:
+            base.coverageScore > 0.9 ? base.coverageScore : 0.9,
+        depthEnabled: base.depthEnabled,
+        depthSamples: base.depthSamples,
+        wallLockWidthM: base.wallLockWidthM,
+        wallLockLengthM: base.wallLockLengthM,
+        wallLockPairs: base.wallLockPairs,
       );
       final pack = HomeScanPackage.fromMeasure(
         confirmed,

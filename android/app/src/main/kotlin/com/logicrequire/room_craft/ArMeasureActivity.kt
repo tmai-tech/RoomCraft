@@ -790,6 +790,9 @@ class ArMeasureActivity : AppCompatActivity() {
                 w = max(w, min(poseW, w * 1.12))
                 l = max(l, min(poseL, l * 1.12))
             }
+            // +137: hard pose-envelope floor when walk path clearly larger than floor mesh
+            if (poseW > w * 1.06) w = max(w, poseW * 0.97)
+            if (poseL > l * 1.06) l = max(l, poseL * 0.97)
             lastCoverageScore = max(lastCoverageScore, poseDims.coverageScore * 0.9)
         }
 

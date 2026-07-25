@@ -219,4 +219,109 @@ void main() {
     final ed = ScanParser.toEditor(plan, 20);
     expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
   });
+
+  test('+137 pose envelope hard floor expands partial floor mesh', () {
+    // Tiny floor cloud (~2.8×2.4 m) but interior pose trail of ~4.2×3.2 m
+    // (user walked more of the room than AR floor mesh covered)
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 2.8,
+      lengthM: 2.4,
+      samplesPerEdge: 5,
+    );
+    final flat = <double>[for (final p in cloud) ...p];
+    // Pose loop inset ~0.7 m in a ~5.6×4.6 room → path span ~4.2×3.2
+    final poses = <double>[];
+    for (var i = 0; i < 18; i++) {
+      final t = i / 18.0;
+      poses.addAll([0.7 + t * 4.2, 1.5, 0.7]);
+    }
+    for (var i = 0; i < 14; i++) {
+      final t = i / 14.0;
+      poses.addAll([4.9, 1.5, 0.7 + t * 3.2]);
+    }
+    for (var i = 0; i < 18; i++) {
+      final t = i / 18.0;
+      poses.addAll([4.9 - t * 4.2, 1.5, 3.9]);
+    }
+    for (var i = 0; i < 14; i++) {
+      final t = i / 14.0;
+      poses.addAll([0.7, 1.5, 3.9 - t * 3.2]);
+    }
+    final measure = ArRoomMeasure(
+      widthFt: 9.2,
+      lengthFt: 7.9,
+      widthM: 2.8,
+      lengthM: 2.4,
+      mode: 'auto',
+      cornersM: flat,
+      posesM: poses,
+      sampleCount: cloud.length,
+      poseCount: poses.length ~/ 3,
+      coverageScore: 0.40,
+      orthogonalScore: 0.85,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final size = pack.resolvedSize;
+    // Pose span ~4.2×3.2 + 1.5 standoff ≈ 5.7×4.7 m → ≥15×12 ft
+    expect(size.widthFt, greaterThan(12.5));
+    expect(size.lengthFt, greaterThan(10.0));
+    expect(
+      size.fuseSource.contains('poseFloor') ||
+          size.fuseSource.contains('poseAabb') ||
+          size.fuseSource.contains('pathExpand') ||
+          size.fuseSource.contains('pose'),
+      isTrue,
+    );
+    final plan = pack.toPlanWithAiFurniture();
+    expect(plan.furniture.where((f) => f.included).length, greaterThanOrEqualTo(4));
+    expect(plan.walls.where((s) => s.type == StrokeType.wall).length, greaterThanOrEqualTo(4));
+    final ed = ScanParser.toEditor(plan, 20);
+    expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
+  });
+
+  test('+137 poseAabbMeters recovers walk envelope', () {
+    final poses = <List<double>>[
+      for (var i = 0; i < 10; i++) [i * 0.4, 1.5, 0.0],
+      for (var i = 0; i < 8; i++) [4.0, 1.5, i * 0.35],
+    ];
+    final aabb = HomeScanGeometry.poseAabbMeters(poses);
+    expect(aabb, isNotNull);
+    expect(aabb!.widthM, closeTo(4.0, 0.05));
+    expect(aabb.lengthM, closeTo(2.45, 0.15));
+  });
+
+  test('+138 user_confirm size is absolute (no re-fuse overwrite)', () {
+    // Tiny cloud that would fuse small — user taped 18×14
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 2.5,
+      lengthM: 2.2,
+      samplesPerEdge: 4,
+    );
+    final flat = <double>[for (final p in cloud) ...p];
+    final measure = ArRoomMeasure(
+      widthFt: 18.0,
+      lengthFt: 14.0,
+      widthM: 18.0 / 3.28084,
+      lengthM: 14.0 / 3.28084,
+      mode: 'auto',
+      source: 'user_confirm',
+      cornersM: flat,
+      posesM: const [0, 1.5, 0, 1, 1.5, 1, 2, 1.5, 2],
+      sampleCount: cloud.length,
+      poseCount: 3,
+      coverageScore: 0.3,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final size = pack.resolvedSize;
+    expect(size.fuseSource, 'userConfirm');
+    expect(size.widthFt, closeTo(18.0, 0.05));
+    expect(size.lengthFt, closeTo(14.0, 0.05));
+    final plan = pack.toPlanWithAiFurniture();
+    expect(plan.roomWidthFt, closeTo(18.0, 0.05));
+    expect(plan.roomLengthFt, closeTo(14.0, 0.05));
+    expect(plan.furniture.where((f) => f.included).length, greaterThanOrEqualTo(4));
+    final ed = ScanParser.toEditor(plan, 20);
+    expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
+    expect(ed.width, closeTo(18.0, 0.05));
+  });
 }

@@ -16,6 +16,8 @@ import 'dart:math' as math;
 ///   feature-point densify on device (native PointCloud, no DepthMode)
 /// - **+135**: **wall-distance lock** — pose-centroid → perimeter radial
 ///   extents on PCA axes (magicplan-class wall clearance → room W×L)
+/// - **+137**: hard **pose-envelope floor** — never under-size below walk
+///   path + standoff when floor mesh is partial
 ///
 /// Python research analogues (server / offline experiments):
 /// - Open3D plane segmentation + RANSAC / statistical outlier removal
@@ -349,6 +351,18 @@ class ArPolygonMap {
       src = 'poseDominant';
     }
 
+    // +137: hard pose-envelope floor — never leave room smaller than walk path
+    // + standoff when the user clearly walked a larger interior (under-size class).
+    // Soft blends above can leave ~3 m floor + full 5 m walk path still short.
+    if (poseWNrm > w * 1.06) {
+      w = math.max(w, poseWNrm * 0.97);
+      src = '$src+poseFloor';
+    }
+    if (poseLNrm > l * 1.06) {
+      l = math.max(l, poseLNrm * 0.97);
+      if (!src.contains('poseFloor')) src = '$src+poseFloor';
+    }
+
     // +135 wall-distance lock: prefer measured wall-to-wall when confident
     if (wallLock != null && wallLock.confidence >= 0.50) {
       final lw = wallLock.widthM;
@@ -367,10 +381,11 @@ class ArPolygonMap {
       src = '$src+wallDistance';
     }
 
-    final rawMaxW = math.max(floor.widthM, pose.widthM);
-    final rawMaxL = math.max(floor.lengthM, pose.lengthM);
-    w = w.clamp(rawMaxW * 0.95, rawMaxW * 1.55 + 2 * stand);
-    l = l.clamp(rawMaxL * 0.95, rawMaxL * 1.55 + 2 * stand);
+    // Upper clamp allows pose+standoff (+137 hard floor); lower stays near raw spans
+    final rawMaxW = math.max(floor.widthM, poseWNrm);
+    final rawMaxL = math.max(floor.lengthM, poseLNrm);
+    w = w.clamp(math.max(floor.widthM, pose.widthM) * 0.95, rawMaxW * 1.08);
+    l = l.clamp(math.max(floor.lengthM, pose.lengthM) * 0.95, rawMaxL * 1.08);
 
     // Agreement: floor vs expanded pose (1 = match, 0 = far apart)
     final aW = _sizeAgreement(floor.widthM, poseWNrm);
