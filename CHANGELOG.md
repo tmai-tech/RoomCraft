@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+137 (2026-07-25)
+
+### Approach fix — confirm size before plan
+- After AR walk, **confirm width × length (ft)** (edit with tape if AR is wrong).
+- Only then create closed-wall plan with furniture.
+- Stops silent wrong ~10×10 plans (feedback 225fb5de). Loop must not ship vanity fixes without this gate.
+
 ## 1.0.0-beta.1+136 (2026-07-24)
 
 ### Accuracy — path expand + denser plan (+136)
