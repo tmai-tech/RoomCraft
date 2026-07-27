@@ -11,6 +11,7 @@ import '../services/storage_service.dart';
 import '../widgets/room_thumbnail.dart';
 import 'blueprint_screen.dart';
 import 'room_scan_screen.dart';
+import 'scanner_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -210,6 +211,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .then((_) => _loadRooms());
   }
 
+  /// Photo / multi-gallery scan — +36 photo-true gold path (feedback be325971).
+  void _createNewPhotos() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ScannerScreen()))
+        .then((_) => _loadRooms());
+  }
+
   void _editRoom(RoomModel room) {
     ref.read(roomProvider.notifier).loadRoom(room);
     Navigator.of(context)
@@ -345,10 +353,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             FilledButton.icon(
               onPressed: _createNewAR,
               icon: const Icon(Icons.view_in_ar),
-              label: const Text('Scan the room'),
+              label: const Text('Scan the room (AR)'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
               ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _createNewPhotos,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Scan from photos'),
             ),
             const SizedBox(height: 16),
             TextButton(
@@ -625,8 +639,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _pillarChip(
               keyName: 'home_pillar_ar',
               icon: Icons.view_in_ar,
-              label: 'Scan the room',
+              label: 'AR scan',
               onTap: _createNewAR,
+            ),
+            _pillarChip(
+              keyName: 'home_pillar_photos',
+              icon: Icons.photo_library_outlined,
+              label: 'Photos',
+              onTap: _createNewPhotos,
             ),
             _pillarChip(
               keyName: 'home_pillar_draw',
@@ -637,7 +657,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _pillarChip(
               keyName: 'home_pillar_gallery',
               icon: Icons.auto_awesome_mosaic_outlined,
-              label: 'Gallery',
+              label: 'Ideas',
               onTap: _showGallery,
             ),
           ],

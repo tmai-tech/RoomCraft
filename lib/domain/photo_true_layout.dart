@@ -149,14 +149,18 @@ class PhotoTrueLayout {
   /// True when plan inventory looks like the study gold room (wardrobe + desk).
   /// Broader than [isStudyLike] — device vision often adds sofa/TV noise that
   /// blocked +116 force-gold (feedback d29c51d4 still 66% table-at-door).
-  /// Home Scan user-marked contents (not monocular study photo gold).
+  /// Home Scan **user-marked** AR inventory (not monocular vision notes).
+  /// Keep narrow — bare "inventory:" matches photo-true study gold and would
+  /// disable resolveForReview gold force (manual_gold / desk_door tests).
   static bool _isHomeScanInventoryPlan(String blobLower) {
     return blobLower.contains('home scan inventory') ||
-        blobLower.contains('inventory plan') ||
-        blobLower.contains('inventory match') ||
-        blobLower.contains('inventory: 2 doors') ||
+        blobLower.contains('inventory plan (+14') || // +140–+143 labels
+        blobLower.contains('inventory match (+14') ||
+        blobLower.contains('inventory study gold') ||
         blobLower.contains('from your inventory') ||
-        blobLower.contains('bean bag');
+        blobLower.contains('study gold layout (+143)') ||
+        (blobLower.contains('bean bag') &&
+            blobLower.contains('user_confirm'));
   }
 
   static bool hasStudyGoldInventory(ScanResult r) {

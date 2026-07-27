@@ -32,8 +32,8 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
   late final TextEditingController _wCtrl;
   late final TextEditingController _lCtrl;
 
-  /// Default matches feedback 04919d14 lounge/office inventory.
-  HomeScanInventory _inventory = HomeScanInventory.loungeOffice;
+  /// Default: study gold (+36 quality / 32ffdc65). Lounge preset one tap away.
+  HomeScanInventory _inventory = HomeScanInventory.studyGold;
 
   @override
   void initState() {
@@ -404,6 +404,15 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                   runSpacing: 8,
                   children: [
                     _chip(
+                      label: 'Wardrobe',
+                      selected: _inventory.wardrobe,
+                      onTap: () => setState(() {
+                        _inventory = _inventory.copyWith(
+                          wardrobe: !_inventory.wardrobe,
+                        );
+                      }),
+                    ),
+                    _chip(
                       label: 'Desk',
                       selected: _inventory.desk,
                       onTap: () => setState(() {
@@ -456,15 +465,28 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Selected: ${_inventory.summaryLabel}',
+                  'Selected: ${_inventory.summaryLabel}'
+                  '${_inventory.usesStudyGoldLayout ? ' · study gold layout' : ''}',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
-                TextButton(
-                  onPressed: () => setState(() {
-                    _inventory = HomeScanInventory.loungeOffice;
-                  }),
-                  child: const Text('Use lounge/office preset (2 doors + …)'),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 4,
+                  children: [
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _inventory = HomeScanInventory.studyGold;
+                      }),
+                      child: const Text('Study gold (+36 layout)'),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _inventory = HomeScanInventory.loungeOffice;
+                      }),
+                      child: const Text('Lounge (bean bag)'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 FilledButton(

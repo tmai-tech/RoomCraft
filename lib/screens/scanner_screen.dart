@@ -268,10 +268,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       );
       return;
     }
-    // +142: default furnished plan uses lounge inventory (04919d14), not random AI fill
+    // +143: default furnished plan uses study gold (+36 quality), not random AI fill
     final raw = mode == 'empty'
         ? pack.toPlan()
-        : pack.toPlanWithInventory(HomeScanInventory.loungeOffice);
+        : pack.toPlanWithInventory(HomeScanInventory.studyGold);
     final plan = PhotoTrueLayout.resolveForReview(raw);
     if (!mounted) return;
     await Navigator.of(context).push(

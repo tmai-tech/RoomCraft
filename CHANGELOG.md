@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+143 (2026-07-27)
+
+### Fix — restore +36 study gold quality (feedback be325971 “worse than 36”)
+- **Study gold inventory preset** (default after AR): wardrobe + dual doors + mesh + desk — same layout quality as build +36 / 32ffdc65 gold.
+- Lounge (bean bag) remains a one-tap preset for 04919d14.
+- **Scan from photos** restored on Home (Photos pillar) — multi-gallery photo-true path was missing while only AR inventory ran.
+- Wardrobe chip on inventory UI.
+
 ## 1.0.0-beta.1+142 (2026-07-27)
 
 ### Fix — inventory plan survives Review resolve (feedback 04919d14)

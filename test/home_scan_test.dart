@@ -330,6 +330,49 @@ void main() {
     expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
   });
 
+  test('+143 study gold inventory = wardrobe + dual doors + desk (not sparse)', () {
+    final measure = ArRoomMeasure(
+      widthFt: 20.3,
+      lengthFt: 17.0,
+      widthM: 20.3 / 3.28084,
+      lengthM: 17.0 / 3.28084,
+      mode: 'auto',
+      source: 'user_confirm',
+      sampleCount: 50,
+      poseCount: 40,
+      coverageScore: 0.92,
+      orthogonalScore: 0.95,
+    );
+    final plan = HomeScanPackage.fromMeasure(measure)
+        .toPlanWithInventory(HomeScanInventory.studyGold);
+    final types =
+        plan.furniture.where((f) => f.included).map((f) => f.type).toSet();
+    expect(types.contains(FurnitureType.wardrobe), isTrue);
+    expect(types.contains(FurnitureType.table), isTrue); // desk as table type
+    expect(plan.walls.where((s) => s.type == StrokeType.door).length,
+        greaterThanOrEqualTo(2));
+    // Mesh / french-style opening present
+    final opens = plan.walls
+        .where((s) =>
+            s.type == StrokeType.window ||
+            s.type == StrokeType.balcony ||
+            s.type == StrokeType.door)
+        .length;
+    expect(opens, greaterThanOrEqualTo(3));
+    // Dense — not sparse 1–2 pieces (be325971 “worse than +36”)
+    expect(plan.furniture.where((f) => f.included).length,
+        greaterThanOrEqualTo(3));
+    final resolved = PhotoTrueLayout.resolveForReview(plan);
+    expect(
+      resolved.furniture
+          .where((f) => f.included && f.type == FurnitureType.wardrobe)
+          .isNotEmpty,
+      isTrue,
+    );
+    expect(HomeScanInventory.studyGold.usesStudyGoldLayout, isTrue);
+    expect(HomeScanInventory.loungeOffice.usesStudyGoldLayout, isFalse);
+  });
+
   test('+142 resolveForReview must not wall-hug inventory coffee table', () {
     final measure = ArRoomMeasure(
       widthFt: 20.0,

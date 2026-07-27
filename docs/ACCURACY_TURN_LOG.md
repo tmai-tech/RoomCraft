@@ -118,3 +118,9 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
 **Fixes:** skip FPM for inventory plans; inventory ≠ study gold; Scanner AR open-plan uses lounge inventory.
 
+## Turn 90 — +143 restore +36 study gold (2026-07-27)
+
+**Feedback:** `be325971` on +142 — “it's worst then 36 build” (sparse plan vs dense gold).
+
+**Fixes:** study gold inventory default (`composeStudyGold`); Home **Photos** scan re-enabled; lounge preset kept for bean-bag rooms.
+
