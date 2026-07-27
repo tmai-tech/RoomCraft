@@ -25,6 +25,8 @@ class ScanFurnitureHint {
   final double lengthFt;
   final double rotationRad;
   final bool included;
+  /// Catalog SKU (e.g. bean_bag, coffee_table) so blueprint labels match inventory.
+  final String? catalogId;
 
   const ScanFurnitureHint({
     required this.type,
@@ -33,16 +35,25 @@ class ScanFurnitureHint {
     required this.lengthFt,
     this.rotationRad = 0,
     this.included = true,
+    this.catalogId,
   });
 
-  ScanFurnitureHint copyWith({bool? included}) {
+  ScanFurnitureHint copyWith({
+    bool? included,
+    Offset? posFt,
+    double? widthFt,
+    double? lengthFt,
+    double? rotationRad,
+    String? catalogId,
+  }) {
     return ScanFurnitureHint(
       type: type,
-      posFt: posFt,
-      widthFt: widthFt,
-      lengthFt: lengthFt,
-      rotationRad: rotationRad,
+      posFt: posFt ?? this.posFt,
+      widthFt: widthFt ?? this.widthFt,
+      lengthFt: lengthFt ?? this.lengthFt,
+      rotationRad: rotationRad ?? this.rotationRad,
       included: included ?? this.included,
+      catalogId: catalogId ?? this.catalogId,
     );
   }
 }

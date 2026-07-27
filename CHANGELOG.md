@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+141 (2026-07-27)
+
+### Fix — inventory plan placement accuracy (feedback 04919d14)
+- Stop **FurniturePositionMap free-float→wall** on inventory plans (coffee table was dragged next to doors).
+- Coffee table stays **mid-room** under French window; desk on work wall; bean bag SE clear of doors.
+- Preserve **catalogId** (Bean bag / coffee table labels) through plan → blueprint.
+- Exact inventory count (2 doors + French window + desk + table + bean bag) → high match score; no invented bed/sofa.
+
 ## 1.0.0-beta.1+140 (2026-07-27)
 
 ### Fix — inventory plan after walk (feedback 04919d14)

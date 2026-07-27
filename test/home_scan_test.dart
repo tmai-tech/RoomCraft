@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:room_craft/domain/ar_polygon_map.dart';
 import 'package:room_craft/domain/home_scan.dart';
 import 'package:room_craft/domain/home_scan_inventory.dart';
+import 'package:room_craft/domain/photo_true_layout.dart';
 import 'package:room_craft/domain/scan_parser.dart';
 import 'package:room_craft/models/furniture_item.dart';
 import 'package:room_craft/models/stroke_model.dart';
@@ -327,6 +328,66 @@ void main() {
     expect(types.contains(FurnitureType.bed), isFalse);
     final ed = ScanParser.toEditor(plan, 20);
     expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
+  });
+
+  test('+141 inventory: mid-room table, bean bag label, no invented sofa', () {
+    // Feedback 04919d14 room shape (~20×9) — FPM used to wall-hug coffee table
+    final measure = ArRoomMeasure(
+      widthFt: 20.0,
+      lengthFt: 9.0,
+      widthM: 20.0 / 3.28084,
+      lengthM: 9.0 / 3.28084,
+      mode: 'auto',
+      source: 'user_confirm',
+      sampleCount: 50,
+      poseCount: 40,
+      coverageScore: 0.92,
+      orthogonalScore: 0.95,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final plan = pack.toPlanWithInventory(HomeScanInventory.loungeOffice);
+
+    expect(plan.walls.where((s) => s.type == StrokeType.door).length,
+        greaterThanOrEqualTo(2));
+    expect(plan.walls.where((s) => s.type == StrokeType.window).length,
+        greaterThanOrEqualTo(1));
+
+    final furn = plan.furniture.where((f) => f.included).toList();
+    expect(furn.length, 3); // desk + table + bean bag only
+    expect(furn.any((f) => f.type == FurnitureType.sofa), isFalse);
+    expect(furn.any((f) => f.type == FurnitureType.bed), isFalse);
+
+    final table = furn.firstWhere((f) => f.type == FurnitureType.table);
+    // Coffee table stays mid-room (not wall-hugged ≤2 ft)
+    final minWall = [
+      table.posFt.dx,
+      table.posFt.dy,
+      plan.roomWidthFt - table.posFt.dx,
+      plan.roomLengthFt - table.posFt.dy,
+    ].reduce((a, b) => a < b ? a : b);
+    expect(minWall, greaterThan(2.2));
+    expect(table.catalogId, 'coffee_table');
+
+    final bag = furn.firstWhere((f) => f.catalogId == 'bean_bag');
+    expect(bag.type, FurnitureType.chair);
+
+    // Clear of door swing
+    for (final f in furn) {
+      expect(
+        PhotoTrueLayout.furnitureBlocksDoorKeepOut(f, plan),
+        isFalse,
+        reason: '${f.type} must not block door',
+      );
+    }
+
+    final ed = ScanParser.toEditor(plan, 20);
+    expect(ed.furniture.length, 3);
+    expect(ed.furniture.any((f) => f.catalogId == 'bean_bag'), isTrue);
+    expect(ed.furniture.any((f) => f.catalogId == 'desk'), isTrue);
+    expect(ed.furniture.any((f) => f.catalogId == 'coffee_table'), isTrue);
+    expect(ed.strokes.where((s) => s.type == StrokeType.door).length,
+        greaterThanOrEqualTo(2));
+    expect(plan.accuracyScore, greaterThanOrEqualTo(0.95));
   });
 
   test('+139 pose drift does not invent 30×26 ft home rooms (7f07625b)', () {

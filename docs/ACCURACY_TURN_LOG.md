@@ -62,7 +62,7 @@
 | A Photo-true gold | 1–12 / +40–+51 | `ensureGoldQuality` all backends |
 | B Geometry last-mile | 13–43 / +52–+82 | Desk/chair/openings/wardrobe span |
 | C Planner5D product | 44–54 / +83–+104 | 3D, catalog, AR place — **not** scan accuracy |
-| D Accuracy resume | 55–85 / +105–**+138** | AR walk → confirm size → **pose-envelope + wall-hug** |
+| D Accuracy resume | 55–88 / +105–**+141** | AR walk → confirm → **inventory plan** (no free-float remap) |
 
 Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
@@ -96,4 +96,19 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 1. Blueprint `InteractiveViewer` auto fit-to-room + Fit button; minScale 0.12.
 2. Native + Dart: soft residential size cap; pose envelope no longer hard-floors to drifted AABB.
 3. Confirm UI warns >24 ft; hard reject typed >40 ft.
+
+## Turn 87 — +140 inventory after walk (2026-07-27)
+
+**Feedback:** `04919d14-7c7` on +139 — “still scan results are wrong there are 2 door 1 french window 1 desk 1 table 1 bean bag”.
+
+**Fixes:** Mark contents after size confirm; `toPlanWithInventory` / lounge-office preset; no random AI living fill.
+
+## Turn 88 — +141 inventory placement fidelity (2026-07-27)
+
+**Feedback:** same `04919d14` accuracy goal — pieces must **match** inventory, not look random.
+
+**Fixes:**
+1. Skip FPM free-float→wall on inventory compose (table was wall-hugged next to door).
+2. Mid-room coffee table; catalogId labels (bean bag); door-swing nudge.
+3. Inventory match score when counts exact.
 

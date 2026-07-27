@@ -411,6 +411,7 @@ class ScanParser {
         widthInFeet: f.widthFt,
         lengthInFeet: f.lengthFt,
         rotationAngle: f.rotationRad,
+        catalogId: f.catalogId,
       );
     }).toList();
 
@@ -453,6 +454,7 @@ class ScanParser {
         lengthFt: f.lengthInFeet,
         rotationRad: f.rotationAngle,
         included: true,
+        catalogId: f.catalogId,
       );
     }).toList();
     return ScanResult(

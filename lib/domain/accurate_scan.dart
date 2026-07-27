@@ -318,6 +318,7 @@ class AccurateScan {
         lengthFt: fl,
         rotationRad: rot,
         included: true,
+        catalogId: raw.catalogId,
       );
 
       // Soft overlap: only drop near-duplicates
