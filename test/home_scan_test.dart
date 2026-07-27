@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_craft/domain/ar_polygon_map.dart';
 import 'package:room_craft/domain/home_scan.dart';
+import 'package:room_craft/domain/home_scan_inventory.dart';
 import 'package:room_craft/domain/scan_parser.dart';
+import 'package:room_craft/models/furniture_item.dart';
 import 'package:room_craft/models/stroke_model.dart';
 import 'package:room_craft/services/ar_measure_service.dart';
 
@@ -288,6 +290,43 @@ void main() {
     expect(aabb, isNotNull);
     expect(aabb!.widthM, closeTo(4.0, 0.05));
     expect(aabb.lengthM, closeTo(2.45, 0.15));
+  });
+
+  test('+140 inventory plan: 2 doors, French window, desk, table, bean bag', () {
+    final measure = ArRoomMeasure(
+      widthFt: 16.0,
+      lengthFt: 12.0,
+      widthM: 16.0 / 3.28084,
+      lengthM: 12.0 / 3.28084,
+      mode: 'auto',
+      source: 'user_confirm',
+      sampleCount: 40,
+      poseCount: 30,
+      coverageScore: 0.9,
+      orthogonalScore: 0.95,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final plan = pack.toPlanWithInventory(HomeScanInventory.loungeOffice);
+    final doors =
+        plan.walls.where((s) => s.type == StrokeType.door).length;
+    final windows =
+        plan.walls.where((s) => s.type == StrokeType.window).length;
+    expect(doors, greaterThanOrEqualTo(2));
+    expect(windows, greaterThanOrEqualTo(1));
+    // French window is wide
+    final maxWin = plan.walls
+        .where((s) => s.type == StrokeType.window)
+        .map((s) => s.lengthFt)
+        .fold<double>(0, (a, b) => a > b ? a : b);
+    expect(maxWin, greaterThanOrEqualTo(5.0));
+    final types =
+        plan.furniture.where((f) => f.included).map((f) => f.type).toSet();
+    expect(types.contains(FurnitureType.desk), isTrue);
+    expect(types.contains(FurnitureType.table), isTrue);
+    expect(types.contains(FurnitureType.chair), isTrue); // bean bag
+    expect(types.contains(FurnitureType.bed), isFalse);
+    final ed = ScanParser.toEditor(plan, 20);
+    expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
   });
 
   test('+139 pose drift does not invent 30×26 ft home rooms (7f07625b)', () {

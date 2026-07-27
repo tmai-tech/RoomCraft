@@ -3,16 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
 import '../domain/home_scan.dart';
+import '../domain/home_scan_inventory.dart';
 import '../domain/scan_parser.dart';
 import '../providers/room_provider.dart';
 import '../services/ar_measure_service.dart' show ArMeasureService, ArRoomMeasure;
 import '../services/home_scan_service.dart';
 import 'blueprint_screen.dart';
 
-/// Scan the room → confirm size → plan with furniture.
+/// Scan the room → confirm size → inventory → plan.
 ///
-/// +137: approach fix — AR walk only *proposes* size; user confirms/edits feet
-/// before we invent a plan. Stops silent wrong 10×10 output (feedback 225fb5de).
+/// +137: AR proposes size; user confirms feet before plan.
+/// +140: user marks openings/furniture (feedback 04919d14) — no random AI bed/sofa.
 class RoomScanScreen extends ConsumerStatefulWidget {
   const RoomScanScreen({super.key});
 
@@ -30,6 +31,9 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
   HomeScanPackage? _pack;
   late final TextEditingController _wCtrl;
   late final TextEditingController _lCtrl;
+
+  /// Default matches feedback 04919d14 lounge/office inventory.
+  HomeScanInventory _inventory = HomeScanInventory.loungeOffice;
 
   @override
   void initState() {
@@ -89,7 +93,6 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       } catch (_) {}
 
       final size = pack.resolvedSize;
-      // Prefer AR proposal, but never trust tiny half-walk without confirmation
       _wCtrl.text = size.widthFt.toStringAsFixed(1);
       _lCtrl.text = size.lengthFt.toStringAsFixed(1);
 
@@ -97,7 +100,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         _busy = false;
         _measure = measure;
         _pack = pack;
-        _status = 'Confirm room size';
+        _status = 'Confirm size & contents';
       });
     } catch (e) {
       final msg = e.toString();
@@ -137,10 +140,18 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       );
       return;
     }
+    if (!_inventory.hasAnyOpenings && !_inventory.hasAnyFurniture) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mark doors/windows or furniture, or use the lounge preset.'),
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _busy = true;
-      _status = 'Creating plan with furniture…';
+      _status = 'Creating plan…';
       _error = null;
     });
 
@@ -153,7 +164,6 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
             lengthM: l / 3.28084,
             mode: 'auto',
           );
-      // Override with confirmed size (truth step) — source locks fuse (+138)
       final confirmed = ArRoomMeasure(
         widthFt: w >= l ? w : l,
         lengthFt: w >= l ? l : w,
@@ -169,8 +179,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         poseCount: base.poseCount,
         orthogonalScore: base.orthogonalScore,
         diagonalError: base.diagonalError,
-        coverageScore:
-            base.coverageScore > 0.9 ? base.coverageScore : 0.9,
+        coverageScore: base.coverageScore > 0.9 ? base.coverageScore : 0.9,
         depthEnabled: base.depthEnabled,
         depthSamples: base.depthSamples,
         wallLockWidthM: base.wallLockWidthM,
@@ -183,7 +192,8 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         floorHitsM: _pack?.floorHitsM,
         posesM: _pack?.posesM,
       );
-      final plan = pack.toPlanWithAiFurniture();
+      // +140: inventory plan — not random AI living fill (feedback 04919d14)
+      final plan = pack.toPlanWithInventory(_inventory);
       final pxf = AppConfig.defaultPixelsPerFoot;
       final converted = ScanParser.toEditor(plan, pxf);
       ref.read(roomProvider.notifier).initFromScan(
@@ -205,6 +215,20 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
     }
   }
 
+  Widget _chip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: Colors.teal.shade100,
+      checkmarkColor: Colors.teal.shade800,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final confirming = _measure != null && _error == null && !_busy;
@@ -219,7 +243,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -241,20 +265,20 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                   child: const Text('Cancel'),
                 ),
               ] else if (confirming) ...[
-                const Icon(Icons.straighten, size: 64, color: Colors.teal),
-                const SizedBox(height: 16),
+                const Icon(Icons.straighten, size: 56, color: Colors.teal),
+                const SizedBox(height: 12),
                 Text(
-                  'Confirm room size',
+                  'Confirm size & contents',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'AR suggested this size. Fix it with a tape measure if wrong, '
-                  'then create the plan.',
+                  'AR measures size only. Mark what is actually in the room '
+                  'so the plan matches (not a random layout).',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     Expanded(
@@ -315,13 +339,140 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Openings',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip(
+                      label: '1 door',
+                      selected: _inventory.doors == 1,
+                      onTap: () => setState(() {
+                        _inventory = _inventory.copyWith(
+                          doors: _inventory.doors == 1 ? 0 : 1,
+                        );
+                      }),
+                    ),
+                    _chip(
+                      label: '2 doors',
+                      selected: _inventory.doors == 2,
+                      onTap: () => setState(() {
+                        _inventory = _inventory.copyWith(
+                          doors: _inventory.doors == 2 ? 0 : 2,
+                        );
+                      }),
+                    ),
+                    _chip(
+                      label: 'French window',
+                      selected: _inventory.frenchWindow,
+                      onTap: () => setState(() {
+                        _inventory = _inventory.copyWith(
+                          frenchWindow: !_inventory.frenchWindow,
+                        );
+                      }),
+                    ),
+                    _chip(
+                      label: 'Window',
+                      selected: _inventory.windows >= 1,
+                      onTap: () => setState(() {
+                        _inventory = _inventory.copyWith(
+                          windows: _inventory.windows >= 1 ? 0 : 1,
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Furniture',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip(
+                      label: 'Desk',
+                      selected: _inventory.desk,
+                      onTap: () => setState(() {
+                        _inventory =
+                            _inventory.copyWith(desk: !_inventory.desk);
+                      }),
+                    ),
+                    _chip(
+                      label: 'Table',
+                      selected: _inventory.table,
+                      onTap: () => setState(() {
+                        _inventory =
+                            _inventory.copyWith(table: !_inventory.table);
+                      }),
+                    ),
+                    _chip(
+                      label: 'Bean bag',
+                      selected: _inventory.beanBag,
+                      onTap: () => setState(() {
+                        _inventory = _inventory.copyWith(
+                          beanBag: !_inventory.beanBag,
+                        );
+                      }),
+                    ),
+                    _chip(
+                      label: 'Sofa',
+                      selected: _inventory.sofa,
+                      onTap: () => setState(() {
+                        _inventory =
+                            _inventory.copyWith(sofa: !_inventory.sofa);
+                      }),
+                    ),
+                    _chip(
+                      label: 'Bed',
+                      selected: _inventory.bed,
+                      onTap: () => setState(() {
+                        _inventory =
+                            _inventory.copyWith(bed: !_inventory.bed);
+                      }),
+                    ),
+                    _chip(
+                      label: 'Chair',
+                      selected: _inventory.chair,
+                      onTap: () => setState(() {
+                        _inventory =
+                            _inventory.copyWith(chair: !_inventory.chair);
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Selected: ${_inventory.summaryLabel}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _inventory = HomeScanInventory.loungeOffice;
+                  }),
+                  child: const Text('Use lounge/office preset (2 doors + …)'),
+                ),
+                const SizedBox(height: 12),
                 FilledButton(
                   onPressed: _createPlan,
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(double.infinity, 48),
                   ),
-                  child: const Text('Create plan with furniture'),
+                  child: const Text('Create plan'),
                 ),
                 TextButton(
                   onPressed: _runArWalk,
@@ -338,7 +489,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 const SizedBox(height: 12),
                 Text(
                   'Walk the full room near the walls. Tap Done when finished.\n'
-                  'You will confirm size, then get a plan with furniture.',
+                  'Then confirm size and mark doors / furniture.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),

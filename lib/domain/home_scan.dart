@@ -9,6 +9,7 @@ import '../models/stroke_model.dart';
 import 'accurate_scan.dart';
 import 'ar_polygon_map.dart';
 import 'furniture_position_map.dart';
+import 'home_scan_inventory.dart';
 import 'layout/ai_designer.dart';
 import 'layout/auto_arrange.dart';
 import 'opening_chain_fidelity.dart';
@@ -348,14 +349,46 @@ class HomeScanPackage {
     );
   }
 
+  /// Metric room + inventory openings/furniture (+140).
+  ///
+  /// Walk locks **size**; contents come from [HomeScanInventory] (user report),
+  /// not random AI living-room fill (feedback 04919d14).
+  ScanResult toPlanWithInventory(
+    HomeScanInventory inventory, {
+    double pixelsPerFoot = 20,
+  }) {
+    final size = resolvedSize;
+    final plan = HomeScanInventoryComposer.compose(
+      widthFt: size.widthFt,
+      lengthFt: size.lengthFt,
+      inventory: inventory,
+      accuracyScore: math.max(size.coverage, 0.88),
+    );
+    // Merge size diagnostics into warnings
+    return plan.copyWith(
+      warnings: [
+        ...toPlan().warnings.where((w) =>
+            !w.contains('Placeholder door') &&
+            !w.contains('Placeholder door/window')),
+        ...plan.warnings,
+      ],
+    );
+  }
+
   /// Metric room + on-device AI starter furniture (+128–+137).
   ///
-  /// Walk locks **size**; furniture is a catalog layout seed (not photo-true).
-  /// +137: wall-hug arrange + denser living fill so plan is usable after Done.
+  /// Prefer [toPlanWithInventory] after Home Scan (feedback 04919d14).
+  /// Kept for legacy / tests when inventory is not available.
   ScanResult toPlanWithAiFurniture({
     DesignStyle? style,
     double pixelsPerFoot = 20,
+    HomeScanInventory? inventory,
   }) {
+    // +140: inventory path when UI provides contents (feedback 04919d14)
+    if (inventory != null &&
+        (inventory.hasAnyFurniture || inventory.hasAnyOpenings)) {
+      return toPlanWithInventory(inventory, pixelsPerFoot: pixelsPerFoot);
+    }
     final base = toPlan();
     final room = RoomModel(
       id: id,
@@ -363,14 +396,13 @@ class HomeScanPackage {
       widthInFeet: base.roomWidthFt,
       lengthInFeet: base.roomLengthFt,
     );
-    // +133–+137: denser living/family fill so plan is not empty after scan
     final area = base.roomWidthFt * base.roomLengthFt;
     final minPieces = area >= 180
         ? 6
         : area >= 120
             ? 5
             : 4;
-    // Prefer wall-anchored living/office (Planner5D-class usable plan)
+    // Prefer wall-anchored living/office when no style given
     var picked = style ??
         (area >= 120
             ? DesignStyle.family
@@ -381,11 +413,9 @@ class HomeScanPackage {
       room: room,
       pixelsPerFoot: pixelsPerFoot,
       style: picked,
-      // +137: always wall-hug after walk so pieces sit on walls (not free-float)
       arrangeStyle: ArrangeStyle.wallHug,
     );
-    // Force denser recipes until min piece count
-    if (items.length < minPieces && style == null) {
+    if (items.length < minPieces) {
       for (final retry in [
         DesignStyle.family,
         DesignStyle.cozy,
@@ -424,14 +454,12 @@ class HomeScanPackage {
       warnings: [
         ...base.warnings.where((w) => !w.contains('Placeholder door')),
         'AI starter furniture (${picked.label}) — edit freely; not from photos',
-        'Walk map locked size; closed walls + wall-hug pieces (+138)',
+        'Walk map locked size; closed walls + wall-hug pieces (+140)',
       ],
     );
-    // +130/+134/+137 accuracy: openings chain + wall positions + door clearances
     plan = OpeningChainFidelity.ensure(plan);
     plan = FurniturePositionMap.ensure(plan);
     plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
-    // Guarantee closed rectangle walls in plan (editor re-seals too)
     if (plan.walls.where((s) => s.type == StrokeType.wall).length < 4) {
       plan = AccurateScan.enforce(
         widthFt: plan.roomWidthFt,

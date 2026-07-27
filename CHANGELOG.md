@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+140 (2026-07-27)
+
+### Fix — inventory plan after walk (feedback 04919d14)
+- After size confirm, **mark room contents** (2 doors, French window, desk, table, bean bag, …).
+- Plan uses **your inventory**, not random AI bed/sofa living fill.
+- Lounge/office preset matches the reported room; openings chain seeds French window.
+
 ## 1.0.0-beta.1+139 (2026-07-27)
 
 ### Fix — full plan on screen + no 30 ft pose drift (feedback 7f07625b)

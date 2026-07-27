@@ -44,6 +44,10 @@ class OpeningChainFidelity {
         blob.contains('balcony') ||
         blob.contains('glass sliding') ||
         blob.contains('must include mesh');
+    // +140: French window = wide glazing (window), not mesh balcony
+    final wantFrench = blob.contains('french window') ||
+        blob.contains('french-window') ||
+        blob.contains('french door window');
     var wantDoors = 1;
     final doorMatch = RegExp(r'about\s+(\d+)\s+door').firstMatch(blob);
     if (doorMatch != null) {
@@ -55,6 +59,10 @@ class OpeningChainFidelity {
     if (blob.contains('wardrobe') &&
         (blob.contains('table') || blob.contains('desk')) &&
         wantDoors < 2) {
+      wantDoors = 2;
+    }
+    // Explicit inventory "2 doors" from Home Scan (+140)
+    if (RegExp(r'\b2 doors\b').hasMatch(blob)) {
       wantDoors = 2;
     }
 
@@ -137,6 +145,13 @@ class OpeningChainFidelity {
             f.type == StrokeType.balcony ||
             (f.type == StrokeType.window && f.width >= 4.5))) {
       fields = _seedMesh(fields, w, l, notes, input);
+    }
+
+    // +140: ensure wide French window when inventory asks
+    if (wantFrench &&
+        !fields.any((f) =>
+            f.type == StrokeType.window && f.width >= 5.0)) {
+      fields = _seedFrenchWindow(fields, w, l, notes);
     }
 
     final hints = <WallOpeningHint>[
@@ -445,6 +460,42 @@ class OpeningChainFidelity {
     notes.add(
       'Opening chain (+107): seeded mesh on ${side.name} '
       '(${meshW.toStringAsFixed(1)} ft)',
+    );
+    return out;
+  }
+
+  /// +140: wide French window (glazing) on a free long wall.
+  static List<({WallSide wall, StrokeType type, double fromLeft, double width})>
+      _seedFrenchWindow(
+    List<({WallSide wall, StrokeType type, double fromLeft, double width})>
+        fields,
+    double w,
+    double l,
+    List<String> notes,
+  ) {
+    final used = fields.map((f) => f.wall).toSet();
+    final side = [
+      WallSide.north,
+      WallSide.south,
+      WallSide.east,
+      WallSide.west,
+    ].firstWhere(
+      (s) => !used.contains(s),
+      orElse: () => WallSide.north,
+    );
+    final wl = side.lengthFt(w, l);
+    final winW = math.min(7.0, math.max(wl * 0.42, 5.5)).clamp(5.0, wl * 0.8);
+    final fromLeft = ((wl - winW) / 2).clamp(0.0, wl - winW);
+    final out = List.of(fields)
+      ..add((
+        wall: side,
+        type: StrokeType.window,
+        fromLeft: fromLeft,
+        width: winW.toDouble(),
+      ));
+    notes.add(
+      'Opening chain (+140): seeded French window on ${side.name} '
+      '(${winW.toStringAsFixed(1)} ft)',
     );
     return out;
   }
