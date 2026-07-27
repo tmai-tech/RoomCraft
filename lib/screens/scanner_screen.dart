@@ -8,6 +8,7 @@ import '../catalog/furniture_catalog.dart';
 import '../config/app_config.dart';
 import '../domain/accurate_scan.dart';
 import '../domain/home_scan.dart';
+import '../domain/home_scan_inventory.dart';
 import '../domain/layout/auto_arrange.dart';
 import '../domain/photo_true_layout.dart';
 import '../domain/plan_accuracy_metrics.dart';
@@ -267,7 +268,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       );
       return;
     }
-    final raw = mode == 'empty' ? pack.toPlan() : pack.toPlanWithAiFurniture();
+    // +142: default furnished plan uses lounge inventory (04919d14), not random AI fill
+    final raw = mode == 'empty'
+        ? pack.toPlan()
+        : pack.toPlanWithInventory(HomeScanInventory.loungeOffice);
     final plan = PhotoTrueLayout.resolveForReview(raw);
     if (!mounted) return;
     await Navigator.of(context).push(

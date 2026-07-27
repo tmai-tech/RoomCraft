@@ -73,6 +73,10 @@ class PhotoTrueLayout {
   /// True when plan/inventory looks like study (no bed) — safe for study-gold fill.
   static bool isStudyLike(ScanResult r) {
     final blob = r.warnings.join(' ').toLowerCase();
+    // +142: Home Scan inventory lounge (desk/table/bean bag) is NOT study gold.
+    // Coffee table as FurnitureType.table used to trip the table→study gate and
+    // risk wiping inventory after resolveForReview (feedback 04919d14).
+    if (_isHomeScanInventoryPlan(blob)) return false;
     // +106: MUST bed always non-study (polish used to add "no bed invent" notes)
     if (blob.contains('must include bed')) return false;
     if (blob.contains('bedroom') && !_inventoryForbidsBed(blob)) {
@@ -145,10 +149,21 @@ class PhotoTrueLayout {
   /// True when plan inventory looks like the study gold room (wardrobe + desk).
   /// Broader than [isStudyLike] — device vision often adds sofa/TV noise that
   /// blocked +116 force-gold (feedback d29c51d4 still 66% table-at-door).
+  /// Home Scan user-marked contents (not monocular study photo gold).
+  static bool _isHomeScanInventoryPlan(String blobLower) {
+    return blobLower.contains('home scan inventory') ||
+        blobLower.contains('inventory plan') ||
+        blobLower.contains('inventory match') ||
+        blobLower.contains('inventory: 2 doors') ||
+        blobLower.contains('from your inventory') ||
+        blobLower.contains('bean bag');
+  }
+
   static bool hasStudyGoldInventory(ScanResult r) {
     final types =
         r.furniture.where((f) => f.included).map((f) => f.type).toSet();
     final blob = r.warnings.join(' ').toLowerCase();
+    if (_isHomeScanInventoryPlan(blob)) return false;
     if (types.contains(FurnitureType.bed) || blob.contains('must include bed')) {
       return false;
     }
@@ -217,8 +232,12 @@ class PhotoTrueLayout {
     // +119: AR / tape / field measure — preserve measured plan, no gold wipe.
     if (hasMeasuredScaleLock(input)) {
       var plan = input;
-      // Keep free-float pieces wall-anchored without inventing study template.
-      plan = FurniturePositionMap.ensure(plan);
+      final blob = input.warnings.join(' ').toLowerCase();
+      // +142: inventory lounge keeps intentional mid-room coffee table / bean bag.
+      // FurniturePositionMap free-float→wall was re-breaking 04919d14 after +141.
+      if (!_isHomeScanInventoryPlan(blob)) {
+        plan = FurniturePositionMap.ensure(plan);
+      }
       plan = clearDoorBlockedFurniture(plan);
       final emptyLayout =
           plan.furniture.where((f) => f.included).isEmpty && plan.walls.isEmpty;
@@ -232,8 +251,11 @@ class PhotoTrueLayout {
           emptyLayout
               ? 'Review resolve (+119): 100% AR/tape measured room geometry '
                   '(add openings & furniture in editor or AR place)'
-              : 'Review resolve (+119): measured-scale lock preserved — '
-                  'no study-gold force (gallery-only template)',
+              : _isHomeScanInventoryPlan(blob)
+                  ? 'Review resolve (+142): inventory plan preserved '
+                      '(no free-float→wall remap)'
+                  : 'Review resolve (+119): measured-scale lock preserved — '
+                      'no study-gold force (gallery-only template)',
         ],
       );
     }

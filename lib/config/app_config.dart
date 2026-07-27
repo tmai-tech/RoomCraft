@@ -6,7 +6,7 @@ class AppConfig {
   /// Display version (keep in sync with pubspec.yaml `version: x.y.z+build`).
   static const String appVersion = '1.0.0-beta.1';
   /// Must match pubspec `+NNN` — feedback / Settings use this (not package_info).
-  static const int buildNumber = 141;
+  static const int buildNumber = 142;
   static const bool isBeta = true;
 
   /// Firebase Google Sign-In Web client ID (oauth_client client_type 3).

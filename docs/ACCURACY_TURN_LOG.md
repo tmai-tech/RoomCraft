@@ -112,3 +112,9 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 2. Mid-room coffee table; catalogId labels (bean bag); door-swing nudge.
 3. Inventory match score when counts exact.
 
+## Turn 89 — +142 inventory survives Review resolve (2026-07-27)
+
+**Gap:** `resolveForReview` on AR scale-lock still ran FurniturePositionMap → re-broke mid-room table; `isStudyLike` treated coffee `table` as study.
+
+**Fixes:** skip FPM for inventory plans; inventory ≠ study gold; Scanner AR open-plan uses lounge inventory.
+

@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+142 (2026-07-27)
+
+### Fix — inventory plan survives Review resolve (feedback 04919d14)
+- **Do not free-float→wall remap** inventory plans in `resolveForReview` (coffee table stayed mid-room).
+- Home Scan inventory is **not** study-gold (desk/table no longer trips wardrobe force).
+- Legacy Scanner AR “Open plan” uses lounge inventory, not random AI fill.
+
 ## 1.0.0-beta.1+141 (2026-07-27)
 
 ### Fix — inventory plan placement accuracy (feedback 04919d14)

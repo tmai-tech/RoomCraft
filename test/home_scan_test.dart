@@ -330,6 +330,43 @@ void main() {
     expect(ed.strokes.where((s) => s.type == StrokeType.wall).length, 4);
   });
 
+  test('+142 resolveForReview must not wall-hug inventory coffee table', () {
+    final measure = ArRoomMeasure(
+      widthFt: 20.0,
+      lengthFt: 9.0,
+      widthM: 20.0 / 3.28084,
+      lengthM: 9.0 / 3.28084,
+      mode: 'auto',
+      source: 'user_confirm',
+      sampleCount: 50,
+      poseCount: 40,
+      coverageScore: 0.92,
+      orthogonalScore: 0.95,
+    );
+    final plan = HomeScanPackage.fromMeasure(measure)
+        .toPlanWithInventory(HomeScanInventory.loungeOffice);
+    expect(PhotoTrueLayout.isStudyLike(plan), isFalse);
+    expect(PhotoTrueLayout.hasStudyGoldInventory(plan), isFalse);
+
+    final resolved = PhotoTrueLayout.resolveForReview(plan);
+    final furn = resolved.furniture.where((f) => f.included).toList();
+    expect(furn.length, 3);
+    expect(furn.any((f) => f.type == FurnitureType.wardrobe), isFalse);
+    expect(furn.any((f) => f.catalogId == 'bean_bag'), isTrue);
+
+    final table = furn.firstWhere((f) => f.type == FurnitureType.table);
+    final minWall = [
+      table.posFt.dx,
+      table.posFt.dy,
+      resolved.roomWidthFt - table.posFt.dx,
+      resolved.roomLengthFt - table.posFt.dy,
+    ].reduce((a, b) => a < b ? a : b);
+    // Must stay mid-room after review (FPM used to pin ≤2 ft from wall)
+    expect(minWall, greaterThan(2.2));
+    expect(resolved.walls.where((s) => s.type == StrokeType.door).length,
+        greaterThanOrEqualTo(2));
+  });
+
   test('+141 inventory: mid-room table, bean bag label, no invented sofa', () {
     // Feedback 04919d14 room shape (~20×9) — FPM used to wall-hug coffee table
     final measure = ArRoomMeasure(
