@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+139 (2026-07-27)
+
+### Fix — full plan on screen + no 30 ft pose drift (feedback 7f07625b)
+- **Fit plan to viewport** on open (+ fit-screen button); zoom out to 0.12× so whole room is visible.
+- **Pose-envelope soft cap**: stop AR walk/pose drift inventing ~30×26 ft rooms; residential max ~28×26 ft without wall lock (native + Dart).
+- Confirm-size **warns when >24 ft**; reject typed sizes >40 ft as wrong units.
+
 ## 1.0.0-beta.1+138 (2026-07-25)
 
 ### Accuracy — pose-envelope + user-confirm size lock + wall-hug (+138)

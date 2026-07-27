@@ -96,6 +96,13 @@ class HomeScanPackage {
       return 'Walk path too short for this room. '
           'Complete a full loop near the walls, then Done.';
     }
+    // +139: absurd home size without wall lock (tracking drift / over-standoff)
+    if (!measure.hasWallLock &&
+        (w > HomeScanGeometry.residentialMaxWidthFt + 0.5 ||
+            l > HomeScanGeometry.residentialMaxLengthFt + 0.5)) {
+      return 'Size looks too large (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
+          'Re-walk slowly near walls, or edit size with a tape after Done.';
+    }
     return null;
   }
 
@@ -235,20 +242,44 @@ class HomeScanPackage {
       }
     }
 
-    // +137: axis-aligned pose AABB + standoff as hard size floor (secondary to PCA fuse)
+    // +137/+139: pose AABB soft floor — expand incomplete floor, not AR drift.
+    // Feedback 7f07625b: 30.6×25.6 ft on a normal living room from hard envelope.
     final aabb = HomeScanGeometry.poseAabbMeters(posesM);
     if (aabb != null && w >= 3 && l >= 3 && !src.contains('wallLock')) {
-      const stand = ArPolygonMap.defaultWalkStandoffM;
-      final envWM = (aabb.widthM + 2 * stand);
-      final envLM = (aabb.lengthM + 2 * stand);
+      const stand = 0.55;
+      final envWM = math.min(aabb.widthM + 2 * stand, 8.6);
+      final envLM = math.min(aabb.lengthM + 2 * stand, 8.0);
       final envW = math.max(envWM, envLM) * mToFt;
       final envL = math.min(envWM, envLM) * mToFt;
-      if (envW > w * 1.06 || envL > l * 1.06) {
-        if (envW > w) w = math.max(w, envW * 0.96);
-        if (envL > l) l = math.max(l, envL * 0.96);
+      final ratioW = w > 0 ? envW / w : 1.0;
+      final ratioL = l > 0 ? envL / l : 1.0;
+      // Modest under-size: trust pose envelope (partial floor mesh)
+      if (envW > w * 1.06 && ratioW <= 1.55) {
+        w = math.max(w, math.min(envW * 0.95, HomeScanGeometry.residentialMaxWidthFt));
         src = '$src+poseAabb';
         agree = math.max(agree, 0.74);
+      } else if (envW > w * 1.55) {
+        // Pose >> floor → tracking drift; mild expand only
+        w = math.max(w, math.min(w * 1.18, envW * 0.65));
+        src = '$src+poseAabbSoft';
       }
+      if (envL > l * 1.06 && ratioL <= 1.55) {
+        l = math.max(l, math.min(envL * 0.95, HomeScanGeometry.residentialMaxLengthFt));
+        if (!src.contains('poseAabb')) src = '$src+poseAabb';
+        agree = math.max(agree, 0.74);
+      } else if (envL > l * 1.55) {
+        l = math.max(l, math.min(l * 1.18, envL * 0.65));
+        if (!src.contains('poseAabb')) src = '$src+poseAabbSoft';
+      }
+    }
+
+    // +139: soft residential clamp for proposed (non user-locked) sizes
+    if (!measure.hasWallLock) {
+      w = math.min(w, HomeScanGeometry.residentialMaxWidthFt);
+      l = math.min(l, HomeScanGeometry.residentialMaxLengthFt);
+    } else {
+      w = math.min(w, 49.0);
+      l = math.min(l, 40.0);
     }
 
     return (
@@ -287,7 +318,7 @@ class HomeScanPackage {
       sourceLabel: 'Home Scan (AR walk → metric plan)',
       accuracyScore: score,
       warnings: [
-        'Home Scan (+138): floor + pose envelope + wall-lock + path expand'
+        'Home Scan (+139): floor + pose envelope + wall-lock + path expand'
             '${measure.depthEnabled ? ' + depth' : ''}'
             '${size.fuseSource == 'userConfirm' ? ' · user size lock' : ''} → room size',
         'Room ${w.toStringAsFixed(1)} × ${l.toStringAsFixed(1)} ft'
@@ -524,6 +555,11 @@ class HomeScanPackage {
 /// Helpers for Home Scan package geometry checks (tests / diagnostics).
 class HomeScanGeometry {
   HomeScanGeometry._();
+
+  /// Soft max for a single home room without wall-lock proof (feet).
+  /// Feedback 7f07625b: 30×26 ft proposals from pose drift.
+  static const double residentialMaxWidthFt = 28.0;
+  static const double residentialMaxLengthFt = 26.0;
 
   /// Approximate path length of pose trail in meters.
   static double posePathLengthM(List<List<double>> poses) {

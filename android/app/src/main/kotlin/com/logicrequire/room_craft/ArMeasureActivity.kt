@@ -771,28 +771,43 @@ class ArMeasureActivity : AppCompatActivity() {
         lastDiagError = dims.diagonalError
 
         // +128/+130: expand using camera pose trail (interior path + adaptive standoff)
+        // +139: never let pose trail (AR drift) invent 30+ ft rooms — feedback 7f07625b
         val poseDims = if (poseSamples.size >= 8) resolveCloudMeters(poseSamples) else null
         if (poseDims != null) {
-            var stand = 0.75 // Planner5D-class half-standoff meters
+            var stand = 0.55 // tighter standoff; over-standoff inflated homes
             // Adaptive: half-gap between floor cloud and pose path when floor is larger
             val gapW = (max(w, l) - max(poseDims.widthM, poseDims.lengthM)) / 2.0
             val gapL = (min(w, l) - min(poseDims.widthM, poseDims.lengthM)) / 2.0
             val gap = max(gapW, gapL)
-            if (lastCoverageScore >= 0.5 && gap in 0.30..1.40) {
-                stand = (stand * 0.35 + gap * 0.65).coerceIn(0.35, 1.25)
+            if (lastCoverageScore >= 0.5 && gap in 0.30..1.10) {
+                stand = (stand * 0.35 + gap * 0.65).coerceIn(0.30, 0.85)
             }
-            val poseW = max(poseDims.widthM, poseDims.lengthM) + 2 * stand
-            val poseL = min(poseDims.widthM, poseDims.lengthM) + 2 * stand
+            var poseW = max(poseDims.widthM, poseDims.lengthM) + 2 * stand
+            var poseL = min(poseDims.widthM, poseDims.lengthM) + 2 * stand
+            // Cap pose envelope vs floor cloud (tracking drift balloon)
+            val floorMax = max(w, l).coerceAtLeast(1.5)
+            val floorMin = min(w, l).coerceAtLeast(1.2)
+            poseW = min(poseW, floorMax * 1.32)
+            poseL = min(poseL, floorMin * 1.32)
+            // Absolute residential soft cap without wall lock (~28 ft)
+            if (wallLockPairs < 2) {
+                poseW = min(poseW, 8.6)
+                poseL = min(poseL, 8.0)
+            }
             if (lastCoverageScore < 0.75) {
-                w = max(w, w * 0.45 + poseW * 0.55)
-                l = max(l, l * 0.45 + poseL * 0.55)
+                w = max(w, w * 0.50 + poseW * 0.50)
+                l = max(l, l * 0.50 + poseL * 0.50)
             } else {
-                w = max(w, min(poseW, w * 1.12))
-                l = max(l, min(poseL, l * 1.12))
+                w = max(w, min(poseW, w * 1.10))
+                l = max(l, min(poseL, l * 1.10))
             }
-            // +137: hard pose-envelope floor when walk path clearly larger than floor mesh
-            if (poseW > w * 1.06) w = max(w, poseW * 0.97)
-            if (poseL > l * 1.06) l = max(l, poseL * 0.97)
+            // Soft floor only when pose is modestly larger (not hard 0.97× envelope)
+            if (poseW > w * 1.08 && poseW <= floorMax * 1.28) {
+                w = max(w, min(poseW * 0.94, floorMax * 1.25))
+            }
+            if (poseL > l * 1.08 && poseL <= floorMin * 1.28) {
+                l = max(l, min(poseL * 0.94, floorMin * 1.25))
+            }
             lastCoverageScore = max(lastCoverageScore, poseDims.coverageScore * 0.9)
         }
 
@@ -828,6 +843,15 @@ class ArMeasureActivity : AppCompatActivity() {
             }
         }
 
+        // +139: residential soft cap when no strong wall lock (feedback 7f07625b 30×26 ft)
+        if (wallLockPairs < 2) {
+            w = min(w, 8.6) // ~28 ft
+            l = min(l, 8.0) // ~26 ft
+        } else {
+            // Even with wall lock, hard reject absurd tracking (office halls only)
+            w = min(w, 15.0)
+            l = min(l, 12.0)
+        }
         autoWidthM = max(w, l)
         autoLengthM = min(w, l)
         refreshWalkMap()

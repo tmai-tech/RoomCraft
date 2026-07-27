@@ -127,9 +127,13 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       );
       return;
     }
-    if (w > 80 || l > 80) {
+    if (w > 40 || l > 40) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Size looks too large — check units (feet).')),
+        const SnackBar(
+          content: Text(
+            'Size looks too large for one room — check units (feet), not inches/cm.',
+          ),
+        ),
       );
       return;
     }
@@ -259,6 +263,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'Width (ft)',
                           border: OutlineInputBorder(),
@@ -272,6 +277,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'Length (ft)',
                           border: OutlineInputBorder(),
@@ -287,6 +293,28 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
+                Builder(
+                  builder: (context) {
+                    final ww = double.tryParse(_wCtrl.text.trim()) ?? 0;
+                    final ll = double.tryParse(_lCtrl.text.trim()) ?? 0;
+                    final large = ww > 24 || ll > 24;
+                    if (!large) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        'This size is large for a single room '
+                        '(${ww.toStringAsFixed(0)}×${ll.toStringAsFixed(0)} ft). '
+                        'Double-check with a tape before creating the plan.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.orange.shade900,
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: _createPlan,

@@ -87,3 +87,13 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 - Feedback gold: `data/feedback/32ffdc65-a49`, `e89c702e-7e4`, `c8c569e9-e03`
 - Code: `lib/domain/photo_true_layout.dart`, `lib/domain/furniture_position_map.dart`, `lib/domain/auto_scale.dart`
 - Tests: `test/device_proof_accuracy_test.dart`, `test/photo_true_layout_test.dart`, `test/auto_scale_wardrobe_test.dart`
+
+## Turn 86 — +139 fit view + pose drift cap (2026-07-27)
+
+**Feedback:** `7f07625b-885` on +138 — “plan is out of screen not able to view full view”; AR showed **30.6×25.6 ft**.
+
+**Fixes:**
+1. Blueprint `InteractiveViewer` auto fit-to-room + Fit button; minScale 0.12.
+2. Native + Dart: soft residential size cap; pose envelope no longer hard-floors to drifted AABB.
+3. Confirm UI warns >24 ft; hard reject typed >40 ft.
+

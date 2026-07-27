@@ -290,6 +290,43 @@ void main() {
     expect(aabb.lengthM, closeTo(2.45, 0.15));
   });
 
+  test('+139 pose drift does not invent 30×26 ft home rooms (7f07625b)', () {
+    // Small floor (~3.5×3.0 m) but drifted pose trail spanning ~10×8 m
+    final cloud = ArPolygonMap.walkCloudRectM(
+      widthM: 3.5,
+      lengthM: 3.0,
+      samplesPerEdge: 6,
+    );
+    final flat = <double>[for (final p in cloud) ...p];
+    final poses = <double>[];
+    for (var i = 0; i < 20; i++) {
+      poses.addAll([i * 0.5, 1.5, 0.0]); // 10 m path
+    }
+    for (var i = 0; i < 16; i++) {
+      poses.addAll([10.0, 1.5, i * 0.5]); // +8 m
+    }
+    final measure = ArRoomMeasure(
+      widthFt: 11.5,
+      lengthFt: 9.8,
+      widthM: 3.5,
+      lengthM: 3.0,
+      mode: 'auto',
+      cornersM: flat,
+      posesM: poses,
+      sampleCount: cloud.length,
+      poseCount: poses.length ~/ 3,
+      coverageScore: 0.55,
+      orthogonalScore: 0.85,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final size = pack.resolvedSize;
+    expect(size.widthFt, lessThanOrEqualTo(HomeScanGeometry.residentialMaxWidthFt));
+    expect(size.lengthFt, lessThanOrEqualTo(HomeScanGeometry.residentialMaxLengthFt));
+    // Must not balloon to feedback-class 30+ ft
+    expect(size.widthFt, lessThan(30.0));
+    expect(size.lengthFt, lessThan(26.0));
+  });
+
   test('+138 user_confirm size is absolute (no re-fuse overwrite)', () {
     // Tiny cloud that would fuse small — user taped 18×14
     final cloud = ArPolygonMap.walkCloudRectM(

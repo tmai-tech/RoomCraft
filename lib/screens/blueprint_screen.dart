@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -40,9 +42,17 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
   double _isoPitch = 0.35;
   /// Walkway free-path heatmap overlay (layout intelligence).
   bool _showWalkwayHeatmap = false;
+  /// +139: fit room to viewport once after open / size change (feedback 7f07625b).
+  bool _didFitView = false;
+  Size? _lastViewport;
+  double _lastFitW = 0;
+  double _lastFitL = 0;
+  double _lastFitPxf = 0;
 
   static const Offset _canvasOrigin =
       Offset(AppConfig.canvasOriginPx, AppConfig.canvasOriginPx);
+
+  static const double _canvasSize = 1200;
 
   /// Convert GestureDetector local coords → room model coords (origin at room TL).
   Offset _toModel(Offset local) => local - _canvasOrigin;
@@ -91,6 +101,63 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     ref.read(roomProvider.notifier).setUnitSystem(unit);
   }
 
+  /// Fit full room outline into the InteractiveViewer viewport.
+  /// Feedback 7f07625b: plan out of screen, cannot see full view.
+  void _fitRoomToView({
+    required RoomModel room,
+    required double pixelsPerFoot,
+    required Size viewport,
+    bool force = false,
+  }) {
+    if (viewport.width < 32 || viewport.height < 32) return;
+    final pxf = pixelsPerFoot.isFinite && pixelsPerFoot > 0.5
+        ? pixelsPerFoot
+        : AppConfig.defaultPixelsPerFoot;
+    final rw = room.widthInFeet.isFinite ? room.widthInFeet : 10.0;
+    final rl = room.lengthInFeet.isFinite ? room.lengthInFeet : 10.0;
+    if (rw <= 0 || rl <= 0) return;
+
+    if (!force &&
+        _didFitView &&
+        (_lastFitW - rw).abs() < 0.05 &&
+        (_lastFitL - rl).abs() < 0.05 &&
+        (_lastFitPxf - pxf).abs() < 0.5 &&
+        _lastViewport != null &&
+        (_lastViewport!.width - viewport.width).abs() < 8 &&
+        (_lastViewport!.height - viewport.height).abs() < 8) {
+      return;
+    }
+
+    final origin = AppConfig.canvasOriginPx;
+    // Content box = room + padding around outline (labels / doors)
+    final contentW = rw * pxf + origin * 2 + 40;
+    final contentH = rl * pxf + origin * 2 + 40;
+    const pad = 20.0;
+    final scaleX = (viewport.width - pad * 2) / contentW;
+    final scaleY = (viewport.height - pad * 2) / contentH;
+    final scale = math.min(scaleX, scaleY).clamp(0.12, 2.8);
+
+    // Center the content origin area in the viewport
+    final dx = (viewport.width - contentW * scale) / 2;
+    final dy = (viewport.height - contentH * scale) / 2;
+
+    // Scale about origin then translate into viewport center.
+    // Use storage writes — Matrix4.translate/scale signatures vary by SDK.
+    final m = Matrix4.identity();
+    m.storage[0] = scale;
+    m.storage[5] = scale;
+    m.storage[10] = 1.0;
+    m.storage[12] = dx;
+    m.storage[13] = dy;
+    _transformController.value = m;
+
+    _didFitView = true;
+    _lastViewport = viewport;
+    _lastFitW = rw;
+    _lastFitL = rl;
+    _lastFitPxf = pxf;
+  }
+
   @override
   void dispose() {
     _transformController.dispose();
@@ -137,6 +204,25 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
             ),
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.fit_screen),
+              tooltip: 'Fit plan to screen',
+              onPressed: () {
+                final vs = _lastViewport;
+                if (vs == null) {
+                  _didFitView = false;
+                  setState(() {});
+                  return;
+                }
+                _fitRoomToView(
+                  room: roomState.room,
+                  pixelsPerFoot: roomState.pixelsPerFoot,
+                  viewport: vs,
+                  force: true,
+                );
+                setState(() {});
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: () async {
@@ -324,16 +410,30 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                   ? _buildIntegrated3d(roomState, roomNotifier)
                   : ColoredBox(
                       color: Colors.grey.shade100,
-                      child: InteractiveViewer(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final vp = Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted || _view3d) return;
+                            _fitRoomToView(
+                              room: roomState.room,
+                              pixelsPerFoot: roomState.pixelsPerFoot,
+                              viewport: vp,
+                            );
+                          });
+                          return InteractiveViewer(
                         transformationController: _transformController,
-                        minScale: 0.4,
-                        maxScale: 4.0,
+                        minScale: 0.12,
+                        maxScale: 5.0,
                         boundaryMargin: const EdgeInsets.all(double.infinity),
                         panEnabled: panEnabled,
                         scaleEnabled: true,
                         child: SizedBox(
-                          width: 1200,
-                          height: 1200,
+                          width: _canvasSize,
+                          height: _canvasSize,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onPanStart: (details) {
@@ -365,7 +465,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                               }
                             },
                             child: CustomPaint(
-                              size: const Size(1200, 1200),
+                              size: const Size(_canvasSize, _canvasSize),
                               painter: BlueprintPainter(
                                 room: roomState.room,
                                 currentStroke: roomState.currentStroke,
@@ -386,6 +486,8 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                             ),
                           ),
                         ),
+                          );
+                        },
                       ),
                     ),
             ),
