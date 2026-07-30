@@ -140,13 +140,20 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       );
       return;
     }
-    if (!_inventory.hasAnyOpenings && !_inventory.hasAnyFurniture) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Mark doors/windows or furniture, or use the lounge preset.'),
-        ),
-      );
-      return;
+    // +144: empty inventory → study gold (never ship sparse empty plan, be325971)
+    var inv = _inventory;
+    if (!inv.hasAnyOpenings && !inv.hasAnyFurniture) {
+      inv = HomeScanInventory.studyGold;
+      setState(() => _inventory = inv);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Using Study gold layout (+36 quality). Edit chips if your room differs.',
+            ),
+          ),
+        );
+      }
     }
 
     setState(() {
@@ -192,8 +199,13 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         floorHitsM: _pack?.floorHitsM,
         posesM: _pack?.posesM,
       );
-      // +140: inventory plan — not random AI living fill (feedback 04919d14)
-      final plan = pack.toPlanWithInventory(_inventory);
+      // +140–+144: inventory plan — study gold when dense, lounge when bean bag
+      var plan = pack.toPlanWithInventory(inv);
+      // Density guard: sparse plan when user asked for study contents → force gold
+      final furnN = plan.furniture.where((f) => f.included).length;
+      if (inv.usesStudyGoldLayout && furnN < 3) {
+        plan = pack.toPlanWithInventory(HomeScanInventory.studyGold);
+      }
       final pxf = AppConfig.defaultPixelsPerFoot;
       final converted = ScanParser.toEditor(plan, pxf);
       ref.read(roomProvider.notifier).initFromScan(

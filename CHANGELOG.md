@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+144 (2026-07-30)
+
+### Loop — last feedback be325971 (“worse than +36”) + entry UX
+- **Photos first**: Home empty state + pillars lead with multi-gallery photos (+36 path); FAB opens chooser (Photos / AR / Draw).
+- **Study gold density guard**: AR inventory study layout never ships sparse (wardrobe + ≥3 pieces); empty chips → study gold, not empty room.
+- Continues +143 study gold restore; retest: Photos multi-select OR AR with “Study gold (+36 layout)” preset.
+
 ## 1.0.0-beta.1+143 (2026-07-27)
 
 ### Fix — restore +36 study gold quality (feedback be325971 “worse than 36”)

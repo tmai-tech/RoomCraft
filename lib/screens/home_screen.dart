@@ -218,6 +218,75 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .then((_) => _loadRooms());
   }
 
+  /// +144: common-person entry — Photos first (+36 quality), AR second.
+  void _showScanChooser() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'How do you want to scan?',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Photos match build +36 quality best for most people.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.teal.shade100,
+                  child: Icon(Icons.photo_library, color: Colors.teal.shade800),
+                ),
+                title: const Text('Scan from photos'),
+                subtitle: const Text(
+                  'Pick several gallery photos of every wall — easiest',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _createNewPhotos();
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.blue.shade50,
+                  child: Icon(Icons.view_in_ar, color: Colors.blue.shade800),
+                ),
+                title: const Text('AR walk scan'),
+                subtitle: const Text(
+                  'Walk the room, confirm size, mark contents',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _createNewAR();
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.grey.shade200,
+                  child: Icon(Icons.edit, color: Colors.grey.shade800),
+                ),
+                title: const Text('Draw manually'),
+                subtitle: const Text('Blank plan — you place walls & furniture'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _createNewManual();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _editRoom(RoomModel room) {
     ref.read(roomProvider.notifier).loadRoom(room);
     Navigator.of(context)
@@ -274,9 +343,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createNewAR,
+        onPressed: _showScanChooser,
         label: const Text('Scan the room'),
-        icon: const Icon(Icons.view_in_ar),
+        icon: const Icon(Icons.add_a_photo_outlined),
       ),
     );
   }
@@ -345,24 +414,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Scan your room once. You get a plan with furniture.',
+              'Best results: multi-select photos of every wall (build +36 quality).\n'
+              'Or walk with AR and mark doors / furniture.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
+              style: TextStyle(color: Colors.grey.shade600, height: 1.35),
             ),
             const SizedBox(height: 28),
             FilledButton.icon(
-              onPressed: _createNewAR,
-              icon: const Icon(Icons.view_in_ar),
-              label: const Text('Scan the room (AR)'),
+              onPressed: _createNewPhotos,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Scan from photos'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
               ),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: _createNewPhotos,
-              icon: const Icon(Icons.photo_library_outlined),
-              label: const Text('Scan from photos'),
+              onPressed: _createNewAR,
+              icon: const Icon(Icons.view_in_ar),
+              label: const Text('AR walk scan'),
             ),
             const SizedBox(height: 16),
             TextButton(
@@ -637,16 +707,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: Row(
           children: [
             _pillarChip(
-              keyName: 'home_pillar_ar',
-              icon: Icons.view_in_ar,
-              label: 'AR scan',
-              onTap: _createNewAR,
-            ),
-            _pillarChip(
               keyName: 'home_pillar_photos',
               icon: Icons.photo_library_outlined,
               label: 'Photos',
               onTap: _createNewPhotos,
+            ),
+            _pillarChip(
+              keyName: 'home_pillar_ar',
+              icon: Icons.view_in_ar,
+              label: 'AR scan',
+              onTap: _createNewAR,
             ),
             _pillarChip(
               keyName: 'home_pillar_draw',

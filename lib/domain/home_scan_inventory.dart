@@ -152,7 +152,7 @@ class HomeScanInventoryComposer {
     final w = widthFt >= lengthFt ? widthFt : lengthFt;
     final l = widthFt >= lengthFt ? lengthFt : widthFt;
 
-    // +143: study gold layout = +36 quality (32ffdc65 / e89c), not sparse lounge
+    // +143/+144: study gold layout = +36 quality (32ffdc65 / e89c), not sparse lounge
     if (inventory.usesStudyGoldLayout) {
       var plan = PhotoTrueLayout.composeStudyGold(
         widthFt: w,
@@ -161,19 +161,35 @@ class HomeScanInventoryComposer {
         warnings: [
           inventory.inventoryWarning,
           'Contents: ${inventory.summaryLabel}',
-          'Study gold layout (+143): wardrobe + dual doors + mesh + desk '
+          'Study gold layout (+144): wardrobe + dual doors + mesh + desk '
               '(build +36 photo-true quality, size from AR confirm)',
-          'Home Scan inventory plan (+143)',
+          'Home Scan inventory plan (+144)',
         ],
       );
       plan = OpeningChainFidelity.ensure(plan);
       plan = PhotoTrueLayout.clearDoorBlockedFurniture(plan);
       plan = PhotoTrueLayout.cleanStudyDeskAndDoors(plan);
+      // Density guard (be325971 “worse than +36”): never return thin plan
+      final n = plan.furniture.where((f) => f.included).length;
+      if (n < 3 ||
+          !plan.furniture.any((f) => f.included && f.type == FurnitureType.wardrobe)) {
+        plan = PhotoTrueLayout.composeStudyGold(
+          widthFt: w,
+          lengthFt: l,
+          includeChair: true,
+          warnings: [
+            ...plan.warnings,
+            'Study gold density restore (+144)',
+          ],
+        );
+        plan = OpeningChainFidelity.ensure(plan);
+        plan = PhotoTrueLayout.cleanStudyDeskAndDoors(plan);
+      }
       return plan.copyWith(
         accuracyScore: math.max(plan.accuracyScore ?? 0.9, 0.96),
         warnings: [
           ...plan.warnings,
-          'Inventory study gold match (+143)',
+          'Inventory study gold match (+144)',
         ],
       );
     }
