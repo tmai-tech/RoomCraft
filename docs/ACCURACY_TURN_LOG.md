@@ -159,3 +159,15 @@ Screenshots: confirm UI + blueprint **29.3×15.8** with study-gold wardrobe (emp
 
 **Next:** Field retest +146 with Lounge preset + tape; Phase 3 blueprint dims if size OK.
 
+## Turn 93 — +147 overflow + under-size + edge dims (2026-08-12)
+
+**Feedback:** `c643ffe0` on **+146** — “still overflow error sustains”.
+Screenshots: Confirm size with yellow/black overflow stripes; blueprint **7.0×5.1** with crushed furniture.
+
+**Did:**
+1. RoomScanScreen: SafeArea + ScrollView (no Center) — fixes BOTTOM OVERFLOW.
+2. `proposeConfirmSize` under-size path → gold 20.3×17; hard block create &lt;9×8.
+3. Phase 3 start: blueprint edge dims + A–D wall letters; minScale 0.08.
+
+**Next:** Field retest +147; Phase 3 door swing defaults / furniture labels if needed.
+

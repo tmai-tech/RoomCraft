@@ -109,7 +109,7 @@ class BlueprintPainter extends CustomPainter {
       canvas.drawRect(rect, border);
     }
 
-    // Room size label
+    // Room size label (footer)
     final shape = RoomGeometry.shapeLabel(room.floorPolygonFt);
     final label =
         '${LengthFormat.formatFeet(room.widthInFeet, unitSystem)} × '
@@ -127,6 +127,62 @@ class BlueprintPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, Offset(8, h + 6));
+
+    // +147 Phase 3: edge dimension strings + wall letters A–D (Planner5D-class)
+    if (!room.isPolygonFloor) {
+      _drawEdgeDimensions(canvas, w, h, pxf);
+    }
+  }
+
+  void _drawEdgeDimensions(Canvas canvas, double wPx, double hPx, double pxf) {
+    final wLabel = LengthFormat.formatFeet(room.widthInFeet, unitSystem);
+    final lLabel = LengthFormat.formatFeet(room.lengthInFeet, unitSystem);
+    final dimStyle = TextStyle(
+      color: Colors.blueGrey.shade800,
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+    );
+    final wallStyle = TextStyle(
+      color: Colors.blueGrey.shade500,
+      fontSize: 9,
+      fontWeight: FontWeight.w500,
+    );
+
+    void paintCentered(String text, Offset center, {bool vertical = false}) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: dimStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      if (vertical) canvas.rotate(-pi / 2);
+      painter.paint(canvas, Offset(-painter.width / 2, -painter.height / 2));
+      canvas.restore();
+    }
+
+    void paintWallLetter(String letter, Offset center) {
+      final painter = TextPainter(
+        text: TextSpan(text: letter, style: wallStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        Offset(center.dx - painter.width / 2, center.dy - painter.height / 2),
+      );
+    }
+
+    // North (top) = A · width
+    paintCentered(wLabel, Offset(wPx / 2, -12));
+    paintWallLetter('A', Offset(wPx / 2, 10));
+    // East (right) = B · length
+    paintCentered(lLabel, Offset(wPx + 14, hPx / 2), vertical: true);
+    paintWallLetter('B', Offset(wPx - 12, hPx / 2));
+    // South (bottom) = C · width
+    paintCentered(wLabel, Offset(wPx / 2, hPx + 18));
+    paintWallLetter('C', Offset(wPx / 2, hPx - 12));
+    // West (left) = D · length
+    paintCentered(lLabel, Offset(-14, hPx / 2), vertical: true);
+    paintWallLetter('D', Offset(12, hPx / 2));
   }
 
   void _drawGrid(Canvas canvas, Size size, double pxf) {

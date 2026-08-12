@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+147 (2026-08-12)
+
+### Fix overflow + under-size (feedback c643ffe0) · Phase 3 dims start
+- **BOTTOM OVERFLOW** on Confirm size: remove `Center` around `SingleChildScrollView`; SafeArea + scroll (yellow/black stripes).
+- **7.0×5.1 ft plans**: AR under-size → propose study gold 20.3×17; hard block create if sides &lt; 9×8 without fix.
+- Blueprint **edge dimension strings** + wall letters **A–B–C–D**; deeper zoom-out (minScale 0.08).
+- Compact confirm UI so phone keyboards / short screens still scroll cleanly.
+
 ## 1.0.0-beta.1+146 (2026-08-12)
 
 ### Phase 2 + size harden — feedback b5fa46b8 (+145 “still not accurate”)

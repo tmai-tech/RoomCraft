@@ -1,0 +1,17 @@
+{
+  "message": "still overflow error sustains",
+  "screenshotUrls": null,
+  "uid": "qYGjwty7NEWq3yXYvlEeFMroSdl2",
+  "buildNumber": 146,
+  "osVersion": "W1UOS36H.35-39-7",
+  "createdAt": "2026-08-12T17:25:51.881905Z",
+  "id": "c643ffe0-ce5",
+  "appVersion": "1.0.0-beta.1",
+  "createdAtServer": "2026-08-12T17:25:55.627Z",
+  "contactEmail": "",
+  "category": "scan",
+  "versionLabel": "1.0.0-beta.1+146 (beta)",
+  "hasLocalScreenshots": true,
+  "platform": "android",
+  "screenshotCount": 2
+}

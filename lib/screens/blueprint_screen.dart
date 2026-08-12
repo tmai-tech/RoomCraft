@@ -135,7 +135,8 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
     const pad = 20.0;
     final scaleX = (viewport.width - pad * 2) / contentW;
     final scaleY = (viewport.height - pad * 2) / contentH;
-    final scale = math.min(scaleX, scaleY).clamp(0.12, 2.8);
+    // +147: allow deeper zoom-out for long rooms + edge dimension labels
+    final scale = math.min(scaleX, scaleY).clamp(0.08, 2.8);
 
     // Center the content origin area in the viewport
     final dx = (viewport.width - contentW * scale) / 2;
@@ -426,7 +427,7 @@ class _BlueprintScreenState extends ConsumerState<BlueprintScreen> {
                           });
                           return InteractiveViewer(
                         transformationController: _transformController,
-                        minScale: 0.12,
+                        minScale: 0.08,
                         maxScale: 5.0,
                         boundaryMargin: const EdgeInsets.all(double.infinity),
                         panEnabled: panEnabled,

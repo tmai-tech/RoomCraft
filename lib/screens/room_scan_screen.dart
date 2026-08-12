@@ -42,6 +42,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
   bool _oneWallApplied = false;
   String? _calibrateNote;
   bool _sizeWasClamped = false;
+  bool _sizeWasUndersized = false;
   double? _rawArWidth;
   double? _rawArLength;
 
@@ -72,6 +73,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       _oneWallApplied = false;
       _calibrateNote = null;
       _sizeWasClamped = false;
+      _sizeWasUndersized = false;
       _rawArWidth = null;
       _rawArLength = null;
       _status = 'Checking AR…';
@@ -124,8 +126,15 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         _measure = measure;
         _pack = pack;
         _sizeWasClamped = proposed.clamped;
+        _sizeWasUndersized = proposed.undersized;
         _rawArWidth = proposed.rawWidthFt;
         _rawArLength = proposed.rawLengthFt;
+        if (proposed.undersized) {
+          _calibrateNote =
+              'AR map was too small '
+              '(${proposed.rawWidthFt.toStringAsFixed(0)}×${proposed.rawLengthFt.toStringAsFixed(0)} ft) '
+              '— filled study gold 20.3×17. Tape one wall or re-scan a full loop.';
+        }
         _status = 'Confirm size & contents';
       });
     } catch (e) {
@@ -229,6 +238,35 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
           ),
         ),
       );
+      return;
+    }
+
+    // +147: hard block closet-size rooms (c643ffe0 7.0×5.1)
+    if (w < 9 || l < 8) {
+      final fix = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Room size too small'),
+          content: Text(
+            '${w.toStringAsFixed(1)}×${l.toStringAsFixed(1)} ft is too small for a room plan '
+            '(AR often under-sizes incomplete walks). Re-scan a full loop, tape one wall, '
+            'or use study gold 20.3×17.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'back'),
+              child: const Text('Go back'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'gold'),
+              child: const Text('Use 20.3×17'),
+            ),
+          ],
+        ),
+      );
+      if (fix == 'gold') {
+        _applyGoldStudySize();
+      }
       return;
     }
 
@@ -422,12 +460,21 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+      // +147: never wrap ScrollView in Center — causes BOTTOM OVERFLOW
+      // (feedback c643ffe0 yellow/black stripes on confirm size).
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+              keyboardDismissBehavior:
+                  ScrollViewKeyboardDismissBehavior.onDrag,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
               if (_error != null) ...[
                 Icon(Icons.error_outline, size: 64, color: Colors.red.shade400),
                 const SizedBox(height: 16),
@@ -446,23 +493,49 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                   child: const Text('Cancel'),
                 ),
               ] else if (confirming) ...[
-                const Icon(Icons.straighten, size: 56, color: Colors.teal),
-                const SizedBox(height: 12),
+                const Icon(Icons.straighten, size: 48, color: Colors.teal),
+                const SizedBox(height: 8),
                 Text(
                   'Confirm size & contents',
+                  textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   '1) Fix room size (tape one wall if AR is off). '
                   '2) Mark what is in the room — no random layout.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    height: 1.3,
+                    fontSize: 13,
+                  ),
                 ),
-                if (_sizeWasClamped &&
+                if (_sizeWasUndersized &&
                     _rawArWidth != null &&
                     _rawArLength != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
+                  Material(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Text(
+                        'AR map too small '
+                        '(${_rawArWidth!.toStringAsFixed(0)}×${_rawArLength!.toStringAsFixed(0)} ft) '
+                        '— incomplete walk. Use tape / Study gold 20.3×17, or re-scan all walls.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.3,
+                          color: Colors.red.shade900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else if (_sizeWasClamped &&
+                    _rawArWidth != null &&
+                    _rawArLength != null) ...[
+                  const SizedBox(height: 10),
                   Material(
                     color: Colors.deepOrange.shade50,
                     borderRadius: BorderRadius.circular(8),
@@ -475,7 +548,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                         '“Study gold 20.3×17” if that is your room.',
                         style: TextStyle(
                           fontSize: 13,
-                          height: 1.35,
+                          height: 1.3,
                           color: Colors.deepOrange.shade900,
                         ),
                       ),
@@ -483,41 +556,28 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                   ),
                 ],
                 if (hints.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  for (final h in hints.take(2))
+                  const SizedBox(height: 8),
+                  for (final h in hints.take(1))
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 6),
                       child: Material(
                         color: Colors.orange.shade50,
                         borderRadius: BorderRadius.circular(8),
                         child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.warning_amber_rounded,
-                                size: 20,
-                                color: Colors.orange.shade900,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  h,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    height: 1.35,
-                                    color: Colors.orange.shade900,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          padding: const EdgeInsets.all(8),
+                          child: Text(
+                            h,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.3,
+                              color: Colors.orange.shade900,
+                            ),
                           ),
                         ),
                       ),
                     ),
                 ],
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -911,6 +971,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                   child: const Text('Re-scan with AR'),
                 ),
               ] else ...[
+                const SizedBox(height: 48),
                 const Icon(Icons.view_in_ar, size: 72, color: Colors.teal),
                 const SizedBox(height: 20),
                 Text(
@@ -927,11 +988,14 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 ),
                 if (_busy) ...[
                   const SizedBox(height: 28),
-                  const CircularProgressIndicator(),
+                  const Center(child: CircularProgressIndicator()),
                 ],
               ],
-            ],
-          ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

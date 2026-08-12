@@ -656,13 +656,15 @@ class HomeScanGeometry {
   static const double goldStudyWidthFt = 20.3;
   static const double goldStudyLengthFt = 17.0;
 
-  /// Soft-cap AR resolved size for the confirm form (+146).
+  /// Soft-cap AR resolved size for the confirm form (+146/+147).
   ///
-  /// Returns clamped W×L (width ≥ length) and whether we reduced a drifty proposal.
+  /// Clips oversize drift (b5fa46b8 29 ft) and absurd under-size (c643ffe0 7×5).
+  /// Returns clamped W×L (width ≥ length).
   static ({
     double widthFt,
     double lengthFt,
     bool clamped,
+    bool undersized,
     double rawWidthFt,
     double rawLengthFt,
   }) proposeConfirmSize({
@@ -682,6 +684,7 @@ class HomeScanGeometry {
     final maxW = hasWallLock ? 26.0 : softProposeWidthFt;
     final maxL = hasWallLock ? 22.0 : softProposeLengthFt;
     var clamped = false;
+    var undersized = false;
     if (w > maxW) {
       w = maxW;
       clamped = true;
@@ -690,8 +693,16 @@ class HomeScanGeometry {
       l = maxL;
       clamped = true;
     }
-    // Keep aspect if only one side clipped hard
-    if (clamped && rawW > 3 && rawL > 3) {
+    // +147: partial walk often yields ~7×5 ft (meters of incomplete mesh as feet)
+    if (w < 9.0 || l < 8.0) {
+      undersized = true;
+      // Prefer gold study floor as sane default proposal (user can tape-edit)
+      w = goldStudyWidthFt;
+      l = goldStudyLengthFt;
+      clamped = true;
+    }
+    // Keep aspect if only one side clipped hard (oversize path)
+    if (clamped && !undersized && rawW > 3 && rawL > 3) {
       final aspect = rawL / rawW;
       if (w == maxW && l > w * aspect * 1.05) {
         l = (w * aspect).clamp(6.0, maxL);
@@ -701,6 +712,7 @@ class HomeScanGeometry {
       widthFt: w,
       lengthFt: l,
       clamped: clamped,
+      undersized: undersized,
       rawWidthFt: rawW,
       rawLengthFt: rawL,
     );

@@ -1,6 +1,6 @@
 # Known issues — RoomCraft closed beta
 
-Last updated: 2026-08-12 · Version **1.0.0-beta.1+146**
+Last updated: 2026-08-12 · Version **1.0.0-beta.1+147**
 
 ## Expected limitations
 
@@ -17,7 +17,7 @@ Last updated: 2026-08-12 · Version **1.0.0-beta.1+146**
 | Vision may miss small/occluded items | Incomplete furniture/openings | Add from catalog / draw doors / live AR place |
 | Cloud Sign-In needs Firebase setup | Backup may fail until console steps done | See [PLAY_AND_SIGNING.md](PLAY_AND_SIGNING.md) |
 
-**Latest feedback:** `b5fa46b8` on +145 → fixed in +146.  
+**Latest feedback:** `c643ffe0` on +146 (overflow + 7×5 plan) → fixed in +147.  
 **Field retest:** [PHASE0_RETEST_CHECKLIST.md](PHASE0_RETEST_CHECKLIST.md) · **Phases:** [SCAN_ACCURACY_BUILD_PHASES.md](SCAN_ACCURACY_BUILD_PHASES.md)
 
 ## How to report

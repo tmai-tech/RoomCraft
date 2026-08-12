@@ -514,10 +514,25 @@ void main() {
       hasWallLock: false,
     );
     expect(p.clamped, isTrue);
+    expect(p.undersized, isFalse);
     expect(p.rawWidthFt, closeTo(29.3, 0.05));
     expect(p.widthFt, lessThanOrEqualTo(HomeScanGeometry.softProposeWidthFt));
     expect(p.lengthFt, lessThanOrEqualTo(HomeScanGeometry.softProposeLengthFt));
     expect(p.widthFt, greaterThanOrEqualTo(p.lengthFt));
+  });
+
+  test('+147 under-size 7×5 (c643ffe0) proposes gold study floor', () {
+    final p = HomeScanGeometry.proposeConfirmSize(
+      widthFt: 7.0,
+      lengthFt: 5.1,
+      hasWallLock: false,
+    );
+    expect(p.undersized, isTrue);
+    expect(p.clamped, isTrue);
+    expect(p.rawWidthFt, closeTo(7.0, 0.05));
+    expect(p.rawLengthFt, closeTo(5.1, 0.05));
+    expect(p.widthFt, closeTo(HomeScanGeometry.goldStudyWidthFt, 0.05));
+    expect(p.lengthFt, closeTo(HomeScanGeometry.goldStudyLengthFt, 0.05));
   });
 
   test('+146 study gold only when wardrobe — lounge never gets wardrobe wall', () {
