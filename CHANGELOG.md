@@ -2,6 +2,13 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+149 (2026-08-12)
+
+### Phase 3.4 — north-up blueprint matches Review N↑
+- **`ScanParser.toEditor` Y-flip**: scan model y=0 south → editor y=0 north (top of screen); desk NW appears top-left like Review/manual gold (d29c class).
+- **`fromEditor` reverse** for Phase B training pairs; rotation negated under flip.
+- Wall letters **C** (north/top) / **A** (south/bottom) + **N ↑** badge on blueprint.
+
 ## 1.0.0-beta.1+148 (2026-08-12)
 
 ### Phase 3 — clean blueprint (door swings, wall gaps, opening labels)

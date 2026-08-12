@@ -1,7 +1,7 @@
 # Phase 0 — Field retest checklist (+145)
 
 **Goal:** Decide if AR size + inventory plans are good enough before more polish.  
-**Build under test:** `1.0.0-beta.1+148` (Phase 1–3: size + inventory + clean blueprint).  
+**Build under test:** `1.0.0-beta.1+149` (Phase 1–3: size + inventory + clean north-up blueprint).  
 **Reference rooms:** feedback packs under `data/feedback/`.
 
 ---

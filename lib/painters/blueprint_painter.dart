@@ -217,16 +217,30 @@ class BlueprintPainter extends CustomPainter {
       );
     }
 
-    // Designer walk order (wall_relative_scan): A=south(y=0 top of canvas),
-    // B=east, C=north(y=L bottom), D=west — matches field measure A→D.
+    // +149 north-up editor: top = north = Wall C, bottom = south = Wall A,
+    // right = east = B, left = west = D (designer walk A→D still valid).
     paintCentered(wLabel, Offset(wPx / 2, -12));
-    paintWallLetter('A', Offset(wPx / 2, 10));
+    paintWallLetter('C', Offset(wPx / 2, 10));
     paintCentered(lLabel, Offset(wPx + 14, hPx / 2), vertical: true);
     paintWallLetter('B', Offset(wPx - 12, hPx / 2));
     paintCentered(wLabel, Offset(wPx / 2, hPx + 18));
-    paintWallLetter('C', Offset(wPx / 2, hPx - 12));
+    paintWallLetter('A', Offset(wPx / 2, hPx - 12));
     paintCentered(lLabel, Offset(-14, hPx / 2), vertical: true);
     paintWallLetter('D', Offset(12, hPx / 2));
+
+    // N ↑ badge (matches Review +118 / Phase 3.4)
+    final nTp = TextPainter(
+      text: TextSpan(
+        text: 'N ↑',
+        style: TextStyle(
+          color: Colors.blueGrey.shade700,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    nTp.paint(canvas, Offset(wPx / 2 - nTp.width / 2, -28));
   }
 
   void _drawGrid(Canvas canvas, Size size, double pxf) {

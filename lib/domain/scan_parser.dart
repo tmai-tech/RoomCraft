@@ -358,6 +358,10 @@ class ScanParser {
   ///
   /// +133: always inject a closed rectangle of wall strokes so the plan is never
   /// a broken open outline (feedback 225fb5de incomplete walls).
+  ///
+  /// +149 Phase 3.4 **north-up**: scan model has y=0 = south; editor pixels flip
+  /// so y=0 is **north** (top of screen) — matches Review N↑ and manual gold
+  /// (desk top-left / wardrobe bottom). Rotation is negated under the flip.
   static ({
     double width,
     double length,
@@ -368,38 +372,38 @@ class ScanParser {
     final w = result.roomWidthFt <= 0 ? 12.0 : result.roomWidthFt;
     final l = result.roomLengthFt <= 0 ? 12.0 : result.roomLengthFt;
 
+    // Feet (y south=0) → editor px (y north=0 / top)
+    Offset toPx(Offset ft) => Offset(ft.dx * pxf, (l - ft.dy) * pxf);
+
     final openings = result.walls.where((s) => s.type != StrokeType.wall).map((seg) {
       return StrokeModel(
         id: _uuid.v4(),
         type: seg.type,
-        points: [
-          Offset(seg.startFt.dx * pxf, seg.startFt.dy * pxf),
-          Offset(seg.endFt.dx * pxf, seg.endFt.dy * pxf),
-        ],
+        points: [toPx(seg.startFt), toPx(seg.endFt)],
       );
     }).toList();
 
-    // Full closed perimeter (always)
+    // Full closed perimeter (always). Top edge y=0 = **north** after +149.
     final perimeter = <StrokeModel>[
       StrokeModel(
         id: _uuid.v4(),
         type: StrokeType.wall,
-        points: [Offset.zero, Offset(w * pxf, 0)],
+        points: [Offset.zero, Offset(w * pxf, 0)], // north
       ),
       StrokeModel(
         id: _uuid.v4(),
         type: StrokeType.wall,
-        points: [Offset(w * pxf, 0), Offset(w * pxf, l * pxf)],
+        points: [Offset(w * pxf, 0), Offset(w * pxf, l * pxf)], // east
       ),
       StrokeModel(
         id: _uuid.v4(),
         type: StrokeType.wall,
-        points: [Offset(w * pxf, l * pxf), Offset(0, l * pxf)],
+        points: [Offset(w * pxf, l * pxf), Offset(0, l * pxf)], // south
       ),
       StrokeModel(
         id: _uuid.v4(),
         type: StrokeType.wall,
-        points: [Offset(0, l * pxf), Offset.zero],
+        points: [Offset(0, l * pxf), Offset.zero], // west
       ),
     ];
 
@@ -407,10 +411,11 @@ class ScanParser {
       return FurnitureItem(
         id: _uuid.v4(),
         type: f.type,
-        position: Offset(f.posFt.dx * pxf, f.posFt.dy * pxf),
+        position: toPx(f.posFt),
         widthInFeet: f.widthFt,
         lengthInFeet: f.lengthFt,
-        rotationAngle: f.rotationRad,
+        // Negate rotation under Y-flip so wall-facing orientation stays correct
+        rotationAngle: -f.rotationRad,
         catalogId: f.catalogId,
       );
     }).toList();
@@ -423,7 +428,8 @@ class ScanParser {
     );
   }
 
-  /// Reverse of [toEditor]: blueprint room (px) → scan plan (feet) (+110).
+  /// Reverse of [toEditor]: blueprint room (px, north-up) → scan plan feet
+  /// (y=0 south) (+110 / +149).
   ///
   /// Used so user-corrected editor geometry can become Phase B gold reference.
   static ScanResult fromEditor({
@@ -436,23 +442,27 @@ class ScanParser {
     double? accuracyScore,
   }) {
     final pxf = pixelsPerFoot <= 0 ? 1.0 : pixelsPerFoot;
+    final l = lengthFt <= 0 ? 12.0 : lengthFt;
+    // Editor px (y north=0) → feet (y south=0)
+    Offset toFt(Offset px) => Offset(px.dx / pxf, l - px.dy / pxf);
+
     final walls = <ScanWallSegment>[];
     for (final s in strokes) {
       if (s.type == StrokeType.wall) continue;
       if (s.points.length < 2) continue;
       walls.add(ScanWallSegment(
         type: s.type,
-        startFt: Offset(s.points.first.dx / pxf, s.points.first.dy / pxf),
-        endFt: Offset(s.points.last.dx / pxf, s.points.last.dy / pxf),
+        startFt: toFt(s.points.first),
+        endFt: toFt(s.points.last),
       ));
     }
     final furn = furniture.map((f) {
       return ScanFurnitureHint(
         type: f.type,
-        posFt: Offset(f.position.dx / pxf, f.position.dy / pxf),
+        posFt: toFt(f.position),
         widthFt: f.widthInFeet,
         lengthFt: f.lengthInFeet,
-        rotationRad: f.rotationAngle,
+        rotationRad: -f.rotationAngle, // undo toEditor negation
         included: true,
         catalogId: f.catalogId,
       );
@@ -464,7 +474,7 @@ class ScanParser {
       furniture: furn,
       warnings: [
         ...warnings,
-        'User-corrected plan from editor (+110)',
+        'User-corrected plan from editor (+110, north-up +149)',
       ],
       accuracyScore: accuracyScore ?? 0.95,
     );

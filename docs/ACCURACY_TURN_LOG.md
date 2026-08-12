@@ -184,3 +184,16 @@ Screenshots: Confirm size with yellow/black overflow stripes; blueprint **7.0×5
 
 **Next:** Field retest Paths B/C; if blueprint still hard to read, north-up editor transform.
 
+## Turn 95 — +149 Phase 3.4 north-up blueprint (2026-08-12)
+
+**Feedback:** none new (latest still `c643ffe0` on +146). Remaining Phase 3.4: north-up consistent with Review N↑.
+
+**Did:**
+1. `toEditor`/`fromEditor` Y-flip so editor pixels are north-up (desk top-left, wardrobe bottom).
+2. Blueprint edge letters C/B/A/D + **N ↑** badge.
+3. Tests: +149 north-up desk position + round-trip; home_scan + gold suites green.
+
+**Still lacking:** field retest +148/+149; Phase 1 tape median on device; Phase 3.7 3D toggle (out of accuracy scope).
+
+**Next:** Field retest Paths A–D; idle if no new FB and Phase 1–3 exit only blocked on field proof.
+

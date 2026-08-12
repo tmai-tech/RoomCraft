@@ -38,6 +38,31 @@ void main() {
     expect(bWard.posFt.dy, closeTo(gWard.posFt.dy, 0.25));
   });
 
+  test('+149 north-up: desk at top of blueprint, wardrobe lower (matches Review)', () {
+    final gold = PhotoTrueLayout.composeStudyGold(widthFt: 20.3, lengthFt: 17.0);
+    const pxf = 20.0;
+    final ed = ScanParser.toEditor(gold, pxf);
+    final desk = ed.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    final ward = ed.furniture.firstWhere((f) => f.type == FurnitureType.wardrobe);
+    // Model: desk NW high y, wardrobe south low y. Editor north-up: desk low dy (top).
+    expect(desk.position.dy, lessThan(ward.position.dy),
+        reason: 'desk should be nearer top (N) than wardrobe');
+    expect(desk.position.dy, lessThan(ed.length * pxf * 0.45),
+        reason: 'NW desk should sit in upper half of north-up canvas');
+    // Round-trip restores south=0 feet
+    final back = ScanParser.fromEditor(
+      widthFt: ed.width,
+      lengthFt: ed.length,
+      strokes: ed.strokes,
+      furniture: ed.furniture,
+      pixelsPerFoot: pxf,
+    );
+    final gDesk = gold.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    final bDesk = back.furniture.firstWhere((f) => f.type == FurnitureType.table);
+    expect(bDesk.posFt.dy, closeTo(gDesk.posFt.dy, 0.3));
+    expect(bDesk.posFt.dx, closeTo(gDesk.posFt.dx, 0.3));
+  });
+
   test('+110 session pairDiagnostics predicted vs corrected', () {
     final predicted = PhotoTrueLayout.composeStudyGold(widthFt: 20, lengthFt: 17);
     ScanTrainingSession.begin(predicted);

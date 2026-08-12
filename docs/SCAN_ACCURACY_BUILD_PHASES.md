@@ -1,7 +1,7 @@
 # Scan accuracy & blueprint fidelity — build phases
 
 **Date:** 2026-08-12  
-**Baseline build:** `1.0.0-beta.1+148`  
+**Baseline build:** `1.0.0-beta.1+149`  
 **Reference product:** [Planner 5D](https://play.google.com/store/apps/details?id=com.planner5d.planner5d) (Home Scan + floor plan + 3D)  
 **Goal:** Scan → plan quality that a normal person trusts for furniture layout (size + walls + openings + pieces), not LiDAR CAD.
 
@@ -47,7 +47,7 @@
 | **Walls / closed outline** | 8/10 | **6/10** (always seal 4 walls; weak non-rect) | L / multi-polygon from walk cloud |
 | **Openings (doors/windows)** | 7/10 Pro scan | **4/10** (chain priors + inventory chips; little true detection from AR) | Vision+AR opening place after walk |
 | **Furniture from scan** | 7/10 Pro catalog match | **4/10** (inventory chips or photo gold; AI fill still random-feeling) | Photo inventory auto after AR size lock |
-| **Blueprint 2D readability** | 9/10 | **8/10** (+148 gaps + inward swings + opening labels; edge dims A–D) | North-up editor flip; 3D toggle polish |
+| **Blueprint 2D readability** | 9/10 | **8.5/10** (+148–+149 gaps, swings, labels, north-up N↑) | Field proof; 3D toggle polish (non-goal for accuracy) |
 | **3D / blueprint “wow”** | 9/10 | **7/10** (isometric + walkthrough; not HD mesh) | Optional textures; keep free painter path |
 | **Layout intelligence** | 5/10 | **8–9/10** | Keep as wedge |
 | **Ease of scan (consumer)** | 7/10 (walk video 10s–12m) | **6/10** (one-button walk; still needs coaching) | Single guided path, fewer modes |

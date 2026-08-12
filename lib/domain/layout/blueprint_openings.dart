@@ -12,8 +12,9 @@ import '../../models/stroke_model.dart';
 class BlueprintOpenings {
   BlueprintOpenings._();
 
-  /// Axis-aligned wall edge index for a rectangular room.
-  /// 0=top(y=0/south), 1=right, 2=bottom(y=h/north), 3=left.
+  /// Axis-aligned wall edge index for a rectangular room (editor pixel space).
+  ///
+  /// +149 north-up: 0=top(y=0/north), 1=right(east), 2=bottom(y=h/south), 3=left(west).
   static int? wallIndexForOpening(
     Offset a,
     Offset b, {
@@ -23,7 +24,7 @@ class BlueprintOpenings {
   }) {
     final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
     if ((mid.dy - 0).abs() <= tol && a.dy.abs() <= tol * 2 && b.dy.abs() <= tol * 2) {
-      return 0; // south / top in unflipped model
+      return 0; // north / top (+149)
     }
     if ((mid.dx - wPx).abs() <= tol &&
         (a.dx - wPx).abs() <= tol * 2 &&
@@ -33,7 +34,7 @@ class BlueprintOpenings {
     if ((mid.dy - hPx).abs() <= tol &&
         (a.dy - hPx).abs() <= tol * 2 &&
         (b.dy - hPx).abs() <= tol * 2) {
-      return 2; // north / bottom
+      return 2; // south / bottom (+149)
     }
     if ((mid.dx - 0).abs() <= tol && a.dx.abs() <= tol * 2 && b.dx.abs() <= tol * 2) {
       return 3; // west
