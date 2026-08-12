@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+145 (2026-08-12)
+
+### Phase 1 — metric size reliability (Planner5D / magicplan class)
+- **One-wall tape calibrate** on post-AR confirm: measure one wall, pick long/short side, both axes scale (keeps AR aspect).
+- **Size quality coaching**: incomplete cover / path disagree / large room warnings on confirm screen.
+- **Incomplete-map dialog** if walk quality fails and user skips tape — confirm before plan.
+- **Coverage-first quality gate** (+55% cover threshold; clearer reject copy).
+- Native AR walk HUD: live **cover %**, stronger “walk remaining walls” coach; Done → confirm size.
+- Phase 0 field retest checklist: `docs/PHASE0_RETEST_CHECKLIST.md`.
+- Build phases plan: `docs/SCAN_ACCURACY_BUILD_PHASES.md`.
+
 ## 1.0.0-beta.1+144 (2026-07-30)
 
 ### Loop — last feedback be325971 (“worse than +36”) + entry UX

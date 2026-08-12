@@ -14,6 +14,7 @@ import 'blueprint_screen.dart';
 ///
 /// +137: AR proposes size; user confirms feet before plan.
 /// +140: user marks openings/furniture (feedback 04919d14) — no random AI bed/sofa.
+/// +145: one-wall tape calibrate + size quality coaching (Phase 1).
 class RoomScanScreen extends ConsumerStatefulWidget {
   const RoomScanScreen({super.key});
 
@@ -31,15 +32,22 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
   HomeScanPackage? _pack;
   late final TextEditingController _wCtrl;
   late final TextEditingController _lCtrl;
+  late final TextEditingController _knownWallCtrl;
 
   /// Default: study gold (+36 quality / 32ffdc65). Lounge preset one tap away.
   HomeScanInventory _inventory = HomeScanInventory.studyGold;
+
+  /// +145: which axis the tape measurement applies to (`width` long side, `length` short).
+  String _calibrateAxis = 'width';
+  bool _oneWallApplied = false;
+  String? _calibrateNote;
 
   @override
   void initState() {
     super.initState();
     _wCtrl = TextEditingController();
     _lCtrl = TextEditingController();
+    _knownWallCtrl = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _runArWalk());
   }
 
@@ -47,6 +55,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
   void dispose() {
     _wCtrl.dispose();
     _lCtrl.dispose();
+    _knownWallCtrl.dispose();
     super.dispose();
   }
 
@@ -57,6 +66,8 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       _error = null;
       _measure = null;
       _pack = null;
+      _oneWallApplied = false;
+      _calibrateNote = null;
       _status = 'Checking AR…';
     });
 
@@ -95,6 +106,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       final size = pack.resolvedSize;
       _wCtrl.text = size.widthFt.toStringAsFixed(1);
       _lCtrl.text = size.lengthFt.toStringAsFixed(1);
+      _knownWallCtrl.clear();
 
       setState(() {
         _busy = false;
@@ -119,6 +131,57 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
     }
   }
 
+  void _applyOneWallCalibrate() {
+    final known = double.tryParse(_knownWallCtrl.text.trim());
+    final w = double.tryParse(_wCtrl.text.trim());
+    final l = double.tryParse(_lCtrl.text.trim());
+    if (known == null || known < 6 || known > 40) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter the tape length in feet (6–40 ft).'),
+        ),
+      );
+      return;
+    }
+    if (w == null || l == null || w < 3 || l < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('AR size missing — re-scan first.')),
+      );
+      return;
+    }
+    final scaled = HomeScanGeometry.scaleByKnownWall(
+      proposedWidthFt: w,
+      proposedLengthFt: l,
+      axis: _calibrateAxis,
+      knownWallFt: known,
+    );
+    if (scaled == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not apply that measurement — check the number.'),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _wCtrl.text = scaled.widthFt.toStringAsFixed(1);
+      _lCtrl.text = scaled.lengthFt.toStringAsFixed(1);
+      _oneWallApplied = true;
+      _calibrateNote =
+          'Scaled from tape: ${_calibrateAxis == 'length' ? 'short' : 'long'} '
+          'wall = ${known.toStringAsFixed(1)} ft '
+          '(×${scaled.scale.toStringAsFixed(2)})';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Size locked: ${scaled.widthFt.toStringAsFixed(1)} × '
+          '${scaled.lengthFt.toStringAsFixed(1)} ft from one wall',
+        ),
+      ),
+    );
+  }
+
   Future<void> _createPlan() async {
     final w = double.tryParse(_wCtrl.text.trim());
     final l = double.tryParse(_lCtrl.text.trim());
@@ -140,6 +203,37 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       );
       return;
     }
+
+    // +145: if walk quality was poor and user did not calibrate, confirm once
+    final pack0 = _pack;
+    if (pack0 != null &&
+        !_oneWallApplied &&
+        pack0.qualityRejectReason() != null) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Map may be incomplete'),
+          content: Text(
+            '${pack0.qualityRejectReason()}\n\n'
+            'Tip: measure one wall with a tape and use “I measured one wall”, '
+            'or re-scan a full loop.\n\n'
+            'Create plan with ${w.toStringAsFixed(1)}×${l.toStringAsFixed(1)} ft anyway?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Go back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Use this size'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
+    }
+
     // +144: empty inventory → study gold (never ship sparse empty plan, be325971)
     var inv = _inventory;
     if (!inv.hasAnyOpenings && !inv.hasAnyFurniture) {
@@ -171,13 +265,14 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
             lengthM: l / 3.28084,
             mode: 'auto',
           );
+      final source = _oneWallApplied ? 'one_wall_calibrate' : 'user_confirm';
       final confirmed = ArRoomMeasure(
         widthFt: w >= l ? w : l,
         lengthFt: w >= l ? l : w,
         widthM: (w >= l ? w : l) / 3.28084,
         lengthM: (w >= l ? l : w) / 3.28084,
         mode: base.mode,
-        source: 'user_confirm',
+        source: source,
         wallsFt: base.wallsFt,
         wallsM: base.wallsM,
         cornersM: base.cornersM,
@@ -244,6 +339,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
   @override
   Widget build(BuildContext context) {
     final confirming = _measure != null && _error == null && !_busy;
+    final hints = _pack?.sizeQualityHints() ?? const <String>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -290,6 +386,41 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),
+                if (hints.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  for (final h in hints.take(3))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Material(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                size: 20,
+                                color: Colors.orange.shade900,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  h,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    height: 1.35,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
                 const SizedBox(height: 18),
                 Row(
                   children: [
@@ -299,7 +430,9 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => setState(() {
+                          _oneWallApplied = false;
+                        }),
                         decoration: const InputDecoration(
                           labelText: 'Width (ft)',
                           border: OutlineInputBorder(),
@@ -313,7 +446,9 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => setState(() {
+                          _oneWallApplied = false;
+                        }),
                         decoration: const InputDecoration(
                           labelText: 'Length (ft)',
                           border: OutlineInputBorder(),
@@ -325,8 +460,22 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 if (_pack != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'AR samples: ${_pack!.sampleCount} floor · ${_pack!.poseCount} poses',
+                    'AR samples: ${_pack!.sampleCount} floor · ${_pack!.poseCount} poses'
+                    '${_pack!.resolvedSize.coverage > 0 ? ' · cover ${(_pack!.resolvedSize.coverage * 100).round()}%' : ''}'
+                    '${_oneWallApplied ? ' · tape lock' : ''}',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+                if (_calibrateNote != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _calibrateNote!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.teal.shade800,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
                 Builder(
@@ -350,6 +499,86 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                       ),
                     );
                   },
+                ),
+                const SizedBox(height: 16),
+                // +145 one-wall calibrate (magicplan-class)
+                Material(
+                  color: Colors.teal.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'I measured one wall (recommended)',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: Colors.teal.shade900,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tape one wall, pick which side it is, Apply. '
+                          'The other side scales to keep the AR shape.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.teal.shade900,
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: _calibrateAxis,
+                                decoration: const InputDecoration(
+                                  labelText: 'Which wall',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'width',
+                                    child: Text('Longer side (width)'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'length',
+                                    child: Text('Shorter side (length)'),
+                                  ),
+                                ],
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setState(() => _calibrateAxis = v);
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: _knownWallCtrl,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Tape (ft)',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: _applyOneWallCalibrate,
+                          icon: const Icon(Icons.straighten, size: 18),
+                          label: const Text('Apply one-wall scale'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 20),
                 Align(
@@ -523,7 +752,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 const SizedBox(height: 12),
                 Text(
                   'Walk the full room near the walls. Tap Done when finished.\n'
-                  'Then confirm size and mark doors / furniture.',
+                  'Then confirm size (optional: tape one wall) and mark doors / furniture.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),

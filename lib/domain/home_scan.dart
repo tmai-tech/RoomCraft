@@ -48,14 +48,15 @@ class HomeScanPackage {
   int get sampleCount => floorHitsM.length;
   int get poseCount => posesM.length;
 
-  /// +134/+136 quality gate — reject incomplete walks (fake 10×10, feedback 225fb5de).
+  /// +134/+136/+145 quality gate — reject incomplete walks (fake 10×10, feedback 225fb5de).
   ///
   /// Returns null when OK, else a user-facing error string.
-  /// +138: never reject after user_confirm (tape/edit is truth).
+  /// +138: never reject after user_confirm / tape / one-wall calibrate (truth).
   String? qualityRejectReason() {
     if (measure.source == 'user_confirm' ||
         measure.source == 'confirmed' ||
-        measure.source == 'tape') {
+        measure.source == 'tape' ||
+        measure.source == 'one_wall_calibrate') {
       return null;
     }
     final size = resolvedSize;
@@ -65,12 +66,13 @@ class HomeScanPackage {
     final squareish =
         w > 0 && ((w - l).abs() / math.max(w, l)) < 0.12;
     final weakSamples = sampleCount < 20 && poseCount < 24;
-    final weakCover = size.coverage > 0 && size.coverage < 0.50;
+    // +145: coverage-first — incomplete angular cover is a reject, not a soft warn
+    final weakCover = size.coverage > 0 && size.coverage < 0.55;
     final weakAgree = size.agreement > 0 && size.agreement < 0.50;
     final pathM = HomeScanGeometry.posePathLengthM(posesM);
     // Expected full-loop path ≈ perimeter at 0.75 m standoff (m)
     final periM = 2 * (w + l) / 3.28084;
-    final shortPath = pathM > 0 && periM > 4 && pathM < periM * 0.35;
+    final shortPath = pathM > 0 && periM > 4 && pathM < periM * 0.40;
 
     if (w < 9 || l < 8) {
       return 'Room size looks too small (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
@@ -81,11 +83,11 @@ class HomeScanPackage {
       return 'Map looks incomplete (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft, '
           '${sampleCount} pts). Walk all four walls slowly, then Done.';
     }
-    // +136: square-ish mid room without wall lock + short walk path
+    // +136/+145: square-ish mid room without wall lock + short walk path
     if (area < 150 &&
         squareish &&
         !measure.hasWallLock &&
-        (weakCover || shortPath || size.coverage < 0.60)) {
+        (weakCover || shortPath || size.coverage < 0.65)) {
       return 'Map incomplete (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
           'Walk all walls looking at them, then Done.';
     }
@@ -93,18 +95,69 @@ class HomeScanPackage {
       return 'Not enough map points ($sampleCount). '
           'Walk slowly around the whole room, then Done.';
     }
-    if (shortPath && !measure.hasWallLock && size.coverage < 0.65) {
+    if (shortPath && !measure.hasWallLock && size.coverage < 0.70) {
       return 'Walk path too short for this room. '
           'Complete a full loop near the walls, then Done.';
+    }
+    // +145: low cover alone (even non-square) without wall lock
+    if (weakCover && !measure.hasWallLock && size.coverage > 0 && size.coverage < 0.50) {
+      return 'Wall coverage only ${(size.coverage * 100).round()}% — walk remaining sides, '
+          'or measure one wall with a tape on the next screen.';
     }
     // +139: absurd home size without wall lock (tracking drift / over-standoff)
     if (!measure.hasWallLock &&
         (w > HomeScanGeometry.residentialMaxWidthFt + 0.5 ||
             l > HomeScanGeometry.residentialMaxLengthFt + 0.5)) {
       return 'Size looks too large (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
-          'Re-walk slowly near walls, or edit size with a tape after Done.';
+          'Re-walk slowly near walls, or measure one wall with a tape after Done.';
     }
     return null;
+  }
+
+  /// Soft warnings for the confirm-size screen (+145). Never blocks; coaches tape.
+  List<String> sizeQualityHints() {
+    if (measure.source == 'user_confirm' ||
+        measure.source == 'confirmed' ||
+        measure.source == 'tape' ||
+        measure.source == 'one_wall_calibrate') {
+      return const [];
+    }
+    final size = resolvedSize;
+    final w = size.widthFt;
+    final l = size.lengthFt;
+    final hints = <String>[];
+    final reject = qualityRejectReason();
+    if (reject != null) {
+      hints.add(reject);
+    }
+    if (size.coverage > 0 && size.coverage < 0.75) {
+      hints.add(
+        'Wall cover ${(size.coverage * 100).round()}% — for better size, re-scan all walls '
+        'or use “I measured one wall” below.',
+      );
+    }
+    if (size.agreement > 0 && size.agreement < 0.55) {
+      hints.add(
+        'Floor map and walk path disagree — measure one wall with a tape to lock scale.',
+      );
+    }
+    if (!measure.hasWallLock && (w > 24 || l > 24)) {
+      hints.add(
+        'Size looks large for one room (${w.toStringAsFixed(0)}×${l.toStringAsFixed(0)} ft). '
+        'Double-check with a tape on the longer wall.',
+      );
+    }
+    if (measure.consistencyError > 0.12) {
+      hints.add(
+        'AR edges are inconsistent — one-wall tape calibrate is recommended.',
+      );
+    }
+    // De-dupe while preserving order
+    final seen = <String>{};
+    return [
+      for (final h in hints)
+        if (seen.add(h)) h,
+    ];
   }
 
   /// Prefer fused walk re-fit (+128/+130/+135 wall lock); else floor; else native.
@@ -122,7 +175,8 @@ class HomeScanPackage {
     const mToFt = 3.28084;
     final userLocked = measure.source == 'user_confirm' ||
         measure.source == 'confirmed' ||
-        measure.source == 'tape';
+        measure.source == 'tape' ||
+        measure.source == 'one_wall_calibrate';
     if (userLocked && measure.widthFt >= 6 && measure.lengthFt >= 6) {
       final w = measure.widthFt >= measure.lengthFt
           ? measure.widthFt
@@ -588,6 +642,55 @@ class HomeScanGeometry {
   /// Feedback 7f07625b: 30×26 ft proposals from pose drift.
   static const double residentialMaxWidthFt = 28.0;
   static const double residentialMaxLengthFt = 26.0;
+
+  /// +145 magicplan-class: scale both axes from one known wall length (tape).
+  ///
+  /// [axis] `width` or `length` — which side the user measured.
+  /// Keeps AR aspect ratio; clamps residential range unless [allowLarge].
+  static ({
+    double widthFt,
+    double lengthFt,
+    double scale,
+  })? scaleByKnownWall({
+    required double proposedWidthFt,
+    required double proposedLengthFt,
+    required String axis,
+    required double knownWallFt,
+    bool allowLarge = false,
+  }) {
+    if (knownWallFt < 6 || knownWallFt > 60) return null;
+    var w = proposedWidthFt;
+    var l = proposedLengthFt;
+    if (w < 3 || l < 3) return null;
+    // Normalize long side as width (matches resolvedSize convention)
+    if (w < l) {
+      final t = w;
+      w = l;
+      l = t;
+    }
+    final scaleAxis = axis.toLowerCase();
+    final double scale;
+    if (scaleAxis == 'length' || scaleAxis == 'short' || scaleAxis == 'l') {
+      scale = knownWallFt / l;
+      l = knownWallFt;
+      w = w * scale;
+    } else {
+      // default: measured the long / width side
+      scale = knownWallFt / w;
+      w = knownWallFt;
+      l = l * scale;
+    }
+    if (w < 6 || l < 6) return null;
+    if (!allowLarge) {
+      w = math.min(w, 49.0);
+      l = math.min(l, 40.0);
+    }
+    // Re-normalize width ≥ length
+    if (w < l) {
+      return (widthFt: l, lengthFt: w, scale: scale);
+    }
+    return (widthFt: w, lengthFt: l, scale: scale);
+  }
 
   /// Approximate path length of pose trail in meters.
   static double posePathLengthM(List<List<double>> poses) {

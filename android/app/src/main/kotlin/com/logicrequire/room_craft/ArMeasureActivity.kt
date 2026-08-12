@@ -873,22 +873,27 @@ class ArMeasureActivity : AppCompatActivity() {
             TrackingState.TRACKING -> {
                 if (autoWidthM >= 1.5 && autoLengthM >= 1.5) {
                     // +132: size ready = Done ready (never fake 100% cover wait).
-                    // +135: auto-finish only when map quality is OK (avoids 10×10 half-walks).
+                    // +135/+145: auto-finish only when map quality is OK (avoids 10×10 half-walks).
+                    // +145: stricter coverage coach — tell user which sides still need walking.
                     val readyNow = walkSamples.size >= 8 || poseSamples.size >= 12
-                    val qualityOk = lastCoverageScore >= 0.55 ||
-                        (walkSamples.size >= 28 && poseSamples.size >= 20 && lastCoverageScore >= 0.40) ||
-                        (wallLockWidthM >= 2.0 && wallLockLengthM >= 1.5 && walkSamples.size >= 16)
+                    val qualityOk = lastCoverageScore >= 0.60 ||
+                        (walkSamples.size >= 32 && poseSamples.size >= 24 && lastCoverageScore >= 0.50) ||
+                        (wallLockWidthM >= 2.0 && wallLockLengthM >= 1.5 &&
+                            walkSamples.size >= 18 && lastCoverageScore >= 0.45)
+                    val coverPct = (lastCoverageScore * 100).toInt()
                     liveDistance.text = if (readyNow && qualityOk) {
                         String.format(
-                            "%.1f × %.1f ft — tap Done",
+                            "%.1f × %.1f ft · cover %d%% — tap Done",
                             autoWidthM * M_TO_FT,
                             autoLengthM * M_TO_FT,
+                            coverPct,
                         )
                     } else if (readyNow) {
                         String.format(
-                            "%.1f × %.1f ft — walk all walls…",
+                            "%.1f × %.1f ft · cover %d%% — walk remaining walls…",
                             autoWidthM * M_TO_FT,
                             autoLengthM * M_TO_FT,
+                            coverPct,
                         )
                     } else {
                         String.format(
@@ -900,8 +905,8 @@ class ArMeasureActivity : AppCompatActivity() {
                     liveDistance.setTextColor(
                         if (readyNow && qualityOk) 0xFFAED581.toInt() else 0xFFFFCC80.toInt(),
                     )
-                    // Auto-finish only when size stable AND walk quality OK (+135)
-                    if (readyNow && qualityOk && autoStableTicks >= 12 && !destroyed) {
+                    // Auto-finish only when size stable AND walk quality OK (+135/+145)
+                    if (readyNow && qualityOk && autoStableTicks >= 14 && !destroyed) {
                         handler.post {
                             if (!destroyed && autoMode) finishWithResult()
                         }
@@ -1184,10 +1189,10 @@ class ArMeasureActivity : AppCompatActivity() {
         if (autoMode) {
             stepTitle.text = "Scan the room"
             stepHint.text =
-                "Walk around the room with the camera on the floor. " +
-                    "This measures room size only. Furniture is added on the plan after you tap Done."
+                "Walk a full loop near all walls (camera slightly down). " +
+                    "Size locks after Done — you can tape one wall on the next screen."
             btnMark.visibility = android.view.View.GONE
-            btnDone.text = "Done — open plan"
+            btnDone.text = "Done — confirm size"
             measuredSummary.text = buildString {
                 if (autoWidthM >= 0.5 && autoLengthM >= 0.5) {
                     append(
@@ -1198,16 +1203,21 @@ class ArMeasureActivity : AppCompatActivity() {
                         ),
                     )
                     append(" · ${walkSamples.size} map points")
+                    append(String.format(" · cover %.0f%%", lastCoverageScore * 100.0))
                     if (wallLockPairs > 0) append(" · walls locked")
                     if (depthEnabled) append(" · depth")
-                    append("\nTap Done to open your plan with furniture.")
+                    if (lastCoverageScore < 0.55) {
+                        append("\nWalk remaining sides for better accuracy.")
+                    } else {
+                        append("\nTap Done, then confirm size (optional tape one wall).")
+                    }
                 } else {
                     append("Walk around until room size appears…")
                 }
             }
-            // +132: Done as soon as we have a usable size — never wait for 100% cover
+            // +132/+145: Done when usable size exists; incomplete cover is coached, not blocked
             val ready = autoWidthM >= 1.5 && autoLengthM >= 1.5 &&
-                (walkSamples.size >= 8 || poseSamples.size >= 12)
+                (walkSamples.size >= 10 || poseSamples.size >= 14)
             btnDone.isEnabled = ready
             return
         }

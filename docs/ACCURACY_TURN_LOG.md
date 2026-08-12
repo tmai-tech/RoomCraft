@@ -124,3 +124,20 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
 **Fixes:** study gold inventory default (`composeStudyGold`); Home **Photos** scan re-enabled; lounge preset kept for bean-bag rooms.
 
+## Turn 91 — +145 Phase 1 size reliability (2026-08-12)
+
+**Asked:** AR scan still not up to mark vs Planner5D; create phases; start Phase 0 + Phase 1.
+
+**Did:**
+1. Docs: `SCAN_ACCURACY_BUILD_PHASES.md`, `PHASE0_RETEST_CHECKLIST.md`.
+2. **One-wall tape calibrate** (`HomeScanGeometry.scaleByKnownWall` + RoomScanScreen UI).
+3. **sizeQualityHints** + incomplete-map confirm dialog; `one_wall_calibrate` size lock.
+4. Coverage-first quality reject; native cover % HUD + stronger walk coaching.
+5. Tests for calibrate + hints + coverage reject.
+
+**Should have done earlier:** magicplan one-wall lock with first AR walk (+125).
+
+**Still lacking:** field retest of +145 on same rooms; photo inventory auto after walk (Phase 2); offline Open3D polish.
+
+**Next:** Phase 0 device retest → Phase 2 openings/inventory if size OK.
+

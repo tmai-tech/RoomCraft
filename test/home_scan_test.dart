@@ -507,6 +507,119 @@ void main() {
     expect(size.lengthFt, lessThan(26.0));
   });
 
+  test('+145 one-wall calibrate scales both axes proportionally', () {
+    final scaled = HomeScanGeometry.scaleByKnownWall(
+      proposedWidthFt: 20.0,
+      proposedLengthFt: 15.0,
+      axis: 'width',
+      knownWallFt: 18.0,
+    );
+    expect(scaled, isNotNull);
+    expect(scaled!.widthFt, closeTo(18.0, 0.01));
+    // 15 * (18/20) = 13.5
+    expect(scaled.lengthFt, closeTo(13.5, 0.01));
+    expect(scaled.scale, closeTo(0.9, 0.001));
+
+    final short = HomeScanGeometry.scaleByKnownWall(
+      proposedWidthFt: 20.0,
+      proposedLengthFt: 15.0,
+      axis: 'length',
+      knownWallFt: 12.0,
+    );
+    expect(short, isNotNull);
+    // scale = 12/15 = 0.8 → width 16, length 12
+    expect(short!.lengthFt, closeTo(12.0, 0.01));
+    expect(short.widthFt, closeTo(16.0, 0.01));
+  });
+
+  test('+145 one-wall rejects absurd tape values', () {
+    expect(
+      HomeScanGeometry.scaleByKnownWall(
+        proposedWidthFt: 16,
+        proposedLengthFt: 12,
+        axis: 'width',
+        knownWallFt: 3,
+      ),
+      isNull,
+    );
+    expect(
+      HomeScanGeometry.scaleByKnownWall(
+        proposedWidthFt: 16,
+        proposedLengthFt: 12,
+        axis: 'width',
+        knownWallFt: 80,
+      ),
+      isNull,
+    );
+  });
+
+  test('+145 one_wall_calibrate source locks size like user_confirm', () {
+    final cloud = ArPolygonMap.walkCloudRectM(widthM: 4.0, lengthM: 3.0);
+    final flat = <double>[for (final p in cloud) ...p];
+    final measure = ArRoomMeasure(
+      widthFt: 18.0,
+      lengthFt: 13.5,
+      widthM: 5.49,
+      lengthM: 4.11,
+      mode: 'auto',
+      source: 'one_wall_calibrate',
+      cornersM: flat,
+      sampleCount: cloud.length,
+      poseCount: 20,
+      coverageScore: 0.4,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    expect(pack.qualityRejectReason(), isNull);
+    final size = pack.resolvedSize;
+    expect(size.widthFt, closeTo(18.0, 0.05));
+    expect(size.lengthFt, closeTo(13.5, 0.05));
+    expect(size.fuseSource, 'userConfirm');
+  });
+
+  test('+145 sizeQualityHints coach incomplete cover', () {
+    final measure = const ArRoomMeasure(
+      widthFt: 14.0,
+      lengthFt: 12.0,
+      widthM: 4.27,
+      lengthM: 3.66,
+      mode: 'auto',
+      cornersM: [0, 0, 0, 4, 0, 0, 4, 0, 3, 0, 0, 3],
+      sampleCount: 8,
+      poseCount: 8,
+      coverageScore: 0.40,
+      orthogonalScore: 0.7,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final hints = pack.sizeQualityHints();
+    expect(hints, isNotEmpty);
+    expect(
+      hints.any((h) =>
+          h.toLowerCase().contains('cover') ||
+          h.toLowerCase().contains('walk') ||
+          h.toLowerCase().contains('tape') ||
+          h.toLowerCase().contains('incomplete')),
+      isTrue,
+    );
+  });
+
+  test('+145 coverage-first rejects very weak cover without wall lock', () {
+    final measure = const ArRoomMeasure(
+      widthFt: 16.0,
+      lengthFt: 12.0,
+      widthM: 4.88,
+      lengthM: 3.66,
+      mode: 'auto',
+      cornersM: [0, 0, 0, 3, 0, 0, 3, 0, 2.5, 0, 0, 2.5],
+      sampleCount: 6,
+      poseCount: 6,
+      coverageScore: 0.35,
+      orthogonalScore: 0.6,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final reason = pack.qualityRejectReason();
+    expect(reason, isNotNull);
+  });
+
   test('+138 user_confirm size is absolute (no re-fuse overwrite)', () {
     // Tiny cloud that would fuse small — user taped 18×14
     final cloud = ArPolygonMap.walkCloudRectM(
