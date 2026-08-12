@@ -67,15 +67,38 @@ class HomeScanInventory {
   bool get hasAnyOpenings => doors > 0 || windows > 0 || frenchWindow;
 
   /// Use dense Planner5D/study gold geometry (not sparse free-float lounge).
+  ///
+  /// +146: only when **wardrobe** is marked (or explicit study preset).
+  /// Previously desk+table+2 doors alone triggered study gold and overwrote
+  /// lounge-like rooms with a full-wall wardrobe (feedback b5fa46b8).
   bool get usesStudyGoldLayout =>
-      wardrobe ||
-      (desk &&
-          table &&
-          doors >= 2 &&
-          !beanBag &&
-          !sofa &&
-          !bed &&
-          (frenchWindow || windows > 0 || chair));
+      wardrobe && !beanBag && !sofa && !bed;
+
+  /// True when user has picked enough to build a plan (+146).
+  bool get isReadyToPlace => hasAnyOpenings || hasAnyFurniture;
+
+  /// Checklist lines for confirm UI (+146 Phase 2).
+  List<String> matchChecklistLines() {
+    final lines = <String>[];
+    if (doors > 0) {
+      lines.add('☐ $doors door${doors == 1 ? '' : 's'} on plan');
+    }
+    if (frenchWindow) lines.add('☐ French window (wide glazing)');
+    if (windows > 0) {
+      lines.add('☐ $windows window${windows == 1 ? '' : 's'}');
+    }
+    if (wardrobe) lines.add('☐ Wardrobe (study gold wall unit)');
+    if (desk) lines.add('☐ Desk');
+    if (table) lines.add('☐ Table (mid-room)');
+    if (beanBag) lines.add('☐ Bean bag');
+    if (sofa) lines.add('☐ Sofa');
+    if (bed) lines.add('☐ Bed');
+    if (chair) lines.add('☐ Chair');
+    if (lines.isEmpty) {
+      lines.add('☐ Pick a preset or mark openings / furniture');
+    }
+    return lines;
+  }
 
   String get summaryLabel {
     final parts = <String>[];
@@ -223,6 +246,39 @@ class HomeScanInventoryComposer {
       plan = plan.copyWith(furniture: furniture);
     }
 
+    final report = matchReport(plan, inventory);
+    if (report.fullMatch) {
+      plan = plan.copyWith(
+        accuracyScore: math.max(plan.accuracyScore ?? 0.9, 0.96),
+        warnings: [
+          ...plan.warnings,
+          'Inventory match (+146): ${report.summary}',
+        ],
+      );
+    } else {
+      plan = plan.copyWith(
+        warnings: [
+          ...plan.warnings,
+          'Inventory partial (+146): ${report.summary}',
+        ],
+      );
+    }
+
+    return plan;
+  }
+
+  /// Phase 2 match report — counts vs inventory chips.
+  static ({
+    bool fullMatch,
+    int doors,
+    int windows,
+    int furniture,
+    int expectDoors,
+    int expectWindows,
+    int expectFurniture,
+    String summary,
+    List<String> missing,
+  }) matchReport(ScanResult plan, HomeScanInventory inventory) {
     final doors =
         plan.walls.where((s) => s.type == StrokeType.door).length;
     final wins = plan.walls
@@ -242,25 +298,39 @@ class HomeScanInventoryComposer {
     final expectDoors = inventory.doors;
     final expectWin =
         (inventory.frenchWindow ? 1 : 0) + inventory.windows;
-    final match = doors >= expectDoors &&
-        wins >= expectWin &&
-        furnN >= expectFurn &&
-        !plan.furniture.any((f) =>
-            f.included &&
-            (f.type == FurnitureType.bed && !inventory.bed ||
-                f.type == FurnitureType.sofa && !inventory.sofa));
-    if (match) {
-      plan = plan.copyWith(
-        accuracyScore: math.max(plan.accuracyScore ?? 0.9, 0.96),
-        warnings: [
-          ...plan.warnings,
-          'Inventory match (+143): $doors doors · $wins windows · '
-              '$furnN furniture (no invented bed/sofa)',
-        ],
-      );
+    final missing = <String>[];
+    if (doors < expectDoors) {
+      missing.add('${expectDoors - doors} door(s)');
     }
-
-    return plan;
+    if (wins < expectWin) {
+      missing.add('${expectWin - wins} window(s)');
+    }
+    if (furnN < expectFurn) {
+      missing.add('${expectFurn - furnN} furniture');
+    }
+    final invented = plan.furniture.any((f) =>
+        f.included &&
+        ((f.type == FurnitureType.bed && !inventory.bed) ||
+            (f.type == FurnitureType.sofa && !inventory.sofa) ||
+            (f.type == FurnitureType.wardrobe && !inventory.wardrobe)));
+    if (invented) missing.add('unexpected bed/sofa/wardrobe');
+    final match = missing.isEmpty &&
+        doors >= expectDoors &&
+        wins >= expectWin &&
+        furnN >= expectFurn;
+    return (
+      fullMatch: match,
+      doors: doors,
+      windows: wins,
+      furniture: furnN,
+      expectDoors: expectDoors,
+      expectWindows: expectWin,
+      expectFurniture: expectFurn,
+      summary:
+          '$doors/$expectDoors doors · $wins/$expectWin windows · $furnN/$expectFurn furniture'
+          '${missing.isEmpty ? '' : ' · missing ${missing.join(", ")}'}',
+      missing: missing,
+    );
   }
 
   static ScanResult _nudgeAwayFromDoors(ScanResult plan) {

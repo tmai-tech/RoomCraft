@@ -1,0 +1,17 @@
+{
+  "contactEmail": "",
+  "versionLabel": "1.0.0-beta.1+145 (beta)",
+  "message": "check the errors still scan results are not accurate",
+  "platform": "android",
+  "createdAt": "2026-08-12T17:01:32.252208Z",
+  "buildNumber": 145,
+  "category": "scan",
+  "screenshotCount": 2,
+  "osVersion": "W1UOS36H.35-39-7",
+  "id": "b5fa46b8-823",
+  "appVersion": "1.0.0-beta.1",
+  "hasLocalScreenshots": true,
+  "createdAtServer": "2026-08-12T17:01:36.163Z",
+  "uid": "qYGjwty7NEWq3yXYvlEeFMroSdl2",
+  "screenshotUrls": null
+}

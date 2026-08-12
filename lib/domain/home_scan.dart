@@ -643,6 +643,69 @@ class HomeScanGeometry {
   static const double residentialMaxWidthFt = 28.0;
   static const double residentialMaxLengthFt = 26.0;
 
+  /// +146: AR **confirm fill** soft cap (feedback b5fa46b8 29.3×15.8 without tape).
+  /// Prefer under-size + tape one wall over silent 30 ft living rooms.
+  static const double softProposeWidthFt = 24.0;
+  static const double softProposeLengthFt = 20.0;
+
+  /// Hard create-plan block without one-wall / tape when above this.
+  static const double hardConfirmWidthFt = 26.0;
+  static const double hardConfirmLengthFt = 22.0;
+
+  /// Gold study tape size (32ffdc65) — one-tap restore when AR drifts large.
+  static const double goldStudyWidthFt = 20.3;
+  static const double goldStudyLengthFt = 17.0;
+
+  /// Soft-cap AR resolved size for the confirm form (+146).
+  ///
+  /// Returns clamped W×L (width ≥ length) and whether we reduced a drifty proposal.
+  static ({
+    double widthFt,
+    double lengthFt,
+    bool clamped,
+    double rawWidthFt,
+    double rawLengthFt,
+  }) proposeConfirmSize({
+    required double widthFt,
+    required double lengthFt,
+    bool hasWallLock = false,
+  }) {
+    var w = widthFt;
+    var l = lengthFt;
+    if (w < l) {
+      final t = w;
+      w = l;
+      l = t;
+    }
+    final rawW = w;
+    final rawL = l;
+    final maxW = hasWallLock ? 26.0 : softProposeWidthFt;
+    final maxL = hasWallLock ? 22.0 : softProposeLengthFt;
+    var clamped = false;
+    if (w > maxW) {
+      w = maxW;
+      clamped = true;
+    }
+    if (l > maxL) {
+      l = maxL;
+      clamped = true;
+    }
+    // Keep aspect if only one side clipped hard
+    if (clamped && rawW > 3 && rawL > 3) {
+      final aspect = rawL / rawW;
+      if (w == maxW && l > w * aspect * 1.05) {
+        l = (w * aspect).clamp(6.0, maxL);
+      }
+    }
+    return (
+      widthFt: w,
+      lengthFt: l,
+      clamped: clamped,
+      rawWidthFt: rawW,
+      rawLengthFt: rawL,
+    );
+  }
+
   /// +145 magicplan-class: scale both axes from one known wall length (tape).
   ///
   /// [axis] `width` or `length` — which side the user measured.

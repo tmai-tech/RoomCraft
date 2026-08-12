@@ -507,6 +507,63 @@ void main() {
     expect(size.lengthFt, lessThan(26.0));
   });
 
+  test('+146 soft-cap proposeConfirmSize clips 29×16 drift (b5fa46b8)', () {
+    final p = HomeScanGeometry.proposeConfirmSize(
+      widthFt: 29.3,
+      lengthFt: 15.8,
+      hasWallLock: false,
+    );
+    expect(p.clamped, isTrue);
+    expect(p.rawWidthFt, closeTo(29.3, 0.05));
+    expect(p.widthFt, lessThanOrEqualTo(HomeScanGeometry.softProposeWidthFt));
+    expect(p.lengthFt, lessThanOrEqualTo(HomeScanGeometry.softProposeLengthFt));
+    expect(p.widthFt, greaterThanOrEqualTo(p.lengthFt));
+  });
+
+  test('+146 study gold only when wardrobe — lounge never gets wardrobe wall', () {
+    expect(HomeScanInventory.studyGold.usesStudyGoldLayout, isTrue);
+    expect(HomeScanInventory.loungeOffice.usesStudyGoldLayout, isFalse);
+    // desk+table+doors without wardrobe must NOT force study gold
+    const chips = HomeScanInventory(
+      doors: 2,
+      frenchWindow: true,
+      desk: true,
+      table: true,
+      chair: true,
+    );
+    expect(chips.usesStudyGoldLayout, isFalse);
+
+    final measure = ArRoomMeasure(
+      widthFt: 16,
+      lengthFt: 12,
+      widthM: 16 / 3.28084,
+      lengthM: 12 / 3.28084,
+      mode: 'auto',
+      source: 'user_confirm',
+      coverageScore: 0.9,
+    );
+    final pack = HomeScanPackage.fromMeasure(measure);
+    final lounge = pack.toPlanWithInventory(HomeScanInventory.loungeOffice);
+    expect(
+      lounge.furniture.any((f) => f.included && f.type == FurnitureType.wardrobe),
+      isFalse,
+    );
+    final report =
+        HomeScanInventoryComposer.matchReport(lounge, HomeScanInventory.loungeOffice);
+    expect(report.fullMatch, isTrue);
+    expect(report.doors, greaterThanOrEqualTo(2));
+    expect(report.furniture, greaterThanOrEqualTo(3));
+  });
+
+  test('+146 match checklist requires selection', () {
+    expect(const HomeScanInventory().isReadyToPlace, isFalse);
+    expect(HomeScanInventory.loungeOffice.isReadyToPlace, isTrue);
+    expect(
+      HomeScanInventory.loungeOffice.matchChecklistLines(),
+      isNotEmpty,
+    );
+  });
+
   test('+145 one-wall calibrate scales both axes proportionally', () {
     final scaled = HomeScanGeometry.scaleByKnownWall(
       proposedWidthFt: 20.0,

@@ -13,8 +13,9 @@ import 'blueprint_screen.dart';
 /// Scan the room → confirm size → inventory → plan.
 ///
 /// +137: AR proposes size; user confirms feet before plan.
-/// +140: user marks openings/furniture (feedback 04919d14) — no random AI bed/sofa.
-/// +145: one-wall tape calibrate + size quality coaching (Phase 1).
+/// +140: user marks openings/furniture (feedback 04919d14).
+/// +145: one-wall tape calibrate + size quality coaching.
+/// +146: soft-cap oversize AR (b5fa46b8 29×16); inventory checklist; no default wardrobe.
 class RoomScanScreen extends ConsumerStatefulWidget {
   const RoomScanScreen({super.key});
 
@@ -27,20 +28,22 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
   bool _busy = false;
   String? _error;
 
-  /// After AR returns, we show size confirm (not auto-open a wrong plan).
   ArRoomMeasure? _measure;
   HomeScanPackage? _pack;
   late final TextEditingController _wCtrl;
   late final TextEditingController _lCtrl;
   late final TextEditingController _knownWallCtrl;
 
-  /// Default: study gold (+36 quality / 32ffdc65). Lounge preset one tap away.
-  HomeScanInventory _inventory = HomeScanInventory.studyGold;
+  /// +146: start empty — user must pick Study gold or Lounge (or chips).
+  /// Default study gold caused full-wall wardrobe on every oversized AR (b5fa46b8).
+  HomeScanInventory _inventory = const HomeScanInventory();
 
-  /// +145: which axis the tape measurement applies to (`width` long side, `length` short).
   String _calibrateAxis = 'width';
   bool _oneWallApplied = false;
   String? _calibrateNote;
+  bool _sizeWasClamped = false;
+  double? _rawArWidth;
+  double? _rawArLength;
 
   @override
   void initState() {
@@ -68,6 +71,9 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       _pack = null;
       _oneWallApplied = false;
       _calibrateNote = null;
+      _sizeWasClamped = false;
+      _rawArWidth = null;
+      _rawArLength = null;
       _status = 'Checking AR…';
     });
 
@@ -104,14 +110,22 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       } catch (_) {}
 
       final size = pack.resolvedSize;
-      _wCtrl.text = size.widthFt.toStringAsFixed(1);
-      _lCtrl.text = size.lengthFt.toStringAsFixed(1);
+      final proposed = HomeScanGeometry.proposeConfirmSize(
+        widthFt: size.widthFt,
+        lengthFt: size.lengthFt,
+        hasWallLock: measure.hasWallLock,
+      );
+      _wCtrl.text = proposed.widthFt.toStringAsFixed(1);
+      _lCtrl.text = proposed.lengthFt.toStringAsFixed(1);
       _knownWallCtrl.clear();
 
       setState(() {
         _busy = false;
         _measure = measure;
         _pack = pack;
+        _sizeWasClamped = proposed.clamped;
+        _rawArWidth = proposed.rawWidthFt;
+        _rawArLength = proposed.rawLengthFt;
         _status = 'Confirm size & contents';
       });
     } catch (e) {
@@ -167,6 +181,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       _wCtrl.text = scaled.widthFt.toStringAsFixed(1);
       _lCtrl.text = scaled.lengthFt.toStringAsFixed(1);
       _oneWallApplied = true;
+      _sizeWasClamped = false;
       _calibrateNote =
           'Scaled from tape: ${_calibrateAxis == 'length' ? 'short' : 'long'} '
           'wall = ${known.toStringAsFixed(1)} ft '
@@ -180,6 +195,19 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         ),
       ),
     );
+  }
+
+  void _applyGoldStudySize() {
+    setState(() {
+      _wCtrl.text = HomeScanGeometry.goldStudyWidthFt.toStringAsFixed(1);
+      _lCtrl.text = HomeScanGeometry.goldStudyLengthFt.toStringAsFixed(1);
+      _oneWallApplied = true;
+      _sizeWasClamped = false;
+      _calibrateNote =
+          'Applied study gold size ${HomeScanGeometry.goldStudyWidthFt}×'
+          '${HomeScanGeometry.goldStudyLengthFt} ft (32ffdc65 tape)';
+      _inventory = HomeScanInventory.studyGold;
+    });
   }
 
   Future<void> _createPlan() async {
@@ -204,7 +232,55 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       return;
     }
 
-    // +145: if walk quality was poor and user did not calibrate, confirm once
+    // +146: hard block huge sizes without tape / one-wall (b5fa46b8 29.3 ft)
+    if (!_oneWallApplied &&
+        (w > HomeScanGeometry.hardConfirmWidthFt ||
+            l > HomeScanGeometry.hardConfirmLengthFt)) {
+      final fix = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Size looks too large'),
+          content: Text(
+            '${w.toStringAsFixed(1)}×${l.toStringAsFixed(1)} ft is large for one room '
+            '(AR often over-sizes). Measure one wall with a tape, or use the '
+            'study gold size (20.3×17) if this is that room.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'back'),
+              child: const Text('Go back'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'gold'),
+              child: const Text('Use 20.3×17'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'force'),
+              child: const Text('My room is this large'),
+            ),
+          ],
+        ),
+      );
+      if (fix == null || fix == 'back') return;
+      if (fix == 'gold') {
+        _applyGoldStudySize();
+        return;
+      }
+      // force → treat as intentional large room
+      setState(() => _oneWallApplied = true);
+    }
+
+    if (!_inventory.isReadyToPlace) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Mark openings/furniture or tap Study gold / Lounge first.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final pack0 = _pack;
     if (pack0 != null &&
         !_oneWallApplied &&
@@ -215,8 +291,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
           title: const Text('Map may be incomplete'),
           content: Text(
             '${pack0.qualityRejectReason()}\n\n'
-            'Tip: measure one wall with a tape and use “I measured one wall”, '
-            'or re-scan a full loop.\n\n'
+            'Tip: measure one wall with a tape, or re-scan a full loop.\n\n'
             'Create plan with ${w.toStringAsFixed(1)}×${l.toStringAsFixed(1)} ft anyway?',
           ),
           actions: [
@@ -234,21 +309,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
       if (proceed != true) return;
     }
 
-    // +144: empty inventory → study gold (never ship sparse empty plan, be325971)
-    var inv = _inventory;
-    if (!inv.hasAnyOpenings && !inv.hasAnyFurniture) {
-      inv = HomeScanInventory.studyGold;
-      setState(() => _inventory = inv);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Using Study gold layout (+36 quality). Edit chips if your room differs.',
-            ),
-          ),
-        );
-      }
-    }
+    final inv = _inventory;
 
     setState(() {
       _busy = true;
@@ -294,13 +355,15 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
         floorHitsM: _pack?.floorHitsM,
         posesM: _pack?.posesM,
       );
-      // +140–+144: inventory plan — study gold when dense, lounge when bean bag
       var plan = pack.toPlanWithInventory(inv);
-      // Density guard: sparse plan when user asked for study contents → force gold
+      // Density guard only when user asked for study wardrobe layout
       final furnN = plan.furniture.where((f) => f.included).length;
       if (inv.usesStudyGoldLayout && furnN < 3) {
         plan = pack.toPlanWithInventory(HomeScanInventory.studyGold);
       }
+      // +146 match report into snackbar before open
+      final report =
+          HomeScanInventoryComposer.matchReport(plan, inv);
       final pxf = AppConfig.defaultPixelsPerFoot;
       final converted = ScanParser.toEditor(plan, pxf);
       ref.read(roomProvider.notifier).initFromScan(
@@ -310,6 +373,16 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
             converted.furniture,
           );
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            report.fullMatch
+                ? 'Plan: ${report.summary}'
+                : 'Plan partial: ${report.summary}',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const BlueprintScreen()),
       );
@@ -381,14 +454,37 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'AR measures size only. Mark what is actually in the room '
-                  'so the plan matches (not a random layout).',
+                  '1) Fix room size (tape one wall if AR is off). '
+                  '2) Mark what is in the room — no random layout.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),
+                if (_sizeWasClamped &&
+                    _rawArWidth != null &&
+                    _rawArLength != null) ...[
+                  const SizedBox(height: 12),
+                  Material(
+                    color: Colors.deepOrange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Text(
+                        'AR raw size looked large '
+                        '(${_rawArWidth!.toStringAsFixed(0)}×${_rawArLength!.toStringAsFixed(0)} ft) '
+                        '— capped for a single room. Measure one wall or tap '
+                        '“Study gold 20.3×17” if that is your room.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color: Colors.deepOrange.shade900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 if (hints.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  for (final h in hints.take(3))
+                  const SizedBox(height: 12),
+                  for (final h in hints.take(2))
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Material(
@@ -421,7 +517,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                       ),
                     ),
                 ],
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
@@ -478,6 +574,18 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    OutlinedButton(
+                      onPressed: _applyGoldStudySize,
+                      child: const Text('Study gold 20.3×17'),
+                    ),
+                  ],
+                ),
                 Builder(
                   builder: (context) {
                     final ww = double.tryParse(_wCtrl.text.trim()) ?? 0;
@@ -489,7 +597,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                       child: Text(
                         'This size is large for a single room '
                         '(${ww.toStringAsFixed(0)}×${ll.toStringAsFixed(0)} ft). '
-                        'Double-check with a tape before creating the plan.',
+                        'Tape one wall or use Study gold 20.3×17.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.orange.shade900,
@@ -500,8 +608,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 16),
-                // +145 one-wall calibrate (magicplan-class)
+                const SizedBox(height: 14),
                 Material(
                   color: Colors.teal.shade50,
                   borderRadius: BorderRadius.circular(10),
@@ -512,14 +619,15 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                       children: [
                         Text(
                           'I measured one wall (recommended)',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                color: Colors.teal.shade900,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: Colors.teal.shade900,
+                                  ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Tape one wall, pick which side it is, Apply. '
-                          'The other side scales to keep the AR shape.',
+                          'Tape one wall, pick which side, Apply. '
+                          'Other side scales to keep AR shape.',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.teal.shade900,
@@ -580,7 +688,33 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Room type (required)',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    FilledButton.tonal(
+                      onPressed: () => setState(() {
+                        _inventory = HomeScanInventory.studyGold;
+                      }),
+                      child: const Text('Study gold (+36)'),
+                    ),
+                    FilledButton.tonal(
+                      onPressed: () => setState(() {
+                        _inventory = HomeScanInventory.loungeOffice;
+                      }),
+                      child: const Text('Lounge (bean bag)'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -704,32 +838,67 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Selected: ${_inventory.summaryLabel}'
-                  '${_inventory.usesStudyGoldLayout ? ' · study gold layout' : ''}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 4,
-                  children: [
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _inventory = HomeScanInventory.studyGold;
-                      }),
-                      child: const Text('Study gold (+36 layout)'),
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _inventory = HomeScanInventory.loungeOffice;
-                      }),
-                      child: const Text('Lounge (bean bag)'),
-                    ),
-                  ],
-                ),
                 const SizedBox(height: 12),
+                // +146 Phase 2 match checklist
+                Material(
+                  color: Colors.blueGrey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Will place on plan',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _inventory.isReadyToPlace
+                              ? _inventory.summaryLabel
+                              : 'Nothing selected — pick Study gold, Lounge, or chips',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _inventory.isReadyToPlace
+                                ? Colors.blueGrey.shade900
+                                : Colors.red.shade800,
+                          ),
+                        ),
+                        if (_inventory.usesStudyGoldLayout) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Layout: study gold (wardrobe wall unit)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                        ] else if (_inventory.isReadyToPlace) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Layout: inventory placement (no invented bed/sofa)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        for (final line in _inventory.matchChecklistLines())
+                          Text(
+                            line,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: Colors.blueGrey.shade800,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 FilledButton(
                   onPressed: _createPlan,
                   style: FilledButton.styleFrom(
@@ -752,7 +921,7 @@ class _RoomScanScreenState extends ConsumerState<RoomScanScreen> {
                 const SizedBox(height: 12),
                 Text(
                   'Walk the full room near the walls. Tap Done when finished.\n'
-                  'Then confirm size (optional: tape one wall) and mark doors / furniture.',
+                  'Then fix size (tape if needed) and mark doors / furniture.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                 ),

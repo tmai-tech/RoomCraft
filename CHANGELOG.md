@@ -2,6 +2,17 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+146 (2026-08-12)
+
+### Phase 2 + size harden — feedback b5fa46b8 (+145 “still not accurate”)
+- **Root cause:** plan showed **29.3×15.8** with default study-gold wardrobe — AR oversize + auto study layout.
+- **Soft-cap confirm size** at 24×20 (no wall lock); raw AR size shown when clamped.
+- **Hard block** create plan if >26×22 without one-wall tape (or force “my room is large” / Study gold 20.3×17).
+- **No default wardrobe** — empty inventory until Study gold / Lounge / chips; match checklist “Will place on plan”.
+- **Study gold layout only if wardrobe** marked (lounge never gets full-wall wardrobe).
+- Inventory **matchReport** snackbar after create.
+- One-tap **Study gold 20.3×17** size for known gold room.
+
 ## 1.0.0-beta.1+145 (2026-08-12)
 
 ### Phase 1 — metric size reliability (Planner5D / magicplan class)

@@ -141,3 +141,21 @@ Full product retro: `docs/RELEASE_RETRO_40_93.md`.
 
 **Next:** Phase 0 device retest → Phase 2 openings/inventory if size OK.
 
+## Turn 92 — +146 Phase 2 + oversize fix (2026-08-12)
+
+**Feedback:** `b5fa46b8` on **+145** — “check the errors still scan results are not accurate”.
+Screenshots: confirm UI + blueprint **29.3×15.8** with study-gold wardrobe (empty-looking large room).
+
+**Root cause:**
+1. AR still proposed ~29 ft (pose/standoff drift); user confirmed without tape.
+2. Default inventory = study gold → full-wall wardrobe on every scan.
+
+**Did:**
+1. `proposeConfirmSize` soft-cap 24×20; hard create block >26×22 without tape.
+2. Empty inventory default + Study gold / Lounge required; match checklist.
+3. `usesStudyGoldLayout` only when wardrobe (lounge never wardrobe wall).
+4. One-tap Study gold 20.3×17 size; matchReport snackbar.
+5. Tests +146.
+
+**Next:** Field retest +146 with Lounge preset + tape; Phase 3 blueprint dims if size OK.
+

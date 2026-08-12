@@ -1,7 +1,7 @@
 # Phase 0 — Field retest checklist (+145)
 
 **Goal:** Decide if AR size + inventory plans are good enough before more polish.  
-**Build under test:** `1.0.0-beta.1+145` (Phase 1 size reliability).  
+**Build under test:** `1.0.0-beta.1+146` (Phase 1 size + Phase 2 inventory).  
 **Reference rooms:** feedback packs under `data/feedback/`.
 
 ---
@@ -36,10 +36,10 @@
 | B1 | Home → **Scan the room** (AR walk) | |
 | B2 | Live camera (not black). Walk full loop until size shows | |
 | B3 | Tap Done → **Confirm size & contents** | |
-| B4 | Note AR proposed W×L: ______ × ______ ft | |
-| B5 | Optional: **I measured one wall** → enter tape on long or short side → Apply | |
-| B6 | Mark: **2 doors**, **French window**, **desk**, **table**, **bean bag** (or Lounge preset) | |
-| B7 | Create plan | |
+| B4 | Note AR proposed W×L: ______ × ______ ft (must **not** stay ~29 ft without tape — +146 caps) | |
+| B5 | If “AR raw size looked large” banner: tape one wall **or** Study gold 20.3×17 | |
+| B6 | Tap **Lounge (bean bag)** — checklist shows 2 doors, French window, desk, table, bean bag | |
+| B7 | Create plan — snackbar should say inventory match | |
 | B8 | Blueprint: 2 doors + French window + desk + mid-room table + bean bag | |
 | B9 | Table **not** glued to a door; whole plan **fits on screen** | |
 
