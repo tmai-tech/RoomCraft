@@ -171,3 +171,16 @@ Screenshots: Confirm size with yellow/black overflow stripes; blueprint **7.0×5
 
 **Next:** Field retest +147; Phase 3 door swing defaults / furniture labels if needed.
 
+## Turn 94 — +148 Phase 3 clean blueprint (2026-08-12)
+
+**Feedback:** none new after +147 (last: `c643ffe0` overflow / under-size — shipped). Remaining Phase 3 gap: door swings, closed wall thickness, opening dims.
+
+**Did:**
+1. **`BlueprintOpenings`**: perimeter wall segments with gaps at doors/windows; inward door swing (±90°) on all walls; type+width labels.
+2. **BlueprintPainter**: double-line closed walls (gaps), solid door thresholds + filled inward swing, color-coded opening badges.
+3. Tests `blueprint_openings_test` + home_scan green.
+
+**Still lacking:** field retest on +147/+148; full north-up editor flip (Review already N↑; blueprint model y=0=south); Phase 1 tape median ≤10% on device; 3D toggle polish.
+
+**Next:** Field retest Paths B/C; if blueprint still hard to read, north-up editor transform.
+

@@ -2,6 +2,14 @@
 
 All notable changes to RoomCraft are documented here.
 
+## 1.0.0-beta.1+148 (2026-08-12)
+
+### Phase 3 — clean blueprint (door swings, wall gaps, opening labels)
+- **Wall gaps at openings**: closed perimeter double-line walls leave gaps for doors/windows (Planner5D-style), not a solid box with orange paint-on.
+- **Inward door swing arcs**: hinge + 90° leaf always opens into the room (all four walls).
+- **Opening labels**: `Door 2.8′` / `Win 4.0′` / `Mesh` badges on openings.
+- Pure Dart `BlueprintOpenings` + unit tests; no catalog/3D/cloud changes.
+
 ## 1.0.0-beta.1+147 (2026-08-12)
 
 ### Fix overflow + under-size (feedback c643ffe0) · Phase 3 dims start

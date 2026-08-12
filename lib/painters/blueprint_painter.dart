@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../domain/layout/blueprint_openings.dart';
 import '../domain/layout/room_geometry.dart';
 import '../domain/layout/walkway_heatmap.dart';
 import '../domain/units.dart';
@@ -106,7 +107,8 @@ class BlueprintPainter extends CustomPainter {
     } else {
       final rect = Rect.fromLTWH(0, 0, w, h);
       canvas.drawRect(rect, paint);
-      canvas.drawRect(rect, border);
+      // +148: closed walls with thickness + gaps at openings (Planner5D)
+      _drawClosedWallsWithGaps(canvas, w, h, pxf);
     }
 
     // Room size label (footer)
@@ -131,6 +133,50 @@ class BlueprintPainter extends CustomPainter {
     // +147 Phase 3: edge dimension strings + wall letters A–D (Planner5D-class)
     if (!room.isPolygonFloor) {
       _drawEdgeDimensions(canvas, w, h, pxf);
+    }
+  }
+
+  /// Double-line closed walls with door/window gaps (+148 Phase 3.5).
+  void _drawClosedWallsWithGaps(
+    Canvas canvas,
+    double wPx,
+    double hPx,
+    double pxf,
+  ) {
+    final segments = BlueprintOpenings.perimeterWithGaps(
+      wPx: wPx,
+      hPx: hPx,
+      strokes: room.strokes,
+      padPx: max(2.0, pxf * 0.08),
+    );
+
+    final outer = Paint()
+      ..color = Colors.blueGrey.shade800
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.square
+      ..strokeJoin = StrokeJoin.miter
+      ..strokeWidth = 7.0;
+    final inner = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.square
+      ..strokeWidth = 3.0;
+
+    for (final seg in segments) {
+      canvas.drawLine(seg.$1, seg.$2, outer);
+      canvas.drawLine(seg.$1, seg.$2, inner);
+    }
+
+    // Corner caps so gaps don't leave open miter holes when no openings nearby
+    final corners = [
+      Offset.zero,
+      Offset(wPx, 0),
+      Offset(wPx, hPx),
+      Offset(0, hPx),
+    ];
+    final cap = Paint()..color = Colors.blueGrey.shade800;
+    for (final c in corners) {
+      canvas.drawCircle(c, 3.2, cap);
     }
   }
 
@@ -171,16 +217,14 @@ class BlueprintPainter extends CustomPainter {
       );
     }
 
-    // North (top) = A · width
+    // Designer walk order (wall_relative_scan): A=south(y=0 top of canvas),
+    // B=east, C=north(y=L bottom), D=west — matches field measure A→D.
     paintCentered(wLabel, Offset(wPx / 2, -12));
     paintWallLetter('A', Offset(wPx / 2, 10));
-    // East (right) = B · length
     paintCentered(lLabel, Offset(wPx + 14, hPx / 2), vertical: true);
     paintWallLetter('B', Offset(wPx - 12, hPx / 2));
-    // South (bottom) = C · width
     paintCentered(wLabel, Offset(wPx / 2, hPx + 18));
     paintWallLetter('C', Offset(wPx / 2, hPx - 12));
-    // West (left) = D · length
     paintCentered(lLabel, Offset(-14, hPx / 2), vertical: true);
     paintWallLetter('D', Offset(12, hPx / 2));
   }
@@ -232,6 +276,27 @@ class BlueprintPainter extends CustomPainter {
 
     switch (stroke.type) {
       case StrokeType.wall:
+        // +148: rect rooms use gapped closed walls in outline; freehand walls still draw.
+        if (!room.isPolygonFloor &&
+            room.strokes.where((s) => s.type == StrokeType.wall).length >= 4) {
+          // Skip full perimeter walls — already drawn with gaps. Keep partial freehand.
+          final spxf = (pixelsPerFoot.isFinite && pixelsPerFoot > 0.5)
+              ? pixelsPerFoot
+              : 20.0;
+          final wPx = room.widthInFeet * spxf;
+          final hPx = room.lengthInFeet * spxf;
+          final a = stroke.points.first;
+          final b = stroke.points.last;
+          final looksPerimeter = BlueprintOpenings.wallIndexForOpening(
+                a,
+                b,
+                wPx: wPx,
+                hPx: hPx,
+                tol: 12,
+              ) !=
+              null;
+          if (looksPerimeter) break;
+        }
         final paint = Paint()
           ..color = Colors.black
           ..style = PaintingStyle.stroke
@@ -242,24 +307,25 @@ class BlueprintPainter extends CustomPainter {
         break;
       case StrokeType.door:
         final paint = Paint()
-          ..color = Colors.orange
+          ..color = Colors.orange.shade700
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
-          ..strokeWidth = 4.0;
-        _drawDashedPath(canvas, path, paint);
+          ..strokeWidth = 3.5;
+        // Solid threshold line across the wall gap (not dashed on top of wall)
+        canvas.drawPath(path, paint);
         _drawDoorArc(canvas, stroke.points.first, stroke.points.last);
         break;
       case StrokeType.window:
         final paint = Paint()
-          ..color = Colors.blue
+          ..color = Colors.blue.shade600
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
-          ..strokeWidth = 6.0;
+          ..strokeWidth = 5.0;
         canvas.drawPath(path, paint);
         final innerPaint = Paint()
-          ..color = Colors.white
+          ..color = Colors.lightBlue.shade100
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0;
         canvas.drawPath(path, innerPaint);
@@ -309,47 +375,59 @@ class BlueprintPainter extends CustomPainter {
 
   void _drawDoorArc(Canvas canvas, Offset p1, Offset p2) {
     if ((p1 - p2).distance < 5) return;
-    final r = (p1 - p2).distance;
-    final angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
+    final wPx = room.widthInFeet *
+        (pixelsPerFoot.isFinite && pixelsPerFoot > 0.5 ? pixelsPerFoot : 20);
+    final hPx = room.lengthInFeet *
+        (pixelsPerFoot.isFinite && pixelsPerFoot > 0.5 ? pixelsPerFoot : 20);
+    final swing = BlueprintOpenings.bestInwardDoorSwing(
+      p1,
+      p2,
+      roomWPx: wPx,
+      roomHPx: hPx,
+    );
+    final hinge = swing.hinge;
+    final r = swing.radius;
+    final angle = swing.startAngle;
+    final sweep = swing.sweep;
 
-    // Filled swing sector (keep-out visual)
+    // Filled swing sector (traffic-light keep-out visual, Phase 3.3)
     final fill = Paint()
-      ..color = Colors.orange.withValues(alpha: 0.12)
+      ..color = Colors.orange.withValues(alpha: 0.14)
       ..style = PaintingStyle.fill;
     final path = Path()
-      ..moveTo(p1.dx, p1.dy)
+      ..moveTo(hinge.dx, hinge.dy)
       ..arcTo(
-        Rect.fromCircle(center: p1, radius: r),
+        Rect.fromCircle(center: hinge, radius: r),
         angle,
-        pi / 2,
+        sweep,
         false,
       )
       ..close();
     canvas.drawPath(path, fill);
 
     final paint = Paint()
-      ..color = Colors.orange.withValues(alpha: 0.65)
+      ..color = Colors.orange.withValues(alpha: 0.75)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
     canvas.drawArc(
-      Rect.fromCircle(center: p1, radius: r),
+      Rect.fromCircle(center: hinge, radius: r),
       angle,
-      pi / 2,
+      sweep,
       false,
       paint,
     );
-    // Swing radius tick
+    // Open leaf edge
     final end = Offset(
-      p1.dx + r * cos(angle + pi / 2),
-      p1.dy + r * sin(angle + pi / 2),
+      hinge.dx + r * cos(angle + sweep),
+      hinge.dy + r * sin(angle + sweep),
     );
     canvas.drawLine(
-      p1,
+      hinge,
       end,
       Paint()
-        ..color = Colors.orange.withValues(alpha: 0.45)
-        ..strokeWidth = 1.5,
+        ..color = Colors.orange.shade800.withValues(alpha: 0.7)
+        ..strokeWidth = 2.0,
     );
   }
 
@@ -374,6 +452,12 @@ class BlueprintPainter extends CustomPainter {
 
   void _drawMeasurements(Canvas canvas, StrokeModel stroke, double pxf) {
     if (stroke.points.length < 2) return;
+    // Perimeter wall strokes are dimmed via edge dims; skip noisy mid-wall labels
+    if (stroke.type == StrokeType.wall &&
+        !room.isPolygonFloor &&
+        room.strokes.where((s) => s.type == StrokeType.wall).length >= 4) {
+      return;
+    }
     for (var i = 0; i < stroke.points.length - 1; i++) {
       final p1 = stroke.points[i];
       final p2 = stroke.points[i + 1];
@@ -381,13 +465,16 @@ class BlueprintPainter extends CustomPainter {
 
       if (dist > pxf * 0.4) {
         final lengthInFeet = dist / pxf;
-        final label = LengthFormat.formatFeet(lengthInFeet, unitSystem);
+        // +148: openings show type + width (Door 2.8′, Win 4.0′)
+        final label = stroke.type == StrokeType.wall
+            ? LengthFormat.formatFeet(lengthInFeet, unitSystem)
+            : BlueprintOpenings.openingLabel(stroke.type, lengthInFeet);
         final textPainter = TextPainter(
           text: TextSpan(
             text: label,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -395,6 +482,12 @@ class BlueprintPainter extends CustomPainter {
         )..layout();
 
         final midPoint = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+        final bgColor = switch (stroke.type) {
+          StrokeType.door => Colors.orange.shade800.withValues(alpha: 0.85),
+          StrokeType.window => Colors.blue.shade800.withValues(alpha: 0.85),
+          StrokeType.balcony => Colors.green.shade800.withValues(alpha: 0.85),
+          StrokeType.wall => Colors.black.withValues(alpha: 0.65),
+        };
         final bg = RRect.fromRectAndRadius(
           Rect.fromCenter(
             center: midPoint.translate(0, -10),
@@ -403,7 +496,7 @@ class BlueprintPainter extends CustomPainter {
           ),
           const Radius.circular(4),
         );
-        canvas.drawRRect(bg, Paint()..color = Colors.black.withValues(alpha: 0.65));
+        canvas.drawRRect(bg, Paint()..color = bgColor);
         textPainter.paint(
           canvas,
           Offset(
